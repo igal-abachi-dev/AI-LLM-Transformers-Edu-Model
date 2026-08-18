@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/ggml-org/llama.cpp.git",
+  "revision": "9731ad3f29da96f588711a0d1eb08cf210721e16",
+  "reviewed_at": "2026-08-18",
+  "status": "contract-reviewed-no-minifrontier-upstream-patch"
+}

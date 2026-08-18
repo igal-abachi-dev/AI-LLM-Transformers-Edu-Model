@@ -1,0 +1,69 @@
+{
+  "architecture": "minifrontier",
+  "graph": {
+    "block": [
+      "residual + attention(attention_rms_norm(hidden))",
+      "residual + swiglu(ffn_rms_norm(hidden))"
+    ],
+    "global_position_encoding": [
+      "rope",
+      "none"
+    ],
+    "hybrid_schedule": "layer_is_local = ((layer_index + 1) % 4 != 0)",
+    "qk_norm_position": "after q/k projection and before RoPE",
+    "rope_convention": "split-half",
+    "tie_embeddings": true
+  },
+  "metadata": {
+    "general.architecture": "minifrontier",
+    "minifrontier.attention.pattern": "full|hybrid",
+    "minifrontier.attention.local_window": "uint32",
+    "minifrontier.attention.qk_norm": "bool",
+    "minifrontier.global_position_encoding": "rope|none",
+    "minifrontier.preset": "edu|modern"
+  },
+  "standard_metadata": [
+    "context_length",
+    "embedding_length",
+    "block_count",
+    "feed_forward_length",
+    "attention.head_count",
+    "attention.head_count_kv",
+    "attention.layer_norm_rms_epsilon",
+    "rope.freq_base",
+    "vocab_size"
+  ],
+  "tensor_mapping": {
+    "lm_head.weight": "output.weight",
+    "model.blocks.{bid}.attention.k_norm.weight": "blk.{bid}.attn_k_norm.weight",
+    "model.blocks.{bid}.attention.k_proj.weight": "blk.{bid}.attn_k.weight",
+    "model.blocks.{bid}.attention.out_proj.weight": "blk.{bid}.attn_output.weight",
+    "model.blocks.{bid}.attention.q_norm.weight": "blk.{bid}.attn_q_norm.weight",
+    "model.blocks.{bid}.attention.q_proj.weight": "blk.{bid}.attn_q.weight",
+    "model.blocks.{bid}.attention.v_proj.weight": "blk.{bid}.attn_v.weight",
+    "model.blocks.{bid}.attention_norm.weight": "blk.{bid}.attn_norm.weight",
+    "model.blocks.{bid}.feed_forward.down_proj.weight": "blk.{bid}.ffn_down.weight",
+    "model.blocks.{bid}.feed_forward.gate_proj.weight": "blk.{bid}.ffn_gate.weight",
+    "model.blocks.{bid}.feed_forward.up_proj.weight": "blk.{bid}.ffn_up.weight",
+    "model.blocks.{bid}.ffn_norm.weight": "blk.{bid}.ffn_norm.weight",
+    "model.final_norm.weight": "output_norm.weight",
+    "model.token_embedding.weight": "token_embd.weight"
+  },
+  "tokenizer": {
+    "model": "gpt2-byte-bpe",
+    "reserved_ids": {
+      "<|assistant|>": 5,
+      "<|bos|>": 1,
+      "<|eos|>": 2,
+      "<|fim_middle|>": 8,
+      "<|fim_prefix|>": 6,
+      "<|fim_suffix|>": 7,
+      "<|pad|>": 0,
+      "<|system|>": 3,
+      "<|tool_call|>": 9,
+      "<|tool_result|>": 10,
+      "<|user|>": 4
+    }
+  },
+  "version": 1
+}
