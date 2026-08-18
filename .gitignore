@@ -216,3 +216,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
+.coverage
+htmlcov/
+*.py[cod]
+artifacts/*
+!artifacts/.gitignore
+tmp/
+ai-LLM*.zip
