@@ -1,0 +1,101 @@
+[project]
+name = "minifrontier"
+version = "0.1.0"
+description = "A readable, from-scratch educational decoder-only language model"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+dependencies = [
+    "datasets>=2.19.1",
+    "jinja2>=3.1.6",
+    "numpy>=2.5.2",
+    "safetensors>=0.8.0",
+    "tokenizers>=0.22,<=0.23.0",
+    "tqdm>=4.66.5",
+]
+
+[project.optional-dependencies]
+cpu = ["torch>=2.13.0,<2.14"]
+cu126 = ["torch>=2.13.0,<2.14"]
+cu130 = ["torch>=2.13.0,<2.14"]
+cu132 = ["torch>=2.13.0,<2.14"]
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu126", extra = "cu126" },
+    { index = "pytorch-cu130", extra = "cu130" },
+    { index = "pytorch-cu132", extra = "cu132" },
+]
+
+[tool.uv]
+conflicts = [[
+    { extra = "cpu" },
+    { extra = "cu126" },
+    { extra = "cu130" },
+    { extra = "cu132" },
+]]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
+explicit = true
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.3",
+    "transformers>=5.15,<5.16",
+]
+eval = [
+    "chardet<6",
+    "lm-eval>=0.4.12",
+]
+labs = [
+    "matplotlib>=3.11.1",
+]
+
+[project.scripts]
+minifrontier-overfit = "minifrontier.overfit:main"
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+markers = [
+    "slow: bounded training tests excluded from the default fast suite",
+    "reference: optional parity tests against an external implementation",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [".uv-cache", ".venv", "artifacts", "docs", "inference", "tmp"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"labs/*.py" = ["T201"]
+"scripts/*.py" = ["T201"]
+
+[tool.ruff.format]
+quote-style = "double"

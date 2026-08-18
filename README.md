@@ -1,2 +1,367 @@
-# AI-LLM-Transformers-Edu-Model
-AI LLM implementation for learning about transformers and ai models
+# MiniFrontier
+
+MiniFrontier is a from-scratch, educational decoder-only language model built with raw PyTorch for a single consumer GPU. Its goal is to make the path from classic Transformer fundamentals to a small set of modern LLM techniques visible, testable, and measurable.
+
+> **Status:** M4 Modern, the CPU-verifiable M5 path, M6 code/FIM, M7 Muon, and M8 assistant-only
+> SFT/chat are implemented. M9 protocol/export/release validation tooling is implemented, while the
+> real matched 150M training artifacts remain open. M10 preflight and the M11 Transformers/export,
+> external-runtime, and GGUF orchestration paths are implemented; hardware/upstream-runtime gates
+> remain unmeasured. The CPU suite passes all 182 tests (178 in the
+> default non-slow gate). By user scheduling, CUDA profiling and quality-scale runs occur after M10
+> implementation; no GPU performance or model-quality result is claimed yet.
+
+## What we are building
+
+One compact codebase exposes two presets:
+
+| | MiniFrontier Edu | MiniFrontier Modern |
+| --- | --- | --- |
+| Normalization | Pre-RMSNorm | Pre-RMSNorm + QK-Norm |
+| Position | RoPE | RoPE; global NoPE as an experiment |
+| Attention heads | MHA | GQA |
+| Attention span | Full causal in every layer | 3 local layers, then 1 global layer |
+| Feed-forward | Dense SwiGLU | Dense SwiGLU |
+| Embeddings | Tied input/output | Tied input/output |
+
+The learning progression is deliberate:
+
+```text
+manual attention -> SDPA -> RoPE -> MHA -> GQA -> QK-Norm
+                 -> full vs hybrid attention -> KV cache
+                 -> AdamW vs Muon -> FIM -> SFT
+```
+
+The neural architecture and decoding machinery should remain small enough to read in an afternoon and clear enough to explain on a whiteboard.
+
+## Frozen V1 targets
+
+| Preset size | Layers | Width | Q heads | Modern KV heads | SwiGLU width | Context | Role |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 50M | 14 | 512 | 8 | 2 | 1,408 | 1,024 | Development, tests, experiments |
+| 150M | 20 | 768 | 12 | 4 | 2,048 | Canonical Edu/Modern release |
+| 350M | 28 | 1,024 | 16 | 4 | 2,816 | Optional scale check |
+| 500M | 24 | 1,280 | 20 | 4 | 3,456 | Optional stretch target |
+
+All sizes use a single 16,384-token byte-level BPE tokenizer, 64-dimensional attention heads, bias-free linear layers, tied embeddings, RMSNorm epsilon `1e-6`, and dropout `0` by default.
+
+The required hardware target is one NVIDIA GPU with 24 GB for comfortable 50M/150M work; larger presets require profiling and may need smaller microbatches or activation checkpointing. CPU mode supports setup, correctness tests, and small labs.
+
+## V1 scope
+
+V1 includes:
+
+- model and tokenizer training from scratch;
+- an explicit teaching attention path and optimized PyTorch SDPA/GQA path;
+- streamed, filtered, deduplicated, tokenized, and packed data;
+- a conservative, provenance-preserving code mixture and FIM examples;
+- an explicit AdamW training loop with BF16 and optional compilation;
+- KV-cached generation, checkpoint/resume, and safetensors export;
+- validation loss, perplexity, bits-per-byte, a small lm-eval suite, and code/FIM evaluations;
+- a first-party Muon versus AdamW laboratory;
+- small assistant-only supervised fine-tuning and a simple chat template.
+
+V1 explicitly excludes MoE, MLA, DeltaNet, MTP, RL/GRPO, tool-using agents, vision, distributed training, custom CUDA/Triton kernels, serving frameworks, and production long-context scaling.
+
+## Roadmap
+
+Implementation is organized into dependency-ordered tasks with measurable acceptance criteria:
+
+- [Human-readable backlog](tasks/backlog.md)
+- [Jira issue-export-style XML](tasks/jira-issues.xml)
+- [Task workflow and completion gates](tasks/README.md)
+- [Full architecture rationale](plan.md)
+- [Canonical V1 evaluation release gate](docs/EVALUATION_RELEASE_GATE.md)
+
+The critical path is:
+
+```text
+Foundation -> M0 math -> M1 Edu -> M2 tokenizer/data -> M3 inference
+           -> evaluation gate -> M4 Modern -> M5 performance
+           -> M6 FIM/code -> M7 Muon -> M8 SFT -> M9 150M release
+```
+
+M10 (350M/500M scale checks) and M11 (Transformers/vLLM/GGUF adapters) are post-V1 and cannot block the educational release. Their software harnesses may land before the deferred RTX session; measured decisions and compatibility claims remain gated on real canonical artifacts and external-runtime runs.
+
+## Planned repository layout
+
+```text
+configs/                 Frozen model/training presets
+src/minifrontier/        Readable neural core and runtime
+train/                   From-scratch pretraining and SFT loops
+scripts/                 Tokenizer, data, train, eval, sample, chat, export
+src/minifrontier/evaluation/  Language, code, FIM, and benchmark runtime
+eval/                    Versioned suites and evaluation-only fixtures
+labs/                    Single-variable educational experiments
+tests/                   Primitive, model, cache, generation, and I/O tests
+templates/               Simple chat serialization
+artifacts/               Ignored local run outputs and checkpoints
+tasks/                   Ordered Markdown and Jira-form backlog
+docs/                    Research references
+```
+
+## Bootstrap
+
+MiniFrontier requires Python 3.12 and [`uv`](https://docs.astral.sh/uv/). On Windows, install `uv`
+with any one of these methods.
+
+Official PowerShell installer:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Windows Package Manager:
+
+```powershell
+winget install astral-sh.uv
+```
+
+Or, when Python and `pip` are already available:
+
+```powershell
+python -m pip install --user --upgrade uv
+```
+
+Open a new terminal if the installer changed `PATH`, then verify the prerequisites:
+
+```powershell
+python --version
+uv --version
+```
+
+Windows users can then initialize the checkout with the idempotent bootstrap:
+
+```bat
+init.cmd cu130
+```
+
+Available PyTorch backends are `cpu`, `cu126`, `cu130`, and `cu132`; `cu130` is the project default. Choose the wheel supported by the installed NVIDIA driver, or use `cpu` for correctness work. Backends are mutually exclusive locked extras, so `init.cmd cpu` on a Dev Box and `init.cmd cu130` on an RTX machine use the same project metadata safely. The default sync installs the core and development groups. Add `--all-groups` when evaluation and plotting dependencies are needed. The script creates missing directories and package markers but never overwrites an existing file.
+
+The normal developer loop is:
+
+```bat
+uv sync --extra cpu --group dev
+uv run --extra cpu ruff check .
+uv run --extra cpu pytest
+```
+
+Do not start a serious training run until primitive tests, Edu overfit, data tests, checkpoint resume, and baseline evaluation gates pass.
+
+## Implemented CPU checks
+
+The current code supports the Edu/Modern path, resumable training, code/FIM, Muon, and assistant
+SFT/chat experiments:
+
+- validated 50M/150M Edu and Modern configuration files;
+- reference-tested RMSNorm and SwiGLU;
+- explicit causal and exact-width local masks;
+- readable scaled dot-product attention and fused-eligible causal SDPA parity;
+- split-half RoPE with parity against the Transformers Llama primitive;
+- pre-norm Transformer blocks, width/depth-aware initialization, and tied embeddings;
+- a frozen byte-level BPE contract, provenance validation, deterministic splitting, and EOS-aware packing;
+- preallocated KV-cached prefill/decode, robust sampling, exact checkpoint resume, and safe release export;
+- validation cross-entropy/perplexity/BPB, lm-eval adapter/config, code/FIM fixtures, and comparable benchmark records;
+- exact 53,361,152-parameter construction for the frozen 50M Edu preset;
+- native compact-K/V GQA, pre-RoPE QK-Norm, cached FlexAttention local masks, the 3:1
+  local/global schedule, and isolated global NoPE;
+- token-weighted gradient accumulation, update-indexed warmup/cosine AdamW, CPU-side batch
+  validation, exact deterministic checkpoint/data-cursor resume, optional compile and whole-block
+  activation checkpointing;
+- disk-backed exact/near deduplication, immutable hashed memory-mapped token shards, deterministic
+  resumable shard/row shuffle, direct pinned FineWeb-Edu preparation, stable splits across FIM
+  transforms, code-license/sensitive-data admission, deterministic 15% PSM FIM, and versioned
+  code/FIM scoring;
+- mixed-capacity KV caching with bounded local ring storage, full-history global storage, absolute
+  RoPE positions, wrap/rollback parity, and mask-free single-token local SDPA decode;
+- an annotated Newton-Schulz lab plus first-party `torch.optim.Muon`/AdamW disjoint parameter
+  partitioning, checkpointable combined optimization, and separate-LR matched A/B tooling;
+- deterministic Jinja chat serialization, provenance-complete conversation ingestion,
+  assistant-only token masks, whole-turn truncation, packing, resumable SFT, a versioned regression
+  prompt set, and bounded multi-turn chat generation;
+- draft/frozen training-protocol validation, release generation metadata, complete SHA-256
+  manifests with tamper detection, custom model cards, and matched Edu/Modern load audits;
+- a CPU-friendly 100-example overfit harness that reaches below `1e-3` nats/token;
+- a one-step packed-real-text 50M CPU integration scorecard in
+  [`reports/50m-edu-cpu-smoke.md`](reports/50m-edu-cpu-smoke.md).
+
+Additional bounded engineering records are
+[`reports/m4-50m-cpu-smoke.json`](reports/m4-50m-cpu-smoke.json),
+[`reports/m5-50m-cpu-inference-smoke.json`](reports/m5-50m-cpu-inference-smoke.json), and
+[`reports/m6-50m-cpu-smoke.json`](reports/m6-50m-cpu-smoke.json).
+
+Run the current verification suite with:
+
+```bat
+init.cmd cpu
+uv run --extra cpu pytest
+uv run --extra cpu ruff check .
+```
+
+The overfit proof can also be run directly:
+
+```bat
+uv run --extra cpu minifrontier-overfit --device cpu --steps 700
+```
+
+Run the bounded full-model integration gate or evaluate an exported release with:
+
+```bat
+uv run --extra cpu python scripts/smoke_50m.py
+uv run --extra cpu python scripts/smoke_modern_50m.py
+uv run --extra cpu python scripts/profile_model.py --help
+uv run --extra cpu python train/pretrain.py --help
+uv run --extra cpu python scripts/prepare_code.py --help
+uv run --extra cpu python scripts/compare_fim.py --help
+uv run --extra cpu python scripts/eval_code.py --help
+uv run --extra cpu python scripts/smoke_muon.py
+uv run --extra cpu python scripts/smoke_sft.py
+uv run --extra cpu python scripts/compare_optimizers.py --help
+uv run --extra cpu python train/sft.py --help
+uv run --extra cpu python scripts/eval_sft.py --help
+uv run --extra cpu python scripts/freeze_protocol.py --help
+uv run --extra cpu python scripts/audit_release.py --help
+uv run --extra cpu python scripts/preflight_scale.py --help
+uv run --extra cpu python scripts/assemble_scale_measurement.py --help
+uv run --extra cpu python scripts/decide_scale.py --help
+uv run --extra cpu python scripts/export_huggingface.py --help
+uv run --extra cpu python scripts/create_serving_fixture.py --help
+uv run --extra cpu python scripts/smoke_vllm_api.py --help
+uv run --extra cpu python scripts/convert_gguf.py --help
+uv run --extra cpu python scripts/quantize_gguf.py --help
+uv run --extra cpu python scripts/build_source_archive.py --output tmp/minifrontier-source.zip
+uv sync --extra cpu --group dev --group eval
+uv run --extra cpu python scripts/eval.py --release artifacts/my-release --help
+```
+
+The scorecard is intentionally an engineering result. Standard lm-eval datasets and the longer
+FineWeb-Edu smoke are not run or claimed on the CPU-only Dev Box.
+
+The source-archive command is the supported way to prepare a review or GitHub upload ZIP. It
+includes `.github/workflows/ci.yml`, fails instead of overwriting an existing archive unless
+`--force` is supplied, and excludes bytecode/caches, corpora, checkpoints, local artifacts, and
+third-party research/reference bundles. Model release artifacts are built and audited separately.
+
+## Development principles
+
+- Tests precede serious training.
+- Eager FP32 is the correctness baseline; optimized modes must prove parity.
+- Experiments change one variable and keep tokenizer, data, token budget, batch tokens, context, and evaluation matched.
+- Training and benchmark claims include their seeds, hardware, dependency versions, and raw run records.
+- Code training data is admitted only with explicit license and source provenance.
+- No important model line should depend on a high-level architecture framework.
+
+Repository instructions for coding agents are in [`AGENTS.md`](AGENTS.md); `CLAUDE.md` points to the same canonical rules.
+
+## Runtime compatibility status
+
+The current M9 release format is a safe, self-loading MiniFrontier/PyTorch artifact. M11 now provides
+a separate Transformers repository exporter with local Auto-class parity tests and a vLLM
+Transformers-backend validation harness. Canonical trained exports, a pinned Hub smoke, and the WSL2
+CUDA runtime gate remain open. llama.cpp/GGUF support is stricter: conversion still fails closed until
+a distinct upstream MiniFrontier C++ graph exists. Uploading files to Hugging Face makes them
+downloadable, but only the matching adapter and runtime gates earn a compatibility claim.
+
+The post-V1 [ecosystem-adapter tasks](tasks/backlog.md#m11--ecosystem-adapters-post-v1-not-part-of-the-neural-core)
+make each claim independently: MF-071 adds and parity-tests the Transformers/Hugging Face export;
+MF-072 validates vLLM on the Windows 11 machine through WSL2 CUDA; MF-073 adds high-precision
+GGUF/llama.cpp architecture support; and MF-074 produces and evaluates `Q4_K_M` artifacts on native
+Windows CUDA. The raw-PyTorch implementation and canonical checkpoints remain the reference.
+
+See the [ecosystem compatibility matrix](docs/ECOSYSTEM_COMPATIBILITY.md) for the exact Hugging Face,
+vLLM, OpenCode, Cline, Roo Code, Kilo Code, Aider, and tool-calling gates. Interactive native chat uses
+the concise [default general/coding system prompt](templates/system_prompt.md); it is guidance, not a
+technical requirement, and the CLI allows overriding or disabling it.
+
+### vLLM and Vercel AI SDK usage after the external-runtime gate
+
+> The export and client harness now exist, but this example is not a verified runtime claim until
+> MF-071 exports the canonical checkpoint and MF-072 passes native-versus-vLLM parity and
+> OpenAI-compatible API tests under WSL2 CUDA. See
+> [`docs/VLLM_WSL2.md`](docs/VLLM_WSL2.md).
+
+Install the [Vercel AI SDK OpenAI-compatible provider](https://ai-sdk.dev/providers/openai-compatible-providers):
+
+```bash
+npm install ai @ai-sdk/openai-compatible
+```
+
+Point it at the [vLLM OpenAI-compatible server](https://docs.vllm.ai/en/latest/serving/online_serving/openai_compatible_server/):
+
+```ts
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { generateText, streamText } from "ai";
+
+const vllm = createOpenAICompatible({
+  name: "vllm",
+  baseURL: "http://localhost:8000/v1",
+  apiKey: "local-key",
+  includeUsage: true,
+});
+
+const model = vllm.chatModel("minifrontier-150m-modern");
+
+const { text } = await generateText({
+  model,
+  system: "You are MiniFrontier, a helpful coding assistant.",
+  prompt: "Write a TypeScript binary search function.",
+});
+
+console.log(text);
+```
+
+`local-key` must match the key passed to `vllm serve --api-key`. Streaming uses the same provider:
+
+```ts
+const stream = streamText({
+  model,
+  prompt: "Explain binary search one step at a time.",
+});
+
+for await (const chunk of stream.textStream) {
+  process.stdout.write(chunk);
+}
+```
+
+Conversation messages use the same model and MiniFrontier chat template:
+
+```ts
+const result = await generateText({
+  model,
+  messages: [
+    { role: "system", content: "You are a concise coding assistant." },
+    { role: "user", content: "Explain this function." },
+  ],
+});
+```
+
+Ordinary application loops are also valid:
+
+```ts
+for (const prompt of prompts) {
+  const { text } = await generateText({ model, prompt });
+  console.log(text);
+}
+```
+
+`generateText`, `streamText`, prompts, system messages, conversation messages, and application-managed
+loops are transport-compatible with vLLM's Chat Completions API. Vercel AI SDK automatic tool loops
+are a different capability: MiniFrontier V1 has no trained tool/function-call protocol or vLLM tool
+parser, so `ToolLoopAgent`, tool-driven `stopWhen` loops, and agent tool use are not claimed.
+
+After MF-072, OpenCode, Cline, Roo Code, Kilo Code, and Aider may be pointed at the same base URL and
+served model ID for text-only chat/completion smokes. Configure the real 1K/2K context limit, disable
+tool calling where the client permits it, and do not infer reliable repository editing from a
+successful API connection: the canonical 150M model is an educational model with a small context, not
+a production coding-agent model.
+
+## Research background
+
+The local [`docs/`](docs/) collection and [`more-context.md`](more-context.md) contain the research trail. The frozen design in [`plan.md`](plan.md) draws on the original Transformer, RoPE, LLaMA-style RMSNorm/SwiGLU, GQA, modern QK normalization, hybrid local/global attention, FIM, and small-model training practice. The [inference reference review](docs/INFERENCE_REFERENCE_REVIEW.md) records the exact local Grok-1, vLLM, SGLang, and Llama-oriented snapshots used to audit M3–M5. These references motivate the implementation; they are not copied as a framework dependency.
+
+The [research source review](docs/RESEARCH_SOURCE_REVIEW.md) identifies every local PDF/context
+snapshot by hash, separates historical foundations from out-of-scope frontier mechanisms, and
+records which conclusions changed the remaining tasks.
+
+## License
+
+MiniFrontier source is available under the [Apache License 2.0](LICENSE). Research references, training datasets, trained weights, and other third-party artifacts retain their own terms; see [third-party notices](THIRD_PARTY_NOTICES.md) and the [data-governance policy](docs/DATA_GOVERNANCE.md).
