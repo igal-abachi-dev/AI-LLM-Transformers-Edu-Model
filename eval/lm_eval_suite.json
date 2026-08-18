@@ -1,0 +1,7 @@
+{
+  "apply_chat_template": false,
+  "fewshot": 0,
+  "optional_tasks": ["gsm8k"],
+  "required_tasks": ["arc_easy", "hellaswag", "piqa"],
+  "schema_version": 1
+}

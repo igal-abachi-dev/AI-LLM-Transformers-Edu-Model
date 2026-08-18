@@ -1,0 +1,126 @@
+{
+  "batch_size": 1,
+  "context_length": "config_default",
+  "cpu_checkpoint_smoke": {
+    "checkpoint_logits_exact": true,
+    "data_cursor": {
+      "cursor": 1
+    },
+    "loss_finite": true,
+    "projection": "tiny_modern_not_scale_performance",
+    "status": "passed",
+    "trainer_state": {
+      "completed_updates": 1
+    }
+  },
+  "models": {
+    "350m-modern": {
+      "config": {
+        "attention_impl": "auto",
+        "attention_pattern": "hybrid",
+        "d_ff": 2816,
+        "d_model": 1024,
+        "dropout": 0.0,
+        "global_position_encoding": "rope",
+        "init_std": null,
+        "local_window": 512,
+        "max_seq_len": 2048,
+        "n_heads": 16,
+        "n_kv_heads": 4,
+        "n_layers": 28,
+        "norm_eps": 1e-06,
+        "preset": "modern",
+        "qk_norm": true,
+        "rope_theta": 10000.0,
+        "tie_embeddings": true,
+        "vocab_size": 16384
+      },
+      "config_sha256": "efd51227d22ee49cb3434a376e0eed2036150664c6813afafbaa136c691aaa1e",
+      "cuda": {
+        "decode_tokens_per_second": "unmeasured",
+        "peak_allocated_vram_bytes": "unmeasured",
+        "peak_reserved_vram_bytes": "unmeasured",
+        "status": "unmeasured",
+        "training_tokens_per_second": "unmeasured"
+      },
+      "estimates": {
+        "adamw_state_bytes": 2659684352,
+        "assumptions": [
+          "analytic lower bounds, not measured allocator or peak VRAM",
+          "BF16 parameters/gradients and FP32 AdamW first/second moments by default",
+          "training estimate excludes activations, temporary kernels, CUDA context, and fragmentation",
+          "KV estimate includes K and V only and uses compact n_kv_heads"
+        ],
+        "bounded_local_kv_bytes": 25690112,
+        "full_history_kv_bytes": 58720256,
+        "gradient_bytes": 664921088,
+        "inference_bounded_local_lower_bound_bytes": 690611200,
+        "inference_full_history_lower_bound_bytes": 723641344,
+        "parameter_bytes": 664921088,
+        "parameter_count": 332460544,
+        "training_lower_bound_bytes": 3989526528
+      }
+    },
+    "500m-modern": {
+      "config": {
+        "attention_impl": "auto",
+        "attention_pattern": "hybrid",
+        "d_ff": 3456,
+        "d_model": 1280,
+        "dropout": 0.0,
+        "global_position_encoding": "rope",
+        "init_std": null,
+        "local_window": 512,
+        "max_seq_len": 2048,
+        "n_heads": 20,
+        "n_kv_heads": 4,
+        "n_layers": 24,
+        "norm_eps": 1e-06,
+        "preset": "modern",
+        "qk_norm": true,
+        "rope_theta": 10000.0,
+        "tie_embeddings": true,
+        "vocab_size": 16384
+      },
+      "config_sha256": "5846ae0d8e2449afea2e6aa75d218a15efdc14e4cf6d8181e7985da4fb610e98",
+      "cuda": {
+        "decode_tokens_per_second": "unmeasured",
+        "peak_allocated_vram_bytes": "unmeasured",
+        "peak_reserved_vram_bytes": "unmeasured",
+        "status": "unmeasured",
+        "training_tokens_per_second": "unmeasured"
+      },
+      "estimates": {
+        "adamw_state_bytes": 3471312896,
+        "assumptions": [
+          "analytic lower bounds, not measured allocator or peak VRAM",
+          "BF16 parameters/gradients and FP32 AdamW first/second moments by default",
+          "training estimate excludes activations, temporary kernels, CUDA context, and fragmentation",
+          "KV estimate includes K and V only and uses compact n_kv_heads"
+        ],
+        "bounded_local_kv_bytes": 22020096,
+        "full_history_kv_bytes": 50331648,
+        "gradient_bytes": 867828224,
+        "inference_bounded_local_lower_bound_bytes": 889848320,
+        "inference_full_history_lower_bound_bytes": 918159872,
+        "parameter_bytes": 867828224,
+        "parameter_count": 433914112,
+        "training_lower_bound_bytes": 5206969344
+      }
+    }
+  },
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.12.1",
+  "quality_claim": false,
+  "scale_decision": "unmeasured",
+  "schema_version": 1,
+  "status": "preflight_only",
+  "stop_criteria": {
+    "max_nonfinite_updates": 0,
+    "max_oom_failures": 1,
+    "max_peak_vram_fraction": 0.95,
+    "max_wall_hours": 24.0,
+    "min_training_updates": 20
+  },
+  "torch": "2.13.0+cpu"
+}

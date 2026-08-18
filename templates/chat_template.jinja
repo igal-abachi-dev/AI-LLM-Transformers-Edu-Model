@@ -1,0 +1,4 @@
+<|bos|>{% for message in messages %}<|{{ message.role }}|>
+{{ message.content }}<|eos|>
+{% endfor %}{% if add_generation_prompt %}<|assistant|>
+{% endif -%}

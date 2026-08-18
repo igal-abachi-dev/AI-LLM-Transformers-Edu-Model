@@ -1,0 +1,59 @@
+{
+  "contamination": {
+    "exact_fixture_ids": [],
+    "max_hamming_distance": 3,
+    "near_fixture_ids": []
+  },
+  "fixture_sha256": "9da38717db4d2b3faa01fc7e65f0f96eb11dd3190afd3d419c894b678bbda9f8",
+  "general_lm_regression": {
+    "quality_claim": false,
+    "status": "not_provided"
+  },
+  "limitations": [
+    "Small deterministic fixtures measure pipeline correctness, not broad coding quality.",
+    "Functional execution is allowed only for repository-owned trusted fixtures.",
+    "Report variance across training seeds before making an effect claim."
+  ],
+  "metrics": {
+    "compile_rate": 1.0,
+    "count": 4,
+    "exact_rate": 1.0,
+    "functional_count": 4,
+    "functional_rate": 1.0,
+    "syntax_valid_rate": 1.0
+  },
+  "results": [
+    {
+      "compiles": true,
+      "exact": true,
+      "fixture_id": "completion-add-v1",
+      "functional": true,
+      "kind": "completion",
+      "syntax_valid": true
+    },
+    {
+      "compiles": true,
+      "exact": true,
+      "fixture_id": "fim-clamp-v1",
+      "functional": true,
+      "kind": "fim",
+      "syntax_valid": true
+    },
+    {
+      "compiles": true,
+      "exact": true,
+      "fixture_id": "repair-colon-v1",
+      "functional": true,
+      "kind": "syntax_repair",
+      "syntax_valid": true
+    },
+    {
+      "compiles": true,
+      "exact": true,
+      "fixture_id": "function-reverse-v1",
+      "functional": true,
+      "kind": "unit_function",
+      "syntax_valid": true
+    }
+  ]
+}

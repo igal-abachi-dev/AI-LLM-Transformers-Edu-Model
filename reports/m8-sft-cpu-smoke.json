@@ -1,0 +1,58 @@
+{
+  "assistant_target_tokens_per_pack": 3,
+  "config": {
+    "attention_impl": "sdpa",
+    "attention_pattern": "full",
+    "d_ff": 32,
+    "d_model": 16,
+    "dropout": 0.0,
+    "global_position_encoding": "rope",
+    "init_std": null,
+    "local_window": 16,
+    "max_seq_len": 32,
+    "n_heads": 2,
+    "n_kv_heads": 2,
+    "n_layers": 1,
+    "norm_eps": 1e-06,
+    "preset": "edu",
+    "qk_norm": false,
+    "rope_theta": 10000.0,
+    "tie_embeddings": true,
+    "vocab_size": 293
+  },
+  "final_loss": 0.0005752458819188178,
+  "limitations": [
+    "One original example proves masking/learning integration only.",
+    "It is not evidence of general instruction-following quality."
+  ],
+  "quality_claim": false,
+  "reference_scorer_check": {
+    "count": 2,
+    "non_empty_rate": 0.5,
+    "required_match_rate": 1.0,
+    "rows": [
+      {
+        "category": "instruction",
+        "id": "exact",
+        "non_empty": true,
+        "required_match": true,
+        "required_substrings": [
+          "4"
+        ],
+        "response": "4"
+      },
+      {
+        "category": "unknown",
+        "id": "missing",
+        "non_empty": false,
+        "required_match": true,
+        "required_substrings": [],
+        "response": ""
+      }
+    ]
+  },
+  "rendered_template": "<|bos|><|user|>\n2+2?<|eos|>\n<|assistant|>\n4<|eos|>\n",
+  "status": "bounded_engineering_smoke",
+  "target_tokens": 360,
+  "updates": 120
+}

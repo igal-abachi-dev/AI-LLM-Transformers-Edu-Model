@@ -1,0 +1,4 @@
+{"id":"completion-add-v1","prediction":"return a + b\n"}
+{"id":"fim-clamp-v1","prediction":"max(low, min(value, high))"}
+{"id":"repair-colon-v1","prediction":"def is_even(value):\n    return value % 2 == 0\n"}
+{"id":"function-reverse-v1","prediction":"return list(reversed(items))\n"}

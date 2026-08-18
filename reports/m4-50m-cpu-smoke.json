@@ -1,0 +1,26 @@
+{
+  "comparison": {
+    "same_batch": true,
+    "same_context": true,
+    "same_tokenizer": true,
+    "same_tokens": true,
+    "token_sha256": "73e01fe29516e4f88f59753861b5e7628cdc723e47e0b5affc9b7f4d882d5106"
+  },
+  "edu": {
+    "cache_allocated_bytes_at_64_tokens": 3670016,
+    "finite_logits": true,
+    "initial_loss": 10.17920970916748,
+    "parameters": 53361152,
+    "preset": "edu"
+  },
+  "modern": {
+    "cache_allocated_bytes_at_64_tokens": 917504,
+    "finite_logits": true,
+    "initial_loss": 9.754620552062988,
+    "parameters": 47857920,
+    "preset": "modern"
+  },
+  "quality_claim": false,
+  "speed_claim": false,
+  "status": "engineering_smoke"
+}

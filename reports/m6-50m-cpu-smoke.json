@@ -1,0 +1,64 @@
+{
+  "baseline": {
+    "completed_updates": 1,
+    "consumed_target_tokens": 15,
+    "last_gradient_norm": 135.6398468017578,
+    "last_learning_rate": 3e-05,
+    "last_loss": 10.912714958190918
+  },
+  "fim": {
+    "completed_updates": 1,
+    "consumed_target_tokens": 15,
+    "last_gradient_norm": 150.31707763671875,
+    "last_learning_rate": 3e-05,
+    "last_loss": 10.231464385986328
+  },
+  "inputs": {
+    "baseline_manifest_sha256": "07dc4d97afdcf8e78520533d541ec9b9dc07261c59ee1181320f5ce80c820322",
+    "fim_manifest_sha256": "b3081cf4f0b9c8ad7a344b72d7789ccf200a55b2095ee713fdd95d02c9bb04b1",
+    "sequence_length": 16
+  },
+  "limitations": [
+    "Only the input mixture may differ between arms.",
+    "A bounded CPU run proves integration and cannot establish a coding effect size."
+  ],
+  "model_config": {
+    "attention_impl": "auto",
+    "attention_pattern": "hybrid",
+    "d_ff": 1408,
+    "d_model": 512,
+    "dropout": 0.0,
+    "global_position_encoding": "rope",
+    "init_std": null,
+    "local_window": 512,
+    "max_seq_len": 1024,
+    "n_heads": 8,
+    "n_kv_heads": 2,
+    "n_layers": 14,
+    "norm_eps": 1e-06,
+    "preset": "modern",
+    "qk_norm": true,
+    "rope_theta": 10000.0,
+    "tie_embeddings": true,
+    "vocab_size": 16384
+  },
+  "quality_claim": false,
+  "seed": 42,
+  "status": "bounded_engineering_comparison",
+  "training_config": {
+    "activation_checkpointing": false,
+    "attention_impl": "sdpa",
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "decay_embeddings": true,
+    "gradient_accumulation_steps": 1,
+    "gradient_clip": 1.0,
+    "learning_rate": 0.0003,
+    "max_updates": 1,
+    "min_learning_rate": 3e-05,
+    "precision": "float32",
+    "validation_interval": 0,
+    "warmup_updates": 0,
+    "weight_decay": 0.1
+  }
+}

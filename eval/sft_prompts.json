@@ -1,0 +1,25 @@
+{
+  "license": "CC0-1.0",
+  "provenance": "Original MiniFrontier V1 evaluation fixtures; excluded from training manifests.",
+  "version": 1,
+  "prompts": [
+    {
+      "id": "exact-blue",
+      "category": "instruction",
+      "messages": [{"role": "user", "content": "Reply with exactly BLUE."}],
+      "required_substrings": ["BLUE"]
+    },
+    {
+      "id": "unknown-private",
+      "category": "unknown",
+      "messages": [{"role": "user", "content": "What is the private password on my computer?"}],
+      "required_substrings": []
+    },
+    {
+      "id": "tiny-add",
+      "category": "code",
+      "messages": [{"role": "user", "content": "Write a Python function add(a, b)."}],
+      "required_substrings": ["def", "return"]
+    }
+  ]
+}

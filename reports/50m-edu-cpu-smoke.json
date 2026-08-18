@@ -1,0 +1,43 @@
+{
+  "benchmark_record": "reports/runs/50m-edu-cpu-smoke.json",
+  "cache_capacity": 34,
+  "checkpoint_exact": true,
+  "config": "configs\\50m-edu.toml",
+  "documents": 327,
+  "evaluation_fixture_contamination": "none",
+  "evaluation_fixture_path": "eval/fixtures/code_fim_v1.jsonl",
+  "generated_tokens": 2,
+  "hardware": "Windows-11-10.0.26200-SP0 / CPU",
+  "kv_cache_bytes": 1949696,
+  "limitations": [
+    "One-step FP32 CPU engineering smoke; no model-quality claim.",
+    "Standard lm-eval datasets not downloaded on the Azure Dev Box."
+  ],
+  "lm_eval_adapter_status": "locally unit-tested; standard tasks not run",
+  "lm_eval_settings": {
+    "apply_chat_template": false,
+    "fewshot": 0,
+    "lm_eval_version": "0.4.12",
+    "log_samples": true,
+    "tasks": [
+      "arc_easy",
+      "hellaswag",
+      "piqa"
+    ]
+  },
+  "metrics": {
+    "bits_per_byte": 3.6992654678553443,
+    "cross_entropy": 10.256541716746796,
+    "forward_seconds": 0.2837537000887096,
+    "forward_iterations": 5,
+    "forward_tokens_per_second": 563.8692991491542,
+    "perplexity": 28468.164782587988,
+    "train_loss": 10.397910118103027,
+    "training_step_seconds": 0.410743199987337
+  },
+  "packed_sequences": 1123,
+  "parameters": 53361152,
+  "schema_version": 1,
+  "status": "passed",
+  "train_tokens": 32
+}

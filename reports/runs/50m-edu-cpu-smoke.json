@@ -1,0 +1,28 @@
+{
+  "comparison": {
+    "batch_tokens": 32,
+    "context_length": 32,
+    "data_id": "de172b95bce28e18e22eac46e2877100ee31fbba46f457b6bd5328404c510512",
+    "evaluation_id": "validation-v1+lm-eval-0.4.12-suite-config",
+    "seed_policy": "torch/numpy/python=2026",
+    "token_budget": 32,
+    "tokenizer_hash": "e005c1558d6a52b5b89c5a7e375570f520eebea982d23ba2b85429abbf95c084"
+  },
+  "hardware": "Windows-11-10.0.26200-SP0 / CPU",
+  "inference_tokens_per_second": 563.8692991491542,
+  "kv_cache_bytes": 1949696,
+  "notes": [
+    "One-step FP32 CPU engineering smoke; no model-quality claim.",
+    "Standard lm-eval datasets not downloaded on the Azure Dev Box."
+  ],
+  "peak_vram_bytes": 0,
+  "quality": {
+    "bits_per_byte": 3.6992654678553443,
+    "cross_entropy": 10.256541716746796,
+    "perplexity": 28468.164782587988
+  },
+  "run_id": "50m-edu-cpu-smoke-2026-08-17",
+  "schema_version": 1,
+  "training_tokens_per_second": 77.90755878852418,
+  "wall_time_seconds": 5.867978100082837
+}
