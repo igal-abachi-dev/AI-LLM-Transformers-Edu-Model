@@ -1,8 +1,12 @@
+# AI-LLM-Transformers-Edu-Model
+AI LLM implementation for learning about transformers and ai models
+inspired by Muse-Glimmer / Llama4 / Qwen3/ Gpt...
+
 # MiniFrontier
 
 MiniFrontier is a from-scratch, educational decoder-only language model built with raw PyTorch for a single consumer GPU. Its goal is to make the path from classic Transformer fundamentals to a small set of modern LLM techniques visible, testable, and measurable.
 
-> **Status:** M4 Modern, the CPU-verifiable M5 path, M6 code/FIM, M7 Muon, and M8 assistant-only
+> **task Status:** M4 Modern, the CPU-verifiable M5 path, M6 code/FIM, M7 Muon, and M8 assistant-only
 > SFT/chat are implemented. M9 protocol/export/release validation tooling is implemented, while the
 > real matched 150M training artifacts remain open. M10 preflight and the M11 Transformers/export,
 > external-runtime, and GGUF orchestration paths are implemented; hardware/upstream-runtime gates
