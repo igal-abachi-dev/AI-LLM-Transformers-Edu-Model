@@ -14,6 +14,9 @@ MiniFrontier is a from-scratch, educational decoder-only language model built wi
 > default non-slow gate). By user scheduling, CUDA profiling and quality-scale runs occur after M10
 > implementation; no GPU performance or model-quality result is claimed yet.
 
+## Introduction (read first)
+- [Introduction to LLM / Transformers / Attention](introduction.md)
+
 ## What we are building
 
 One compact codebase exposes two presets:
