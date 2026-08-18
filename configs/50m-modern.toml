@@ -1,0 +1,17 @@
+preset = "modern"
+vocab_size = 16384
+max_seq_len = 1024
+n_layers = 14
+d_model = 512
+n_heads = 8
+n_kv_heads = 2
+d_ff = 1408
+norm_eps = 1e-6
+rope_theta = 10000.0
+qk_norm = true
+attention_pattern = "hybrid"
+local_window = 512
+global_position_encoding = "rope"
+dropout = 0.0
+tie_embeddings = true
+attention_impl = "auto"

@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Jira issue-export-style backlog. See tasks/README.md before importing. -->
+<rss version="0.92">
+  <channel>
+    <title>MiniFrontier V1 implementation backlog</title>
+    <description>Dependency-ordered work items derived from plan.md. Detailed acceptance criteria are canonical in tasks/backlog.md.</description>
+    <language>en-us</language>
+    <generator>MiniFrontier planning</generator>
+
+    <item>
+      <title>[MF-001] Bootstrap the packaged Python project</title><project key="MF">MiniFrontier</project><key>MF-1</key><component>Foundation</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Initialize the uv Python 3.12 package and selected PyTorch backend. Acceptance: sync/import succeeds, lockfiles exist, and reruns never overwrite files. Depends on: none.]]></description><labels><label>MF-001</label><label>foundation</label><label>m0</label></labels>
+    </item>
+    <item>
+      <title>[MF-002] Configure developer tooling and CI</title><project key="MF">MiniFrontier</project><key>MF-2</key><component>Foundation</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Configure Ruff, pytest, policy, ignores, and CPU GitHub Actions. Acceptance: lint and fast tests pass locally and in CI. Depends on: MF-001.]]></description><labels><label>MF-002</label><label>foundation</label><label>ci</label></labels>
+    </item>
+    <item>
+      <title>[MF-003] Create the final package and command skeleton</title><project key="MF">MiniFrontier</project><key>MF-3</key><component>Foundation</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Create the planned source, train, scripts, eval, labs, tests, configs, templates, and artifacts layout. Acceptance: modules import safely and stubs cannot silently succeed. Depends on: MF-001.]]></description><labels><label>MF-003</label><label>foundation</label></labels>
+    </item>
+    <item>
+      <title>[MF-004] Implement and validate model configuration</title><project key="MF">MiniFrontier</project><key>MF-4</key><component>Foundation</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Implement ModelConfig and frozen TOML presets. Acceptance: invalid head/window/position combinations fail and parameter targets are tested. Depends on: MF-003.]]></description><labels><label>MF-004</label><label>foundation</label><label>config</label></labels>
+    </item>
+    <item>
+      <title>[MF-005] Define reproducibility and run metadata</title><project key="MF">MiniFrontier</project><key>MF-5</key><component>Foundation</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Add deterministic seeding and run-record schema. Acceptance: code/config/dependency/hardware/token/timing/memory/loss metadata are captured. Depends on: MF-002, MF-004.]]></description><labels><label>MF-005</label><label>foundation</label><label>reproducibility</label></labels>
+    </item>
+    <item>
+      <title>[MF-006] Freeze repository and data licensing policy</title><project key="MF">MiniFrontier</project><key>MF-6</key><component>Foundation</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Select repository license and define provenance/no-secrets rules. Acceptance: public license is explicit and each dataset records source, revision, license, and hash. Depends on: MF-001.]]></description><labels><label>MF-006</label><label>foundation</label><label>licensing</label></labels>
+    </item>
+
+    <item>
+      <title>[MF-007] Implement RMSNorm test-first</title><project key="MF">MiniFrontier</project><key>MF-7</key><component>M0 Math</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Implement explicit bias-free RMSNorm. Acceptance: shape/dtype/device and output/gradient reference parity pass. Depends on: MF-003, MF-004.]]></description><labels><label>MF-007</label><label>m0</label><label>model-core</label></labels>
+    </item>
+    <item>
+      <title>[MF-008] Implement SwiGLU test-first</title><project key="MF">MiniFrontier</project><key>MF-8</key><component>M0 Math</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Implement bias-free three-projection SwiGLU. Acceptance: output/gradient reference parity and dimensions pass. Depends on: MF-003, MF-004.]]></description><labels><label>MF-008</label><label>m0</label><label>model-core</label></labels>
+    </item>
+    <item>
+      <title>[MF-009] Implement causal and local mask helpers</title><project key="MF">MiniFrontier</project><key>MF-9</key><component>M0 Math</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Implement full causal and offset-aware sliding-window masks. Acceptance: future/out-of-window keys are blocked for prefill and decode. Depends on: MF-003, MF-004.]]></description><labels><label>MF-009</label><label>m0</label><label>attention</label></labels>
+    </item>
+    <item>
+      <title>[MF-010] Implement manual scaled dot-product attention</title><project key="MF">MiniFrontier</project><key>MF-10</key><component>M0 Math</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Implement QK transpose, scaling, mask, softmax, and PV teaching path. Acceptance: hand values, masked probabilities, and finite backward pass. Depends on: MF-009.]]></description><labels><label>MF-010</label><label>m0</label><label>attention</label></labels>
+    </item>
+    <item>
+      <title>[MF-011] Implement shifted language-model loss</title><project key="MF">MiniFrontier</project><key>MF-11</key><component>M0 Math</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Implement next-token CE and optional ignore/loss masks. Acceptance: shift direction and masked denominator edge cases pass. Depends on: MF-003.]]></description><labels><label>MF-011</label><label>m0</label><label>loss</label></labels>
+    </item>
+    <item>
+      <title>[MF-012] Prove the primitives learn a tiny batch</title><project key="MF">MiniFrontier</project><key>MF-12</key><component>M0 Math</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Create deterministic CPU micro-model overfit proof. Acceptance: loss crosses a bounded threshold and gradients stay finite. Depends on: MF-007, MF-008, MF-010, MF-011.]]></description><labels><label>MF-012</label><label>m0</label><label>training</label></labels>
+    </item>
+
+    <item>
+      <title>[MF-013] Implement RoPE with external primitive parity</title><project key="MF">MiniFrontier</project><key>MF-13</key><component>M1 Edu model</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Implement cached RoPE with documented rotate-half convention. Acceptance: invariant/offset tests and trusted Transformers primitive parity pass. Depends on: MF-004.]]></description><labels><label>MF-013</label><label>m1</label><label>rope</label></labels>
+    </item>
+    <item>
+      <title>[MF-014] Implement full causal MHA</title><project key="MF">MiniFrontier</project><key>MF-14</key><component>M1 Edu model</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Build bias-free Q/K/V/O projections, RoPE, and manual full causal MHA. Acceptance: shapes/head transforms/causality pass. Depends on: MF-007, MF-009, MF-010, MF-013.]]></description><labels><label>MF-014</label><label>m1</label><label>attention</label></labels>
+    </item>
+    <item>
+      <title>[MF-015] Add the PyTorch SDPA execution path</title><project key="MF">MiniFrontier</project><key>MF-15</key><component>M1 Edu model</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Add optimized SDPA while retaining manual mode. Acceptance: full causal SDPA uses attn_mask=None/is_causal=True for fused-kernel eligibility; cache offsets are correct; explicit FP32 output/gradient parity passes. Depends on: MF-014.]]></description><labels><label>MF-015</label><label>m1</label><label>attention</label><label>sdpa</label></labels>
+    </item>
+    <item>
+      <title>[MF-016] Implement the pre-norm Transformer block</title><project key="MF">MiniFrontier</project><key>MF-16</key><component>M1 Edu model</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Implement readable residual attention and FFN block. Acceptance: ordering, shape, and dropout behavior are tested. Depends on: MF-007, MF-008, MF-015.]]></description><labels><label>MF-016</label><label>m1</label><label>model-core</label></labels>
+    </item>
+    <item>
+      <title>[MF-017] Implement the MiniFrontier language model</title><project key="MF">MiniFrontier</project><key>MF-17</key><component>M1 Edu model</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Assemble embedding, blocks, norm, tied head, depth-aware initialization, logits/loss. Acceptance: tying, shapes/counts/bounds pass; base std scales with width and residual outputs by 1/sqrt(2*n_layers); hot paths avoid validation .item() synchronizations. Depends on: MF-004, MF-016.]]></description><labels><label>MF-017</label><label>m1</label><label>model-core</label></labels>
+    </item>
+    <item>
+      <title>[MF-018] Complete Edu correctness and gradient tests</title><project key="MF">MiniFrontier</project><key>MF-18</key><component>M1 Edu model</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Add model causality, finite loss/backward, device/state, deterministic eval tests. Acceptance: clean fast CPU suite passes. Depends on: MF-017.]]></description><labels><label>MF-018</label><label>m1</label><label>tests</label></labels>
+    </item>
+    <item>
+      <title>[MF-019] Prove Edu learning and validate 50M construction</title><project key="MF">MiniFrontier</project><key>MF-19</key><component>M1 Edu model</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Run a 100-example faithful reduced-config CPU overfit and instantiate frozen 50M Edu. Acceptance: loss reaches below 1e-3 nats/token, evidence persists, sample continues correctly, and 50M has exactly 53,361,152 trainable parameters. Depends on: MF-012, MF-018.]]></description><labels><label>MF-019</label><label>m1</label><label>training</label></labels>
+    </item>
+
+    <item>
+      <title>[MF-020] Freeze tokenizer contract and token IDs</title><project key="MF">MiniFrontier</project><key>MF-20</key><component>M2 Tokenizer and data</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Freeze 16K byte-BPE and all reserved special tokens. Acceptance: IDs, normalization, pre-tokenization, and boundaries are documented and immutable. Depends on: MF-004, MF-006.]]></description><labels><label>MF-020</label><label>m2</label><label>tokenizer</label></labels>
+    </item>
+    <item>
+      <title>[MF-021] Build the tokenizer training CLI</title><project key="MF">MiniFrontier</project><key>MF-21</key><component>M2 Tokenizer and data</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Build deterministic streaming byte-BPE trainer. Acceptance: stable special IDs and Unicode round trips. Depends on: MF-020.]]></description><labels><label>MF-021</label><label>m2</label><label>tokenizer</label></labels>
+    </item>
+    <item>
+      <title>[MF-022] Test tokenizer correctness and quality</title><project key="MF">MiniFrontier</project><key>MF-22</key><component>M2 Tokenizer and data</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Add round-trip, special, code, multilingual, and compression smoke tests. Acceptance: reserved tokens stay atomic and versioned fixture passes. Depends on: MF-021.]]></description><labels><label>MF-022</label><label>m2</label><label>tokenizer</label><label>tests</label></labels>
+    </item>
+    <item>
+      <title>[MF-023] Define document and provenance schemas</title><project key="MF">MiniFrontier</project><key>MF-23</key><component>M2 Tokenizer and data</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Define normalized document and source manifest. Acceptance: source/revision/license/language/ID/split/hash required. Depends on: MF-006.]]></description><labels><label>MF-023</label><label>m2</label><label>data</label><label>licensing</label></labels>
+    </item>
+    <item>
+      <title>[MF-024] Implement streaming source adapters</title><project key="MF">MiniFrontier</project><key>MF-24</key><component>M2 Tokenizer and data</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Add bounded/resumable FineWeb-Edu and local-code manifest adapters. Acceptance: deterministic shuffle/resume without full download. Depends on: MF-023.]]></description><labels><label>MF-024</label><label>m2</label><label>data</label></labels>
+    </item>
+    <item>
+      <title>[MF-025] Filter, deduplicate, tokenize, split, and pack</title><project key="MF">MiniFrontier</project><key>MF-25</key><component>M2 Tokenizer and data</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Build fixed-length EOS-aware packed pipeline. Acceptance: no token loss/duplication/leakage and correct batch shapes. Depends on: MF-022, MF-024.]]></description><labels><label>MF-025</label><label>m2</label><label>data</label></labels>
+    </item>
+    <item>
+      <title>[MF-026] Build adversarial data-pipeline tests</title><project key="MF">MiniFrontier</project><key>MF-26</key><component>M2 Tokenizer and data</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Test empty/long/Unicode/duplicate/resume/short-pack/worker cases. Acceptance: deterministic network-free tests catch leakage and off-by-one errors. Depends on: MF-025.]]></description><labels><label>MF-026</label><label>m2</label><label>data</label><label>tests</label></labels>
+    </item>
+    <item>
+      <title>[MF-027] Run the 50M Edu real-data smoke train</title><project key="MF">MiniFrontier</project><key>MF-27</key><component>M2 Tokenizer and data</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Run bounded full-50M real packed data integration on the CPU Dev Box. Acceptance: finite forward/backward, metrics, cache, and exact checkpoint reload without a quality claim. The 1-5M-token home-RTX continuation is tracked by MF-063. Depends on: MF-019, MF-026.]]></description><labels><label>MF-027</label><label>m2</label><label>training</label></labels>
+    </item>
+
+    <item>
+      <title>[MF-028] Design and implement the KVCache API</title><project key="MF">MiniFrontier</project><key>MF-28</key><component>M3 Inference</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Implement per-layer B/KV/S/D cache invariants. Acceptance: append/reset/reuse/overflow tested and training is cache-free. Depends on: MF-014, MF-017.]]></description><labels><label>MF-028</label><label>m3</label><label>cache</label></labels>
+    </item>
+    <item>
+      <title>[MF-029] Implement prefill and token-by-token decode</title><project key="MF">MiniFrontier</project><key>MF-29</key><component>M3 Inference</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Implement offset-correct cached prefill/decode. Acceptance: cached/full logits agree across prompt/decode lengths and batches. Depends on: MF-028.]]></description><labels><label>MF-029</label><label>m3</label><label>cache</label><label>generation</label></labels>
+    </item>
+    <item>
+      <title>[MF-030] Implement robust sampling</title><project key="MF">MiniFrontier</project><key>MF-30</key><component>M3 Inference</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Add greedy, temperature, top-k, top-p, per-row EOS, limits, seed. Acceptance: deterministic zero-temp and argument/batch edge tests. Depends on: MF-029.]]></description><labels><label>MF-030</label><label>m3</label><label>generation</label></labels>
+    </item>
+    <item>
+      <title>[MF-031] Implement training checkpoint and exact resume</title><project key="MF">MiniFrontier</project><key>MF-31</key><component>M3 Inference</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Save safetensors plus optimizer/scheduler/RNG/data/trainer/config state. Acceptance: tied logits survive and resumed fixture matches uninterrupted run. Depends on: MF-005, MF-017.]]></description><labels><label>MF-031</label><label>m3</label><label>checkpoint</label></labels>
+    </item>
+    <item>
+      <title>[MF-032] Implement published-model export/import</title><project key="MF">MiniFrontier</project><key>MF-32</key><component>M3 Inference</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Export model/config/tokenizer/template/card release folder. Acceptance: fresh process reproduces logits and generation from folder only. Depends on: MF-021, MF-031.]]></description><labels><label>MF-032</label><label>m3</label><label>release</label></labels>
+    </item>
+    <item>
+      <title>[MF-033] Add sample and base-chat CLIs</title><project key="MF">MiniFrontier</project><key>MF-33</key><component>M3 Inference</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Add prompt and interactive base-model entry points. Acceptance: help, stdin, seed/device/config, and safe errors pass. Depends on: MF-030, MF-032.]]></description><labels><label>MF-033</label><label>m3</label><label>cli</label></labels>
+    </item>
+
+    <item>
+      <title>[MF-034] Implement language-model validation metrics</title><project key="MF">MiniFrontier</project><key>MF-34</key><component>Evaluation gate</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Implement CE, perplexity, BPB with weighted aggregation. Acceptance: hand fixtures and padding/partial/determinism tests pass. Depends on: MF-025, MF-031.]]></description><labels><label>MF-034</label><label>evaluation</label><label>metrics</label></labels>
+    </item>
+    <item>
+      <title>[MF-035] Build the lm-eval adapter and small suite</title><project key="MF">MiniFrontier</project><key>MF-35</key><component>Evaluation gate</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Adapt ARC-Easy, HellaSwag, PIQA, optional GSM8K. Acceptance: local smoke records harness version/settings and separates failures from scores. Depends on: MF-030, MF-032.]]></description><labels><label>MF-035</label><label>evaluation</label><label>lm-eval</label></labels>
+    </item>
+    <item>
+      <title>[MF-036] Version the coding/FIM evaluation fixtures</title><project key="MF">MiniFrontier</project><key>MF-36</key><component>Evaluation gate</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Create licensed/original completion, FIM, repair, and unit-test fixtures. Acceptance: contamination controls and scoring tests pass. Depends on: MF-006, MF-020.]]></description><labels><label>MF-036</label><label>evaluation</label><label>code</label><label>fim</label></labels>
+    </item>
+    <item>
+      <title>[MF-037] Implement experiment and benchmark recording</title><project key="MF">MiniFrontier</project><key>MF-37</key><component>Evaluation gate</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Record quality, throughput, wall time, peak VRAM, inference, cache bytes. Acceptance: schema validation and matched-comparison guards pass. Depends on: MF-005, MF-034.]]></description><labels><label>MF-037</label><label>evaluation</label><label>benchmark</label></labels>
+    </item>
+    <item>
+      <title>[MF-038] Publish the 50M Edu baseline scorecard</title><project key="MF">MiniFrontier</project><key>MF-38</key><component>Evaluation gate</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Publish baseline quality/efficiency with hardware and limits. Acceptance: raw records linked and no unsupported claim. Depends on: MF-027, MF-034, MF-035, MF-037.]]></description><labels><label>MF-038</label><label>evaluation</label><label>baseline</label></labels>
+    </item>
+
+    <item>
+      <title>[MF-039] Implement GQA without hidden K/V expansion</title><project key="MF">MiniFrontier</project><key>MF-39</key><component>M4 Modern model</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Add configurable Q/KV heads and native SDPA GQA. Acceptance: manual reference expands K/V; optimized full attention uses enable_gqa=True without Python K/V repetition; output/gradient parity, fused-causal prefill, shapes, and parameter/cache savings pass. Depends on: MF-015, MF-028.]]></description><labels><label>MF-039</label><label>m4</label><label>gqa</label></labels>
+    </item>
+    <item>
+      <title>[MF-040] Add optional QK-Norm</title><project key="MF">MiniFrontier</project><key>MF-40</key><component>M4 Modern model</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Normalize Q/K per head before RoPE. Acceptance: Edu off, Modern on, ordering/gradient/disabled parity tests pass. Depends on: MF-007, MF-039.]]></description><labels><label>MF-040</label><label>m4</label><label>qk-norm</label></labels>
+    </item>
+    <item>
+      <title>[MF-041] Implement the 3-local/1-global schedule</title><project key="MF">MiniFrontier</project><key>MF-41</key><component>M4 Modern model</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+<description><![CDATA[Implement Local/Local/Local/Global with FlexAttention and native GQA. Acceptance: exact-window manual/Flex parity, arbitrary layer counts, cached/compiled block masks, explicit fallback, and no out-of-window or unwritten reads. M4 uses a full-history local cache as its correctness reference; bounded storage and memory claims belong to MF-050. Depends on: MF-009, MF-039.]]></description><labels><label>MF-041</label><label>m4</label><label>hybrid-attention</label></labels>
+    </item>
+    <item>
+      <title>[MF-042] Add the global NoPE experiment flag</title><project key="MF">MiniFrontier</project><key>MF-42</key><component>M4 Modern model</component><type>Task</type><priority>High</priority><status>Closed</status>
+<description><![CDATA[Add rope/none for global layers while local keeps RoPE. Acceptance: RoPE default, exact selection, cached/full parity, long-context finiteness/magnitude reporting, and no silently coupled temperature tuning or logit cap. Depends on: MF-013, MF-041.]]></description><labels><label>MF-042</label><label>m4</label><label>nope</label></labels>
+    </item>
+    <item>
+      <title>[MF-043] Complete Modern correctness/cache tests</title><project key="MF">MiniFrontier</project><key>MF-43</key><component>M4 Modern model</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+<description><![CDATA[Test GQA/local/global/QK/NoPE and the full-history local-cache reference. Acceptance: FP32 manual/optimized and cached/full parity for prefill/token/chunks, exact per-position argmax, safe truncation, and no out-of-window/unwritten reads. BF16 belongs to MF-046; bounded cache to MF-050. Depends on: MF-040, MF-041, MF-042.]]></description><labels><label>MF-043</label><label>m4</label><label>tests</label></labels>
+    </item>
+    <item>
+      <title>[MF-044] Overfit and compare 50M Modern</title><project key="MF">MiniFrontier</project><key>MF-44</key><component>M4 Modern model</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Run matched CPU 50M Edu/Modern correctness and scorecard. Acceptance: tiny overfit and controlled tokenizer/data/token/batch/context comparison report parameter/cache differences without speed claims; 8K+ GPU hybrid efficiency, allocated/logical cache bytes, and decode throughput belong to MF-050. Depends on: MF-038, MF-043.]]></description><labels><label>MF-044</label><label>m4</label><label>training</label></labels>
+    </item>
+
+    <item>
+      <title>[MF-045] Implement the canonical AdamW training loop</title><project key="MF">MiniFrontier</project><key>MF-45</key><component>M5 Performance</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Implement explicit AdamW/warmup/cosine/global-clip/token loop over bounded providers. Acceptance: groups/cadence/LR/accounting are tested; scheduler progress is explicit in optimizer updates or non-padding tokens, checkpointed, and boundary-tested; all-masked batches are rejected; token dtype/range is checked on CPU before CUDA transfer; tensor assertions and metric .item() stay outside layer/token/microbatch hot paths; production sharding remains MF-047. Depends on: MF-027, MF-031.]]></description><labels><label>MF-045</label><label>m5</label><label>training</label></labels>
+    </item>
+    <item>
+      <title>[MF-046] Add BF16 autocast and gradient accumulation</title><project key="MF">MiniFrontier</project><key>MF-46</key><component>M5 Performance</component><type>Task</type><priority>Highest</priority><status>In Progress</status>
+<description><![CDATA[Add gated BF16 for training/cached inference, exact accumulation, CLI precision selection, and mixed-precision cache contract. Acceptance: CPU fallback and split/unsplit parity; cache is allocated from projected K/V dtype, sample/chat/eval share auto|float32|bfloat16, and CPU/CUDA full-cache numerical plus argmax parity use fixed tolerances. Depends on: MF-045.]]></description><labels><label>MF-046</label><label>m5</label><label>performance</label></labels>
+    </item>
+    <item>
+      <title>[MF-047] Make streaming training exactly resumable</title><project key="MF">MiniFrontier</project><key>MF-47</key><component>M5 Performance</component><type>Task</type><priority>Highest</priority><status>Closed</status>
+      <description><![CDATA[Build bounded-memory immutable hashed memory-mappable token/count shards, Windows-spawn-safe loading, deterministic shard/row shuffle, exact data-order state, and crash-safe publication. Acceptance: prepare_data streams pinned FineWeb-Edu revision 87f09149ef4734204d70ed1d046ddc9ca3f2b8f9 directly; versioned exact/near dedup and evaluation exclusion precede split; separate atomic NPY arrays are cached as one memory map per worker; no whole-corpus list/live worker generator; seed/policy/epoch/shard/row state resumes exactly and mismatches fail closed. CUDA fused runs record determinism and use a fixed tolerance. Depends on: MF-024, MF-025, MF-031, MF-046.]]></description><labels><label>MF-047</label><label>m5</label><label>checkpoint</label></labels>
+    </item>
+    <item>
+      <title>[MF-048] Add optional torch.compile</title><project key="MF">MiniFrontier</project><key>MF-48</key><component>M5 Performance</component><type>Task</type><priority>High</priority><status>Closed</status>
+<description><![CDATA[Add post-correctness compile switch and path-specific diagnostics. Acceptance: eager default and output parity; training/prefill and mutation-heavy decode graph breaks are reported separately, and EOS/dynamic-shape/cache failures have actionable fallback or errors. Depends on: MF-043, MF-046.]]></description><labels><label>MF-048</label><label>m5</label><label>compile</label></labels>
+    </item>
+    <item>
+      <title>[MF-049] Add activation checkpointing by block</title><project key="MF">MiniFrontier</project><key>MF-49</key><component>M5 Performance</component><type>Task</type><priority>High</priority><status>In Progress</status>
+      <description><![CDATA[Add optional whole-block checkpointing. Acceptance: loss/gradient parity and speed/memory benchmark. Depends on: MF-046.]]></description><labels><label>MF-049</label><label>m5</label><label>performance</label></labels>
+    </item>
+    <item>
+      <title>[MF-050] Profile and tune the 24-32 GB GPU path</title><project key="MF">MiniFrontier</project><key>MF-50</key><component>M5 Performance</component><type>Task</type><priority>Highest</priority><status>In Progress</status>
+<description><![CDATA[Harden and profile the single-stream 24-32GB GPU path. Acceptance: last-token prefill logits, non-quadratic output storage, finite/hand-tested top-k/top-p sampling, and optional bounded local ring cache exactly match the full-history reference across chunks/rollback and single-token decoding beyond two window wraps. CUDA records separate failures plus graph breaks, selected kernel/backend, determinism, precision/cache dtype, VRAM, TTFT, prefill/inter-token/decode throughput, cache bytes, and ring rollback allocation traffic before safeguards are changed. The 8K+ hybrid run uses a labeled performance-only context/window override with unchanged weights and no quality claim. FlexAttention is required; first-party varlen sliding GQA may be parity-profiled optionally. No concurrency claim. Depends on: MF-037, MF-046, MF-047, MF-048, MF-049.]]></description><labels><label>MF-050</label><label>m5</label><label>benchmark</label><label>gpu</label></labels>
+    </item>
+
+    <item>
+      <title>[MF-051] Implement licensed code-corpus ingestion</title><project key="MF">MiniFrontier</project><key>MF-51</key><component>M6 Coding and FIM</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Ingest and sanitize approved manifest-driven permissive/public-domain code. Acceptance: full provenance/pipeline version retained; licensing enforced; reviewed secret/credential, PII-policy, malformed/binary/generated/vendor/minified, and exact/near-eval-contamination filters emit aggregate reason counts without rejected sensitive text. Depends on: MF-023, MF-024, MF-036.]]></description><labels><label>MF-051</label><label>m6</label><label>code-data</label></labels>
+    </item>
+    <item>
+      <title>[MF-052] Implement deterministic FIM transforms and mixing</title><project key="MF">MiniFrontier</project><key>MF-52</key><component>M6 Coding and FIM</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Add prefix/suffix/middle transform and configured mix. Acceptance: reconstruction, boundaries, short samples, seed, 10-20 percent range. Depends on: MF-020, MF-025, MF-051.]]></description><labels><label>MF-052</label><label>m6</label><label>fim</label></labels>
+    </item>
+    <item>
+      <title>[MF-053] Run matched normal-versus-FIM code training</title><project key="MF">MiniFrontier</project><key>MF-53</key><component>M6 Coding and FIM</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Run controlled normal/FIM 50M pair. Acceptance: only mixture changes and budgets/seeds/checkpoints/raw metrics are retained; bounded CPU pair proves integration without effect claims, while coding-quality conclusions require MF-063 home-GPU evidence. Depends on: MF-044, MF-045, MF-047, MF-052.]]></description><labels><label>MF-053</label><label>m6</label><label>experiment</label></labels>
+    </item>
+    <item>
+      <title>[MF-054] Score and report coding/FIM effects</title><project key="MF">MiniFrontier</project><key>MF-54</key><component>M6 Coding and FIM</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Report syntax/compile/tests/FIM exact/functional and LM regressions. Acceptance: scorer/report is exercised on versioned fixtures and includes exact/near contamination, variance/limits and raw links; CPU results are engineering-only and effect claims wait for MF-063 GPU evidence. Depends on: MF-036, MF-053.]]></description><labels><label>MF-054</label><label>m6</label><label>evaluation</label></labels>
+    </item>
+
+    <item>
+      <title>[MF-055] Write the educational Muon reference</title><project key="MF">MiniFrontier</project><key>MF-55</key><component>M7 Muon</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Write annotated non-production Newton-Schulz/Muon lab. Acceptance: tiny matrix tests and impossible accidental production selection. Depends on: MF-007, MF-005.]]></description><labels><label>MF-055</label><label>m7</label><label>muon</label><label>lab</label></labels>
+    </item>
+    <item>
+      <title>[MF-056] Integrate first-party Muon with AdamW partitioning</title><project key="MF">MiniFrontier</project><key>MF-56</key><component>M7 Muon</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Muon eligible 2-D hidden matrices; AdamW all others. Acceptance: every parameter exactly once and partition/adjustment tested/reported. Depends on: MF-045, MF-055.]]></description><labels><label>MF-056</label><label>m7</label><label>muon</label></labels>
+    </item>
+    <item>
+      <title>[MF-057] Run a fair AdamW-versus-Muon experiment</title><project key="MF">MiniFrontier</project><key>MF-57</key><component>M7 Muon</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Run matched-token A/B plus separate LR sweep per arm. Acceptance: choices/loss/throughput reported without an unfair shared LR claim. The bounded CPU record is engineering evidence; post-M10 RTX owns VRAM/variance/scale conclusions. Depends on: MF-037, MF-056.]]></description><labels><label>MF-057</label><label>m7</label><label>experiment</label></labels>
+    </item>
+
+    <item>
+      <title>[MF-058] Implement and test the chat template</title><project key="MF">MiniFrontier</project><key>MF-58</key><component>M8 SFT</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Implement a simple system/user/assistant Jinja template and concise default general/coding system prompt. Acceptance: deterministic roles/EOS, invalid ordering rejection, token-contract parity across Jinja/runtime/SFT serialization for multi-turn and generation prompts, a short capability-honest optional prompt, and no hidden/tool protocol. Depends on: MF-020, MF-032.]]></description><labels><label>MF-058</label><label>m8</label><label>sft</label></labels>
+    </item>
+    <item>
+      <title>[MF-059] Build SFT examples and assistant-only loss masks</title><project key="MF">MiniFrontier</project><key>MF-59</key><component>M8 SFT</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Build conversation packing/truncation and assistant masks. Acceptance: only assistant spans contribute; multi-turn/truncation tests pass. Depends on: MF-011, MF-025, MF-058.]]></description><labels><label>MF-059</label><label>m8</label><label>sft</label><label>data</label></labels>
+    </item>
+    <item>
+      <title>[MF-060] Implement the small SFT loop</title><project key="MF">MiniFrontier</project><key>MF-60</key><component>M8 SFT</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Reuse raw training/checkpoint infrastructure for SFT. Acceptance: tiny overfit; deterministic epoch shuffle; exact resume validates shuffle seed/policy, epoch, cursor and batch count; base lineage and subset metadata are captured. Depends on: MF-045, MF-047, MF-059.]]></description><labels><label>MF-060</label><label>m8</label><label>sft</label><label>training</label></labels>
+    </item>
+    <item>
+      <title>[MF-061] Evaluate instruction following and regressions</title><project key="MF">MiniFrontier</project><key>MF-61</key><component>M8 SFT</component><type>Task</type><priority>High</priority><status>Closed</status>
+      <description><![CDATA[Compare base/SFT on fixed prompts and LM/code metrics. Acceptance: formatting/instruction behavior, refusal/unknown handling, held-out functional code, and language/code regressions use versioned original or license-reviewed fixtures with contamination status and fixed seeds; no broad quality claim comes from the tiny suite. Depends on: MF-034, MF-054, MF-060.]]></description><labels><label>MF-061</label><label>m8</label><label>evaluation</label></labels>
+    </item>
+    <item>
+      <title>[MF-062] Complete the interactive chat path</title><project key="MF">MiniFrontier</project><key>MF-62</key><component>M8 SFT</component><type>Task</type><priority>High</priority><status>Closed</status>
+<description><![CDATA[Add a template-aware bounded-context multi-turn CLI. Acceptance: truncation preserves message/template boundaries; EOS, device, precision, seed, and finite sampling controls work; the release/default system prompt can be used, overridden or disabled; single-user non-server scope is documented; CPU smoke passes. Depends on: MF-030, MF-033, MF-058, MF-060.]]></description><labels><label>MF-062</label><label>m8</label><label>chat</label></labels>
+    </item>
+
+    <item>
+      <title>[MF-063] Freeze the canonical training protocol and budget</title><project key="MF">MiniFrontier</project><key>MF-63</key><component>M9 V1 release</component><type>Task</type><priority>Highest</priority><status>In Progress</status>
+<description><![CDATA[Complete the user-scheduled post-M10 RTX 50M evidence, then freeze the 150M protocol. Acceptance: pinned 1-5M-token evidence includes loss/validation, CUDA dtype/cache parity, last-token prefill, BF16 cached generation, bounded-local-cache parity, TTFT/inter-token latency, compile/backend/determinism, throughput/VRAM, exact data/control resume plus tolerance-scoped numerical resume, cached samples, eval and FIM follow-up; failures stay separate. Validated draft/frozen protocol tooling fails closed without evidence hashes. If books/PDFs enter the mixture, a clean adapter fails closed on training/release rights, strips RAG overlap/boilerplate, splits whole books by PDF hash, records extraction provenance, excludes Gemini-derived text absent explicit approval, and keeps the external AGPL converter/raw books out of MiniFrontier. Depends on: MF-054, MF-057, MF-061.]]></description><labels><label>MF-063</label><label>m9</label><label>release</label></labels>
+    </item>
+    <item>
+      <title>[MF-064] Train MiniFrontier-150M-Edu</title><project key="MF">MiniFrontier</project><key>MF-64</key><component>M9 V1 release</component><type>Task</type><priority>Highest</priority><status>Open</status>
+      <description><![CDATA[Train canonical Edu under approved protocol. Acceptance: budget completes stably; best/final/resume state and metadata retained. Depends on: MF-063.]]></description><labels><label>MF-064</label><label>m9</label><label>training</label><label>edu</label></labels>
+    </item>
+    <item>
+      <title>[MF-065] Train MiniFrontier-150M-Modern</title><project key="MF">MiniFrontier</project><key>MF-65</key><component>M9 V1 release</component><type>Task</type><priority>Highest</priority><status>Open</status>
+      <description><![CDATA[Train canonical Modern under matched protocol. Acceptance: same tokenizer/data order/budget/batch/context/eval except architecture settings. Depends on: MF-063.]]></description><labels><label>MF-065</label><label>m9</label><label>training</label><label>modern</label></labels>
+    </item>
+    <item>
+      <title>[MF-066] Produce the canonical teaching comparison</title><project key="MF">MiniFrontier</project><key>MF-66</key><component>M9 V1 release</component><type>Task</type><priority>Highest</priority><status>Open</status>
+      <description><![CDATA[Compare Edu/Modern quality, throughput, VRAM, params and cache under docs/EVALUATION_RELEASE_GATE.md. Acceptance: validation plus historical, reasoning/knowledge, instruction/chat, functional code/FIM and trained-context retrieval tiers record exact revisions/prompts, contamination, isolated-code policy, failures and not-run states; ARC-Easy/HellaSwag/PIQA alone cannot support chat/coding claims; strong causal claims use 3+ seeds or are exploratory. Depends on: MF-064, MF-065.]]></description><labels><label>MF-066</label><label>m9</label><label>evaluation</label></labels>
+    </item>
+    <item>
+      <title>[MF-067] Export release artifacts and model cards</title><project key="MF">MiniFrontier</project><key>MF-67</key><component>M9 V1 release</component><type>Task</type><priority>Highest</priority><status>Open</status>
+<description><![CDATA[Export load-tested weights, model/generation configs, tokenizer, chat template/default system prompt, cards, SHA-256 manifest, and results. Acceptance: fresh deterministic generation; generation metadata records special IDs/context/conservative defaults; every artifact is hashed; cards document precision/device and fixed-shape educational inference limits without untested external-runtime claims. Depends on: MF-032, MF-066.]]></description><labels><label>MF-067</label><label>m9</label><label>release</label></labels>
+    </item>
+    <item>
+      <title>[MF-068] Cut the GitHub-ready V1 release</title><project key="MF">MiniFrontier</project><key>MF-68</key><component>M9 V1 release</component><type>Task</type><priority>Highest</priority><status>Open</status>
+<description><![CDATA[Tag repo with README/release notes/CI/repro commands/archive. Acceptance: CPU Actions/home-GPU smoke and clean clone pass; RESEARCH_SOURCE_REVIEW is current; each bundled paper/archive has a redistribution decision/notice; scripts/build_source_archive.py includes .github/workflows/ci.yml, rejects unintended large files, and excludes pycache/pyc, secrets, local paths, corpora/checkpoints/caches, duplicate third-party trees and bundled research/reference archives; no open P0/P1. Depends on: MF-002, MF-006, MF-067.]]></description><labels><label>MF-068</label><label>m9</label><label>release</label><label>github</label></labels>
+    </item>
+
+    <item>
+      <title>[MF-069] Implement and preflight the optional scale-check harness</title><project key="MF">MiniFrontier</project><key>MF-69</key><component>M10 Optional scale</component><type>Task</type><priority>Low</priority><status>Closed</status>
+      <description><![CDATA[Implement validated 350M/500M accounting, OOM-safe preflight commands, report schema, stop criteria and CPU/meta dry runs. Acceptance: estimates are labeled; construction, validation, checkpoint/resume wiring and serialization pass on bounded paths; CUDA fields stay unmeasured and no scale decision or quality claim is fabricated. Depends on: MF-045, MF-047, MF-048.]]></description><labels><label>MF-069</label><label>m10</label><label>optional</label><label>scale</label><label>preflight</label></labels>
+    </item>
+    <item>
+      <title>[MF-070] Run the 350M scale check and decide whether to attempt 500M</title><project key="MF">MiniFrontier</project><key>MF-70</key><component>M10 Optional scale</component><type>Task</type><priority>Low</priority><status>In Progress</status>
+      <description><![CDATA[Measure 350M Modern and decide whether to run a bounded 500M stretch. Acceptance: real GPU VRAM/throughput/time/cost/checkpointing/learning behavior/value/stop criteria and failures are documented; V1 artifacts remain unchanged. Depends on: MF-068, MF-069.]]></description><labels><label>MF-070</label><label>m10</label><label>optional</label><label>scale</label><label>gpu</label></labels>
+    </item>
+    <item>
+      <title>[MF-071] Export a Transformers-compatible Hugging Face repository</title><project key="MF">MiniFrontier</project><key>MF-71</key><component>M11 Ecosystem adapters</component><type>Task</type><priority>Low</priority><status>In Progress</status>
+      <description><![CDATA[Create separate Hub-ready Edu/Modern exports with MiniFrontier PretrainedConfig/base/causal-LM classes, tokenizer integration, safe weights, generation config, cards, architectures and auto_map while keeping the core raw PyTorch. Acceptance: clean pinned AutoConfig/AutoModel/AutoModelForCausalLM/AutoTokenizer loads from local and pinned Hub revisions; native/Transformers logits and greedy tokens match for Edu/Modern including GQA, QK-Norm, hybrid and NoPE; tied weights, special/FIM/chat IDs, chat template/default system prompt, context, dtype, hashes, license and revision are preserved. Hosting alone is not compatibility. Depends on: MF-067.]]></description><labels><label>MF-071</label><label>m11</label><label>optional</label><label>huggingface</label><label>transformers</label></labels>
+    </item>
+    <item>
+      <title>[MF-072] Validate MiniFrontier with vLLM on Windows-hosted NVIDIA CUDA</title><project key="MF">MiniFrontier</project><key>MF-72</key><component>M11 Ecosystem adapters</component><type>Task</type><priority>Low</priority><status>In Progress</status>
+      <description><![CDATA[Target vLLM's Transformers modeling backend first and use an out-of-tree plugin only if required; document Windows 11 + WSL2. Acceptance: custom-model contract is met; both presets load through vllm serve from a pinned Hub revision under WSL2 CUDA; prompt logprobs/greedy continuation match native reference across prefill/decode and Modern flags; OpenAI API, BF16/cache, version, VRAM, TTFT and decode throughput are recorded; pinned text-only/tool-disabled smokes cover Vercel AI SDK generateText/streamText/messages/application loops plus OpenCode, Cline, Roo Code, Kilo Code and Aider with the real context limit, separately from code-edit quality. Do not claim V1 tool calling or native Win32 vLLM. Depends on: MF-050, MF-071.]]></description><labels><label>MF-072</label><label>m11</label><label>optional</label><label>vllm</label><label>wsl2</label><label>inference</label></labels>
+    </item>
+    <item>
+      <title>[MF-073] Add high-precision GGUF and llama.cpp architecture support</title><project key="MF">MiniFrontier</project><key>MF-73</key><component>M11 Ecosystem adapters</component><type>Task</type><priority>Low</priority><status>In Progress</status>
+      <description><![CDATA[Implement a pinned upstream patch or adapter for MiniFrontier GGUF conversion, tensor/tokenizer metadata, loading and compute graph. Acceptance: BF16/F16 conversion preserves Edu/Modern RoPE, GQA, QK-Norm, local/global schedule, NoPE, tied embeddings, special IDs and windows; no false llama architecture label; llama-cli/server pass native-reference parity and native Windows 11 NVIDIA-CUDA smoke before quantization; revisions/hashes are pinned. Depends on: MF-071.]]></description><labels><label>MF-073</label><label>m11</label><label>optional</label><label>gguf</label><label>llama-cpp</label></labels>
+    </item>
+    <item>
+      <title>[MF-074] Quantize, evaluate, and publish the 4-bit GGUF artifacts</title><project key="MF">MiniFrontier</project><key>MF-74</key><component>M11 Ecosystem adapters</component><type>Task</type><priority>Low</priority><status>In Progress</status>
+      <description><![CDATA[Create reproducible Q4_K_M Edu/Modern GGUF repositories from BF16/F16 GGUF. Acceptance: importance-matrix/calibration use is explicit with pinned licensed data, sampling/tokenizer recipe, hashes and evaluation-contamination checks, retaining an uncalibrated comparison where needed; native Windows 11 CUDA CLI/server load; record size, RAM/VRAM, prompt/decode throughput, perplexity/validation delta, greedy changes, LM/code regressions, tokenizer/template behavior, quantizer command/version, source revision and SHA-256 hashes. Loadability alone is insufficient. Depends on: MF-038, MF-066, MF-073.]]></description><labels><label>MF-074</label><label>m11</label><label>optional</label><label>gguf</label><label>quantization</label><label>release</label></labels>
+    </item>
+  </channel>
+</rss>
