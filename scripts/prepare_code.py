@@ -1,5 +1,16 @@
 """Validate and sanitize a provenance-complete permissive code manifest."""
 
+# The gate that code training data has to pass. Every record must name its
+# repository, revision, license, path and content hash, and the license must be on
+# the permissive list. Anything missing is rejected rather than assumed -- an
+# unlabelled file is not "probably fine", it is unusable.
+#
+# The same pass screens for secrets, because public repositories genuinely do
+# contain leaked API keys, and a model that memorizes one will reproduce it on
+# request.
+#
+# See `src/minifrontier/code_data.py` and `docs/DATA_GOVERNANCE.md`.
+
 from __future__ import annotations
 
 import argparse

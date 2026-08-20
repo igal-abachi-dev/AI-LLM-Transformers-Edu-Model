@@ -1,5 +1,13 @@
 """Run a matched bounded baseline-versus-FIM pretraining comparison."""
 
+# Does adding FIM examples to the mixture actually help, and what does it cost the
+# ordinary left-to-right ability? Two matched runs -- same data, tokens, seed and
+# everything else -- differing only in whether the FIM transform was applied.
+#
+# The cost side matters as much as the benefit: spending part of the training
+# budget on rearranged documents is budget not spent on plain continuation, so an
+# honest comparison reports both numbers. See `scripts/apply_fim.py`.
+
 from __future__ import annotations
 
 import argparse

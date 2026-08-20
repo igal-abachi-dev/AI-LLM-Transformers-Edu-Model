@@ -1,4 +1,23 @@
-"""Deterministic base completion and bounded multi-turn chat helpers."""
+"""Deterministic base completion and bounded multi-turn chat helpers.
+
+Beginner's map of this file
+---------------------------
+The chat window is a friendly illusion. The model never sees bubbles, roles, or a
+conversation object -- it sees one flat stream of tokens, and the "roles" are
+marker tokens inside that stream::
+
+    <|bos|><|system|>You are helpful.<|eos|><|user|>What is 2+2?<|eos|><|assistant|>
+
+Then it is asked its one and only question: what token comes next? Having been
+trained on text where ``<|assistant|>`` is followed by assistant-flavoured
+writing, it starts producing an answer, and it stops when it emits ``<|eos|>``.
+
+This module holds the flattening (a Jinja template, so the exact format is data
+rather than code), the rules about which turn orders are legal, and the loop that
+keeps a multi-turn conversation inside the model's context limit by dropping the
+oldest turns. There is no memory beyond that window: what looks like memory in a
+chat product is the whole transcript being re-sent every single turn.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +37,8 @@ DEFAULT_SYSTEM_PROMPT_PATH = Path(__file__).parents[2] / "templates" / "system_p
 
 @dataclass(frozen=True, slots=True)
 class ChatMessage:
+    """One turn. Becomes ``<|role|>`` + content + ``<|eos|>`` once serialized."""
+
     role: Role
     content: str
 
@@ -43,6 +64,15 @@ def validate_messages(
     *,
     generation_prompt: bool = False,
 ) -> None:
+    """Enforce the turn order the model was trained on.
+
+    An optional system message first, then strict user/assistant alternation.
+    This is stricter than it strictly has to be, on purpose. The model only ever
+    saw this pattern during SFT, so anything else is untested territory -- and a
+    conversation that quietly deviates produces bad output with no error to
+    explain it.
+    """
+
     if not messages:
         raise ValueError("conversation must contain at least one message")
     offset = 1 if messages[0].role == "system" else 0

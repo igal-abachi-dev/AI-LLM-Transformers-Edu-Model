@@ -1,5 +1,14 @@
 """Export a native MiniFrontier release as a standalone Transformers/Hub repository."""
 
+# Writes a second copy of a release in the layout the Transformers library expects,
+# so `AutoModelForCausalLM.from_pretrained(...)` works on it and it can go on the
+# Hugging Face Hub.
+#
+# The raw-PyTorch checkpoint stays the reference and is not modified. This is a
+# translation for other people's tools, not a dependency of the model -- and it
+# only earns a compatibility claim by passing parity tests: same prompt, same
+# outputs as the native path.
+
 from __future__ import annotations
 
 import argparse

@@ -1,4 +1,17 @@
-"""lm-evaluation-harness adapter for MiniFrontier (MF-035)."""
+"""lm-evaluation-harness adapter for MiniFrontier (MF-035).
+
+Beginner's map of this file
+---------------------------
+``lm-eval`` is the community's standard suite of multiple-choice-style benchmarks
+(HellaSwag, ARC, and friends). Most of those tasks do not ask the model to *write*
+anything -- they score each candidate answer by how likely the model thinks it is,
+and pick the winner. This adapter is the translation layer that lets an outside
+harness ask a MiniFrontier model those likelihood questions.
+
+Worth keeping in perspective: a 150M-parameter model scores near chance on most
+of these. The value here is having a comparable, standard number rather than a
+flattering one.
+"""
 
 from __future__ import annotations
 

@@ -1,5 +1,20 @@
 """Generate a completion from a published MiniFrontier release directory."""
 
+# The simplest way to see a trained model do something. Give it a prompt, get a
+# continuation back:
+#
+#   python scripts/sample.py --model artifacts/my-release --prompt "2 + 2 ="
+#
+# This is BASE completion, not chat -- the model continues your text rather than
+# answering it. That difference is entirely down to training: use `chat.py` with
+# an SFT model to get replies instead.
+#
+# The interesting knobs are the decoding ones, and they change nothing about what
+# the model knows -- only how adventurously it picks from scores it has already
+# produced. `--temperature 0` (the default) is greedy and deterministic; raise it
+# for variety. `--top-k` and `--top-p` restrict the candidate pool. See
+# `sample_next_token` in `src/minifrontier/generation.py`.
+
 from __future__ import annotations
 
 import argparse

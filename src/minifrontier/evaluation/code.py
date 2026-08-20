@@ -1,4 +1,14 @@
-"""Versioned, opt-in execution scoring for original code fixtures (MF-036)."""
+"""Versioned, opt-in execution scoring for original code fixtures (MF-036).
+
+Beginner's map of this file
+---------------------------
+The only honest way to score generated code is to run it against tests. That also
+means executing text a model just made up, so this path is **opt-in** rather than
+automatic, and the fixtures are original to this project rather than borrowed from
+a public benchmark -- public benchmark problems have long since leaked into
+web-crawled training data, and a model that has read the answers is not being
+measured, it is being flattered.
+"""
 
 from __future__ import annotations
 

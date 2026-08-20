@@ -1,5 +1,18 @@
 """Template-aware bounded-context multi-turn MiniFrontier chat CLI."""
 
+# Interactive chat with an SFT model. Unlike `sample.py`, this wraps your text in
+# the role markers the model was fine-tuned on:
+#
+#   <|bos|><|system|>...<|eos|><|user|>your text<|eos|><|assistant|>
+#
+# ...and then asks the same single question the model always answers: what token
+# comes next? There is no "chat mode" inside the model -- the roles are just
+# marker tokens in a flat stream. See `src/minifrontier/chat.py`.
+#
+# "Bounded-context" is the honest bit. The model has a small fixed window (1K-2K
+# tokens here), and the whole conversation is re-sent every turn, so once it fills
+# up the oldest turns get dropped. There is no memory beyond that window.
+
 from __future__ import annotations
 
 import argparse

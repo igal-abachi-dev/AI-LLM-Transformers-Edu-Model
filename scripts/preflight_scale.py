@@ -1,5 +1,13 @@
 """Create OOM-safe 350M/500M accounting and CPU wiring evidence without GPU claims."""
 
+# Before training a bigger model, work out on paper whether it can possibly fit:
+# parameters, optimizer state, activations and KV cache against the memory the GPU
+# actually has. Arithmetic is cheap; discovering an out-of-memory error forty
+# minutes into a run is not.
+#
+# It deliberately produces accounting and wiring evidence only. Nothing here is a
+# measured GPU result, and the file name says so.
+
 from __future__ import annotations
 
 import argparse

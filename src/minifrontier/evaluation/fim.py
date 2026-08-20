@@ -1,4 +1,12 @@
-"""Fill-in-the-middle reference scoring (MF-036/MF-054)."""
+"""Fill-in-the-middle reference scoring (MF-036/MF-054).
+
+Beginner's map of this file
+---------------------------
+Given a hole in a file, did the model produce the missing piece? Scored by exact
+match against the reference middle, which is strict but unambiguous -- and
+unambiguous matters more than generous when the number goes into a release note.
+See ``code_data.py`` for how FIM examples are built in the first place.
+"""
 
 from __future__ import annotations
 

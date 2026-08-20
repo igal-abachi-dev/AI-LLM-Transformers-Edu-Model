@@ -1,4 +1,24 @@
-"""Provenance-complete assistant-only supervised fine-tuning examples."""
+"""Provenance-complete assistant-only supervised fine-tuning examples.
+
+Beginner's map of this file
+---------------------------
+A model trained only on raw internet text does not answer questions -- it
+*continues* them, because that is what internet text does. Turning it into
+something that replies takes a second, much smaller training stage: supervised
+fine-tuning (SFT), on examples of "user says X, a good assistant replies Y".
+
+The one idea that makes SFT work is the **loss mask**. The whole conversation is
+fed through the model, but only the assistant's tokens are graded. Without that,
+the model would also be learning to imitate the user -- to produce more questions.
+
+So each example here carries two parallel arrays of the same length::
+
+    token_ids  <|bos|> <|user|> what is 2+2 <|eos|> <|assistant|> 4 <|eos|>
+    loss_mask     F       F      F  F  F  F    F         F        T    T
+
+The conversation is flattened into that one stream of tokens by the marker tokens
+from ``tokenizer.py`` -- there are no chat "objects" at this level, only text.
+"""
 
 from __future__ import annotations
 
@@ -16,6 +36,13 @@ from minifrontier.training import TrainingBatch
 
 
 def conversation_hash(messages: tuple[ChatMessage, ...]) -> str:
+    """Fingerprint a conversation for deduplication and contamination checks.
+
+    Hashes only role and content, in a canonical JSON form, so the same
+    conversation hashes identically no matter how the source file spaced or
+    ordered its other fields.
+    """
+
     canonical = json.dumps(
         [{"role": message.role, "content": message.content} for message in messages],
         ensure_ascii=False,
@@ -26,6 +53,12 @@ def conversation_hash(messages: tuple[ChatMessage, ...]) -> str:
 
 @dataclass(frozen=True, slots=True)
 class ConversationRecord:
+    """One training conversation plus its provenance.
+
+    It must end with an assistant turn -- an example whose last word is the user's
+    contains nothing for the model to be graded on.
+    """
+
     messages: tuple[ChatMessage, ...]
     source: str
     revision: str
@@ -60,6 +93,12 @@ class ConversationRecord:
 
 @dataclass(frozen=True, slots=True)
 class SFTExample:
+    """One encoded conversation: the tokens, and which of them count for learning.
+
+    ``token_ids`` and ``loss_mask`` are always the same length and line up
+    position for position. ``True`` means "grade the model here".
+    """
+
     token_ids: tuple[int, ...]
     loss_mask: tuple[bool, ...]
     record_id: str
@@ -84,6 +123,15 @@ def encode_sft_example(
     *,
     max_length: int,
 ) -> SFTExample:
+    """Flatten a conversation into tokens plus the assistant-only loss mask.
+
+    Each turn becomes ``<|role|>`` + content + ``<|eos|>`` + newline. Only an
+    assistant turn's content and its closing ``<|eos|>`` are marked True -- the
+    ``<|eos|>`` matters, because that is how the model learns when to *stop*.
+    Role markers themselves are never graded: predicting whose turn it is next is
+    the template's job, not something the model should be guessing.
+    """
+
     if max_length < 2:
         raise ValueError("max_length must be at least two")
     segments: list[tuple[list[int], list[bool], str]] = []
@@ -107,6 +155,8 @@ def encode_sft_example(
     for ids, mask, _ in segments:
         token_ids.extend(ids)
         loss_mask.extend(mask)
+    # `[1:]` because position 0 can never be a target: the next-token shift in
+    # loss.py means the first token is only ever an input.
     if not any(loss_mask[1:]):
         raise ValueError("SFT example has no assistant prediction targets")
     return SFTExample(tuple(token_ids), tuple(loss_mask), record.record_id)
@@ -119,6 +169,14 @@ def pack_sft_examples(
     pad_id: int,
     drop_remainder: bool = False,
 ) -> Iterator[TrainingBatch]:
+    """Pack encoded conversations into fixed-length batches, masks included.
+
+    Same ribbon-and-slice idea as ``data.pack_documents``, with the loss mask cut
+    at exactly the same points so the two never drift apart. Unlike pretraining,
+    the trailing remainder is kept and padded by default: SFT datasets are small
+    enough that throwing away a partial sequence is a real loss.
+    """
+
     tokens: list[int] = []
     masks: list[bool] = []
     for example in examples:

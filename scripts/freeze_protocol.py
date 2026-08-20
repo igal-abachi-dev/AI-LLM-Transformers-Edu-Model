@@ -1,5 +1,13 @@
 """Create a validated draft or evidence-backed frozen V1 training protocol."""
 
+# Writes down the exact training recipe -- data, tokens, hyperparameters, hardware
+# -- BEFORE the real runs happen, and freezes it.
+#
+# The reason is discipline rather than bureaucracy. Deciding what counts as
+# success after seeing the results is how honest people accidentally produce
+# unreproducible claims. A frozen protocol makes the plan and the outcome two
+# separate artifacts, so anyone can see whether the plan was followed.
+
 from __future__ import annotations
 
 import argparse

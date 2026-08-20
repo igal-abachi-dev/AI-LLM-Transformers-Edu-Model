@@ -1,5 +1,9 @@
 """Validate measured 350M CUDA evidence and write a fail-closed 500M go/no-go record."""
 
+# Decides whether training the next size up is worth it, from measured evidence
+# only. "Fail-closed" means a missing measurement produces a refusal, never an
+# optimistic guess -- the default answer is no, and evidence has to move it.
+
 from __future__ import annotations
 
 import argparse

@@ -1,4 +1,15 @@
-"""Fail-closed accounting and decision records for optional post-V1 scale checks."""
+"""Fail-closed accounting and decision records for optional post-V1 scale checks.
+
+Beginner's map of this file
+---------------------------
+Before training a bigger model, work out on paper whether it can fit: parameters,
+optimizer state, activations, KV cache -- against the memory the GPU actually has.
+Cheap arithmetic beats discovering an out-of-memory error forty minutes into a run.
+
+"Fail-closed" is the design rule throughout. Missing a real measurement produces a
+refusal, never an optimistic guess, so no scale decision can rest on a number
+nobody measured.
+"""
 
 from __future__ import annotations
 

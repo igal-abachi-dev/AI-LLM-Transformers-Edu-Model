@@ -1,4 +1,20 @@
-"""Reproducibility helpers shared by tests, training, and benchmarks."""
+"""Reproducibility helpers shared by tests, training, and benchmarks.
+
+Beginner's map of this file
+---------------------------
+Neural networks are full of randomness: the initial weights, the shuffling of
+data, sampling during generation. All of it comes from pseudo-random generators,
+which produce a fixed sequence once you fix their starting **seed**.
+
+Seeding everything means two runs of the same code produce the same numbers. That
+matters for two reasons here: a test that fails only sometimes is nearly
+impossible to debug, and an experiment comparing A against B is worthless if the
+difference could just be luck.
+
+Note that determinism is not free -- some fast GPU kernels add results in a
+nondeterministic order -- so this is a deliberate choice made per run rather than
+a global default.
+"""
 
 from __future__ import annotations
 

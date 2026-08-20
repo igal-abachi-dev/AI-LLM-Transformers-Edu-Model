@@ -1,4 +1,16 @@
-"""Fail-closed llama.cpp conversion and GGUF quantization orchestration."""
+"""Fail-closed llama.cpp conversion and GGUF quantization orchestration.
+
+Beginner's map of this file
+---------------------------
+GGUF is llama.cpp's model format, and quantization means storing weights in 4 or 5
+bits instead of 16 -- a large model then fits on a laptop, at some cost in quality.
+
+There is a catch this module refuses to paper over: llama.cpp needs to know the
+architecture it is loading, and MiniFrontier's hybrid local/global schedule is not
+one it implements. So conversion **fails closed** rather than silently producing a
+file that loads and generates plausible nonsense. That refusal is the correct
+behaviour, not a missing feature.
+"""
 
 from __future__ import annotations
 

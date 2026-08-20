@@ -1,5 +1,10 @@
 """Merge real CUDA trainer/profile outputs into the MF-070 decision input schema."""
 
+# Gathers what actually happened on real GPU runs -- throughput, memory, wall time
+# -- into the single structured record the scale decision reads. Plumbing between
+# "we measured things" and "we decided something", kept separate so the decision
+# cannot quietly invent its own inputs.
+
 from __future__ import annotations
 
 import argparse

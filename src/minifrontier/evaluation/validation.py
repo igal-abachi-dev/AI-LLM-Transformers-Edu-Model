@@ -1,4 +1,24 @@
-"""Weighted language-model validation metrics (MF-034)."""
+"""Weighted language-model validation metrics (MF-034).
+
+Beginner's map of this file
+---------------------------
+How well is the model doing on text it has never seen? Three views of the same
+measurement:
+
+* **Cross-entropy loss** (nats/token) -- average surprise. The training objective.
+* **Perplexity** = ``exp(loss)`` -- read it as "the model is about as unsure as if
+  it were picking uniformly among this many tokens". A perplexity of 20 means
+  roughly a 1-in-20 guess. It is only comparable between models that share a
+  tokenizer, because a different tokenizer changes what "one token" means.
+* **Bits per byte (BPB)** -- the same information rescaled to raw UTF-8 bytes,
+  which *is* comparable across tokenizers. That makes it the honest number when
+  comparing against outside models.
+
+"Weighted" is the reason this file exists rather than a one-line average: batches
+contain different numbers of scored tokens, so the totals are summed and divided
+once at the end. Averaging per-batch averages would quietly over-weight the small
+batches.
+"""
 
 from __future__ import annotations
 

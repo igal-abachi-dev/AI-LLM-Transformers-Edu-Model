@@ -1,4 +1,16 @@
-"""Canonical V1 protocol and matched Edu/Modern release validation."""
+"""Canonical V1 protocol and matched Edu/Modern release validation.
+
+Beginner's map of this file
+---------------------------
+Publishing a model is more than uploading weights. A release here has to be
+loadable from a clean clone, has to carry a manifest of SHA-256 hashes so tampering
+or truncation is detectable, and has to come with a model card describing what it
+is and what it cannot do.
+
+"Matched" is the important word. The Edu and Modern releases exist to be compared,
+so they must share a tokenizer, a data mixture, a token budget and an evaluation.
+This module is what checks that claim rather than trusting it.
+"""
 
 from __future__ import annotations
 

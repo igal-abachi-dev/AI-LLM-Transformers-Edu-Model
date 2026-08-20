@@ -1,5 +1,14 @@
 """Convert a Transformers export using a pinned llama.cpp checkout with real MF support."""
 
+# GGUF is llama.cpp's model format, which is how models end up running on laptops
+# and phones. There is a catch this script refuses to paper over: llama.cpp must
+# implement the architecture it loads, and MiniFrontier's hybrid local/global
+# attention is not one it knows.
+#
+# So conversion fails closed rather than emitting a file that loads happily and
+# generates plausible nonsense. That refusal is the correct behaviour, not a
+# missing feature.
+
 from __future__ import annotations
 
 import argparse

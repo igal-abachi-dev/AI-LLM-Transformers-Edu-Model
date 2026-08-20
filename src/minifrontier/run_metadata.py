@@ -1,4 +1,15 @@
-"""Schema-checked, JSON-safe metadata for reproducible runs."""
+"""Schema-checked, JSON-safe metadata for reproducible runs.
+
+Beginner's map of this file
+---------------------------
+Every training run, benchmark and evaluation writes one of these JSON records:
+what was run, on what hardware, with which seed, for how many tokens, and what
+came out. It is the difference between "the Modern model seemed faster" and a
+result somebody else can check.
+
+Note also what is deliberately *not* recorded: no environment variables, no
+tokens, no local paths. A run record is meant to be publishable.
+"""
 
 from __future__ import annotations
 

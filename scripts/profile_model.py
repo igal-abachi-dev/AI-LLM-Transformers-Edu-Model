@@ -1,5 +1,18 @@
 """Profile a labeled single-stream MiniFrontier prefill/decode path.
 
+Where does the time and memory actually go? This measures the two phases of
+generation separately, because they behave nothing alike:
+
+* **Prefill** -- the whole prompt in one pass. Lots of parallel work, compute
+  bound, and it is what fills the KV cache.
+* **Decode** -- one token at a time. Very little arithmetic per step, so it is
+  bound by memory bandwidth instead: nearly all the time goes on reading the
+  weights and the cache, not on the multiply-adds.
+
+That difference explains a lot of LLM engineering. It is why the KV cache matters
+so much, why batching helps decode more than prefill, and why "tokens per second"
+is meaningless without saying which phase you measured.
+
 The filename deliberately avoids ``profile.py``, which shadows Python's standard-library
 ``profile`` module when other scripts import PyTorch compilation/determinism machinery.
 """

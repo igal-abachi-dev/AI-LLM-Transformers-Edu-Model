@@ -1,5 +1,17 @@
 """Export a trusted local training checkpoint as a safe model release."""
 
+# Turns a training checkpoint (a save-game: weights plus optimizer state plus a
+# data cursor) into a release (weights, config, tokenizer, model card). The
+# optimizer state is dropped -- nobody downloading a model needs it.
+#
+# "Safe" refers to the file format. Weights are written with safetensors rather
+# than `torch.save`, because a `.pt` file is a Python pickle and loading a pickle
+# can execute whatever code its author put there. Fine for your own files;
+# unacceptable for something other people download.
+#
+# "Trusted local checkpoint" is the mirror of that: this script reads a pickle, so
+# only ever point it at a checkpoint you produced yourself.
+
 from __future__ import annotations
 
 import argparse

@@ -1,4 +1,27 @@
-"""Training checkpoints and safe published-model artifacts."""
+"""Training checkpoints and safe published-model artifacts.
+
+Beginner's map of this file
+---------------------------
+Two different things get saved, and confusing them is a classic mistake:
+
+* A **training checkpoint** is a save-game. It holds the weights *plus* the
+  optimizer's internal state, the schedule position, and where the data stream had
+  got to -- everything needed to resume as if nothing happened. It is large, it is
+  private, and it is only ever loaded by this project's own code.
+* A **release** is the published model: weights, config, tokenizer, and a card.
+  No optimizer state, no data cursor.
+
+Saving the model's weights alone is not enough to resume. AdamW carries two
+running averages per weight, so restarting without them makes the optimizer
+re-learn its footing and puts a visible bump in the loss curve.
+
+Weights are written with **safetensors**, not ``torch.save``. A PyTorch ``.pt``
+file is a Python pickle, and loading a pickle can execute arbitrary code from
+whoever produced it -- fine for your own files, unacceptable for a download.
+Safetensors is a plain data format that cannot execute anything. Tied embeddings
+also need the shared-tensor-aware API here, since the same tensor appears under
+two names.
+"""
 
 from __future__ import annotations
 

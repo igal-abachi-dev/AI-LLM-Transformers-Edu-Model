@@ -1,4 +1,30 @@
-"""Frozen byte-level BPE contract and deterministic training/loading helpers."""
+"""Frozen byte-level BPE contract and deterministic training/loading helpers.
+
+Beginner's map of this file
+---------------------------
+A model cannot read letters. Text is first chopped into **tokens** -- chunks of
+characters that sit somewhere between single letters and whole words -- and each
+token has an ID number. From then on the model only ever sees lists of integers.
+
+Why chunks rather than words? There are millions of words, plus typos, plus code,
+plus every other language, plus emoji. Byte-level BPE ("byte pair encoding")
+solves that by starting from raw bytes and repeatedly merging the most frequent
+adjacent pair into a new token. Common words like " the" end up as one token;
+something unusual falls back to a few pieces; and because every byte is in the
+alphabet, *nothing is ever unrepresentable* -- there is no "unknown token".
+
+This project freezes one 16,384-token vocabulary for every model size, so a
+tokenizer trained once can be compared across experiments. The first eleven IDs
+are reserved for markers that never appear in ordinary text::
+
+    <|pad|> <|bos|> <|eos|> <|system|> <|user|> <|assistant|>
+    <|fim_prefix|> <|fim_suffix|> <|fim_middle|> <|tool_call|> <|tool_result|>
+
+Those markers are the entire mechanism behind chat roles. There is no "assistant
+mode" inside the model -- just a token that means the assistant's turn starts
+here. It is also why prompt injection is possible at all: text that smuggles in
+convincing markers can be read as structure rather than content.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +41,8 @@ from tokenizers.models import BPE
 from tokenizers.pre_tokenizers import ByteLevel
 from tokenizers.trainers import BpeTrainer
 
+# Frozen for the whole project. Commercial models use 100k-200k; the idea is the
+# same, and a smaller vocabulary keeps the tied embedding table affordable here.
 VOCAB_SIZE: Final = 16_384
 TOKENIZER_VERSION: Final = 1
 SPECIAL_TOKENS: Final[tuple[str, ...]] = (
@@ -30,6 +58,9 @@ SPECIAL_TOKENS: Final[tuple[str, ...]] = (
     "<|tool_call|>",
     "<|tool_result|>",
 )
+# IDs 0..10, assigned by position: <|pad|> is 0, <|bos|> is 1, and so on. These
+# are part of the frozen contract, because a checkpoint trained with <|eos|> as 2
+# produces nonsense if reloaded against a tokenizer that numbered them otherwise.
 SPECIAL_TOKEN_IDS: Final[dict[str, int]] = {
     token: index for index, token in enumerate(SPECIAL_TOKENS)
 }
@@ -51,7 +82,12 @@ class TokenizerContract:
 
 
 class MiniFrontierTokenizer:
-    """Thin wrapper that validates the immutable MiniFrontier token contract."""
+    """Thin wrapper that validates the immutable MiniFrontier token contract.
+
+    The heavy lifting is done by the ``tokenizers`` library; this class exists to
+    guarantee the parts the model depends on, above all that the special tokens
+    kept their exact IDs.
+    """
 
     def __init__(self, tokenizer: Tokenizer, contract: TokenizerContract | None = None) -> None:
         self.backend = tokenizer
@@ -75,6 +111,8 @@ class MiniFrontierTokenizer:
         return SPECIAL_TOKEN_IDS["<|eos|>"]
 
     def _validate_special_tokens(self) -> None:
+        """Refuse a tokenizer whose marker IDs drifted -- a silent, ruinous mismatch."""
+
         for token, expected_id in SPECIAL_TOKEN_IDS.items():
             actual_id = self.backend.token_to_id(token)
             if actual_id != expected_id:
@@ -91,6 +129,9 @@ class MiniFrontierTokenizer:
     ) -> list[int]:
         if not isinstance(text, str):
             raise TypeError("text must be a string")
+        # add_special_tokens=False keeps the library from inserting markers of its
+        # own: in this project the caller decides explicitly, via the flags below.
+        # Not doing so silently changes what the model is trained to expect.
         token_ids = self.backend.encode(text, add_special_tokens=False).ids
         if add_bos:
             token_ids.insert(0, self.bos_id)
@@ -144,13 +185,26 @@ def train_byte_bpe(
     vocab_size: int = VOCAB_SIZE,
     min_frequency: int = 2,
 ) -> MiniFrontierTokenizer:
-    """Train deterministic byte-BPE from an already deterministic text stream."""
+    """Train deterministic byte-BPE from an already deterministic text stream.
 
+    "Training" a tokenizer is nothing like training the model -- there is no
+    gradient here. It just counts which adjacent pairs of symbols occur most often
+    in the corpus and merges them, over and over, until the vocabulary is full.
+
+    The order of ``texts`` affects the merge counts, so the caller is responsible
+    for handing over a stream that is already deterministic; otherwise two "same"
+    tokenizers would disagree about token IDs.
+    """
+
+    # Every one of the 256 byte values needs a slot, plus the 11 markers, or some
+    # inputs would be impossible to encode at all.
     minimum_vocab = len(SPECIAL_TOKENS) + len(ByteLevel.alphabet())
     if vocab_size < minimum_vocab:
         raise ValueError(f"vocab_size must be at least {minimum_vocab} for byte coverage")
     if min_frequency <= 0:
         raise ValueError("min_frequency must be positive")
+    # unk_token=None: with full byte coverage there is no such thing as an unknown
+    # character, so an "unknown" token would only ever hide a bug.
     backend = Tokenizer(BPE(unk_token=None))
     backend.pre_tokenizer = ByteLevel(add_prefix_space=False, use_regex=True)
     backend.decoder = ByteLevelDecoder()

@@ -1,5 +1,15 @@
 """Bounded CPU integration comparison for frozen 50M Edu and Modern presets."""
 
+# The same end-to-end smoke as `smoke_50m.py`, run for both presets side by side,
+# so the Modern-only machinery is exercised too: GQA's narrower K/V projections,
+# QK-Norm, the 3-local/1-global schedule, the FlexAttention path, and the ring
+# cache on local layers.
+#
+# "Bounded" means it is deliberately tiny and finishes on a CPU. It reports
+# engineering facts -- shapes line up, parity holds, artifacts round-trip -- and
+# makes no claim about which preset is better. That question needs matched
+# training runs; see `scripts/compare_releases.py`.
+
 from __future__ import annotations
 
 import argparse

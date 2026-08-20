@@ -1,5 +1,10 @@
 """Persist a bounded, matched-token CPU AdamW-versus-Muon LR-sweep integration record."""
 
+# A tiny CPU-sized version of `compare_optimizers.py`, run for wiring rather than
+# for results: it proves the Muon/AdamW parameter split is disjoint, that the two
+# optimizers checkpoint and resume together, and that a sweep completes end to end.
+# Too small and too short to say anything about which optimizer wins.
+
 from __future__ import annotations
 
 import argparse

@@ -1,5 +1,19 @@
 """Run a matched-token AdamW-versus-first-party-Muon learning-rate sweep."""
 
+# Is Muon actually better than AdamW here? This runs the experiment properly.
+#
+# The trap it avoids: the two optimizers have unrelated natural learning-rate
+# scales, because Muon's update is normalized and AdamW's is not. Comparing them
+# at one shared rate would measure "which optimizer happens to like this number",
+# not which optimizer is better. So both get swept, and each is judged at its own
+# best setting.
+#
+# "Matched-token" is the other half of the discipline: identical tokenizer, data,
+# token budget, batch size, context length and seed, with the optimizer as the
+# only variable. Change two things at once and the result explains nothing.
+#
+# For the maths behind Muon, read `labs/06_adamw_vs_muon.py` first.
+
 from __future__ import annotations
 
 import argparse

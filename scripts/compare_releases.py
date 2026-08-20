@@ -1,5 +1,12 @@
 """Create a matched Edu-versus-Modern report from comparable benchmark records."""
 
+# The headline comparison: what did the four Modern upgrades actually buy?
+#
+# It builds the report from stored benchmark records rather than re-running
+# anything, and it refuses to compare two records whose conditions do not match.
+# That refusal is the feature -- it is what stops a report from accidentally
+# measuring a difference in batch size instead of a difference in architecture.
+
 from __future__ import annotations
 
 import argparse

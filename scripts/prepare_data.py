@@ -1,5 +1,20 @@
 """Build deduplicated, contamination-checked, immutable MiniFrontier token shards."""
 
+# STEP 2 OF THE PIPELINE -- needs a tokenizer from step 1.
+#
+# Turns raw streamed text into the fixed-length integer sequences training reads.
+# In order: stream documents, drop junk and duplicates, split train/validation by
+# content hash, tokenize, pack end to end, and write memory-mapped shards.
+#
+# Why do this ahead of time instead of during training? Speed, and repeatability.
+# The shards are hashed and immutable, so a run can state exactly which bytes it
+# trained on, and an interrupted run can resume on the next unseen row rather than
+# re-reading data the model has already seen.
+#
+# "Contamination-checked" means validation and benchmark documents are excluded
+# from training by hash. Skip that and your evaluation scores measure memorization
+# instead of learning. See `src/minifrontier/data.py` and `shards.py`.
+
 from __future__ import annotations
 
 import argparse

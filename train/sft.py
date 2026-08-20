@@ -1,5 +1,21 @@
 """Assistant-only raw-PyTorch supervised fine-tuning entry point."""
 
+# THE SECOND TRAINING STAGE, and the one that turns a text continuer into
+# something that answers.
+#
+# A model trained only on raw internet text will happily follow your question with
+# more questions, because that is what web pages do. SFT fixes that by training on
+# conversations -- and, crucially, grading the model only on the assistant's half.
+# That is the `loss_mask` threaded through the code: learn from the assistant's
+# words, not the user's.
+#
+# It is small and fast compared with pretraining: thousands of examples rather
+# than billions of tokens, minutes rather than days. It teaches format and
+# behaviour, not knowledge -- everything the model actually knows came from
+# pretraining, and SFT cannot add facts that were never there.
+#
+# See `src/minifrontier/sft.py` for how a conversation becomes tokens plus a mask.
+
 from __future__ import annotations
 
 import argparse

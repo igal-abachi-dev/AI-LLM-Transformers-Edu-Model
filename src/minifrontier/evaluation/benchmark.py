@@ -1,4 +1,18 @@
-"""Comparable experiment records and bounded throughput measurement (MF-037)."""
+"""Comparable experiment records and bounded throughput measurement (MF-037).
+
+Beginner's map of this file
+---------------------------
+A benchmark number with no context is not evidence. "Modern scored better" means
+nothing unless both models saw the same tokenizer, the same data, the same token
+budget, the same context length and the same evaluation.
+
+So a record here carries its conditions with it -- config, seed, exact token
+count, hardware, dependency versions, wall time, throughput, peak memory -- and
+the comparison helpers refuse to compare two records whose conditions do not
+match. That refusal is the feature: it is what stops an experiment from
+accidentally measuring the difference in batch size instead of the difference in
+architecture.
+"""
 
 from __future__ import annotations
 

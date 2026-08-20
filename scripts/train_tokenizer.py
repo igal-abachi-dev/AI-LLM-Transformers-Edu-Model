@@ -1,5 +1,19 @@
 """Train and verify a MiniFrontier byte-level BPE tokenizer."""
 
+# STEP 1 OF THE PIPELINE -- do this before anything else.
+#
+# The tokenizer decides how text gets chopped into the numbered pieces the model
+# actually sees. Nothing else can happen until it exists, and it must then never
+# change: a model trained against one tokenizer produces gibberish when read with
+# another, because the ID for " the" is not the same number any more.
+#
+# "Training" here involves no gradients. It counts which adjacent pairs of
+# characters occur most often and merges them, repeatedly, until the vocabulary
+# holds 16,384 entries. See `src/minifrontier/tokenizer.py`.
+#
+# Output: a directory with `tokenizer.json` and `tokenizer_config.json`, the
+# latter carrying a SHA-256 of the former so a mismatch is caught on load.
+
 from __future__ import annotations
 
 import argparse

@@ -1,4 +1,28 @@
-"""Provenance-enforced code admission and deterministic FIM transforms."""
+"""Provenance-enforced code admission and deterministic FIM transforms.
+
+Beginner's map of this file
+---------------------------
+Two jobs, both about training on source code.
+
+**Admission.** Code carries a license, and a license has conditions. Nothing is
+accepted here without an explicit repository, revision, license, path and content
+hash, and only a short list of permissive licenses is allowed. Missing provenance
+is rejected rather than assumed. The same pass also screens for secrets, because
+public repositories do contain leaked keys and a model that memorizes one will
+happily reproduce it.
+
+**FIM (fill in the middle).** Plain next-token training only ever teaches a model
+to continue text at the end. But writing code means inserting in the *middle* --
+that is what an editor's autocomplete does. FIM teaches it by rearranging a
+document into::
+
+    <|fim_prefix|> text before <|fim_suffix|> text after <|fim_middle|> the hole
+
+The model still just predicts the next token, left to right. It has simply been
+shown the surrounding context first, so "what comes next" happens to be the
+missing middle. That is the whole trick, and it is why FIM needs no change to the
+model, the loss, or the training loop -- only to the data.
+"""
 
 from __future__ import annotations
 

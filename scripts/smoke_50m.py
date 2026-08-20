@@ -1,5 +1,18 @@
 """Run one real-text 50M Edu optimization step and verify the artifact round trip."""
 
+# An end-to-end smoke test: build the real 50M Edu model, take a single optimizer
+# step on real packed text, save it, load it back, and check the loaded model
+# gives the same answers.
+#
+# One step proves nothing about quality, and that is fine -- this is not asking
+# "did it learn?", it is asking "is every part connected to every other part?".
+# Config, tokenizer, packing, model, loss, optimizer, checkpointing and reload all
+# have to work for it to finish. Bugs in the joins between components are exactly
+# the ones unit tests miss.
+#
+# It runs on CPU in a few minutes, which makes it the sensible thing to run before
+# committing a GPU to anything long.
+
 from __future__ import annotations
 
 import argparse

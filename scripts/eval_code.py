@@ -1,5 +1,13 @@
 """Score versioned code/FIM predictions with explicit contamination metadata."""
 
+# Scores generated code, and records what the score can and cannot mean.
+#
+# "Contamination metadata" is the important part. Public coding benchmarks have
+# long since leaked into web-crawled training data, so a model may have read the
+# answers -- in which case a high score measures memorization, not ability. The
+# fixtures here are original to this project for that reason, and the provenance
+# is recorded alongside the number so nobody has to guess later.
+
 from __future__ import annotations
 
 import argparse

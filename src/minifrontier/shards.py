@@ -1,4 +1,27 @@
-"""Bounded-memory deduplication, immutable token shards, and exact cursor resume."""
+"""Bounded-memory deduplication, immutable token shards, and exact cursor resume.
+
+Beginner's map of this file
+---------------------------
+Tokenizing the corpus on the fly during training would be slow and, worse,
+non-reproducible. So it happens once, ahead of time, and the result is written to
+disk as **shards**: plain files of fixed-width integers that training can read
+directly.
+
+Three ideas make this more than "write a big file":
+
+* **Memory-mapped.** A shard is read straight from disk as if it were an array in
+  memory. A corpus far larger than RAM works with no special handling.
+* **Hashed and immutable.** Each shard records the hash of its contents, so a run
+  can state exactly which bytes it trained on, and silent corruption is caught
+  rather than trained through.
+* **Cursor resume.** Training records which shard and which row it was on. A run
+  interrupted at hour nine restarts at hour nine, on the next unseen row, rather
+  than re-reading data the model has already learned from.
+
+The deduplication here is the heavier, disk-backed kind (near-duplicates as well
+as exact), which is why it lives outside the simple streaming filter in
+``data.py``.
+"""
 
 from __future__ import annotations
 

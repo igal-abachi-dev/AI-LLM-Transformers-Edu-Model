@@ -1,4 +1,16 @@
-"""Schemas and subprocess/API boundaries for post-V1 external-runtime validation."""
+"""Schemas and subprocess/API boundaries for post-V1 external-runtime validation.
+
+Beginner's map of this file
+---------------------------
+Beyond V1, MiniFrontier models can be exported to run under other software (the
+Transformers library, vLLM, llama.cpp). This module is the boundary layer for
+checking such a claim.
+
+The rule it enforces is worth internalizing: **uploading a file somewhere does not
+make it compatible**. A runtime only earns a compatibility claim by producing the
+same outputs as the native PyTorch implementation on the same inputs. Everything
+here exists to run that comparison and record the result.
+"""
 
 from __future__ import annotations
 

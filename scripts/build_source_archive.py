@@ -1,5 +1,14 @@
 """Build a public-review source ZIP without caches, weights, corpora, or vendored snapshots."""
 
+# Packages the source for review or upload. The exclusions are the point: no
+# bytecode, no caches, no corpora, no checkpoints, no local artifacts, no
+# third-party research bundles.
+#
+# That is a safety measure as much as a size one. Training directories accumulate
+# things that must not be published -- credentials, machine-specific paths,
+# licensed data -- and an explicit allow-and-exclude list beats remembering.
+# It also refuses to overwrite an existing archive unless you pass --force.
+
 from __future__ import annotations
 
 import argparse

@@ -1,5 +1,14 @@
 """Create a Q4_K_M candidate while refusing to label it publish-ready without evaluation."""
 
+# Quantization stores weights in about 4 bits instead of 16, so a model needs
+# roughly a quarter of the memory and runs on far more modest hardware. The cost is
+# accuracy, and how much accuracy is a question only measurement can answer.
+#
+# Hence the refusal in the name: this produces a candidate, and it stays a
+# candidate until it has been evaluated. Small models suffer proportionally more
+# from quantization than large ones, so the assumption "it is basically the same
+# model" is a bad one at this scale.
+
 from __future__ import annotations
 
 import argparse

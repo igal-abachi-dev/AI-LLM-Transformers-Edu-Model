@@ -1,4 +1,32 @@
-"""Provenance-aware document filtering, splitting, tokenization, and packing."""
+"""Provenance-aware document filtering, splitting, tokenization, and packing.
+
+Beginner's map of this file
+---------------------------
+Raw web text is not training data yet. The pipeline that turns one into the other
+is, in order:
+
+1. **Stream** documents from a public dataset without downloading terabytes
+   (``iter_fineweb_edu``).
+2. **Filter and deduplicate** -- drop the too-short, the too-long, the empty, and
+   anything already seen. Duplicates are worse than useless: the model memorizes
+   them instead of learning the general pattern.
+3. **Split** into train and validation *before* anything else touches the text,
+   using a hash of the content. Validation only means something if the model has
+   genuinely never seen those documents.
+4. **Pack** -- tokenize, glue documents end to end with ``<|eos|>`` between them,
+   and slice the stream into fixed-length training sequences.
+
+Packing deserves a second look, because it is unintuitive. Rather than padding
+every document out to the sequence length -- which would waste most of the
+compute on padding -- documents are concatenated into one long ribbon and cut at
+fixed intervals. A sequence may therefore contain the end of one document and the
+start of the next, separated by ``<|eos|>``, and the model learns from that
+boundary too.
+
+Every ``Document`` carries its provenance (source, revision, license, record ID,
+content hash) and refuses to be created without it. That is a legal and
+reproducibility requirement here, not decoration -- see ``docs/DATA_GOVERNANCE.md``.
+"""
 
 from __future__ import annotations
 
@@ -28,6 +56,15 @@ def content_sha256(text: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Document:
+    """One piece of training text plus the paperwork that says where it came from.
+
+    ``content_hash`` is the SHA-256 of ``text`` and doubles as the deduplication
+    key and the split key. ``parent_content_hash`` points back at the original
+    when a document has been transformed (FIM rewriting, for example) so the
+    transformed version stays on the same side of the train/validation split as
+    its parent.
+    """
+
     text: str
     source: str
     revision: str
@@ -42,6 +79,8 @@ class Document:
     transform: str | None = None
 
     def __post_init__(self) -> None:
+        # Provenance is validated at construction, so an unlabelled document simply
+        # cannot exist further down the pipeline.
         required = {
             "source": self.source,
             "revision": self.revision,
@@ -102,6 +141,12 @@ class Document:
 
 @dataclass(frozen=True, slots=True)
 class PackedSequence:
+    """One fixed-length training example, ready to become a row of a batch.
+
+    ``non_padding_tokens`` records how much of it is real, which matters only for
+    the final remainder sequence when padding was allowed.
+    """
+
     token_ids: tuple[int, ...]
     non_padding_tokens: int
 
@@ -127,7 +172,13 @@ def iter_fineweb_edu(
     shuffle_seed: int | None = None,
     shuffle_buffer: int = 10_000,
 ) -> Iterator[Document]:
-    """Stream a bounded official FineWeb-Edu sample without materializing it."""
+    """Stream a bounded official FineWeb-Edu sample without materializing it.
+
+    ``streaming=True`` pulls records over the network on demand rather than
+    downloading the dataset first. The pinned ``revision`` matters: "FineWeb-Edu"
+    is a moving target, and a run record that does not name the exact revision
+    cannot be reproduced later.
+    """
 
     from datasets import load_dataset
 
@@ -171,8 +222,17 @@ def filter_and_deduplicate(
     max_characters: int = 1_000_000,
     excluded_hashes: frozenset[str] | set[str] = frozenset(),
 ) -> Iterator[Document]:
+    """Drop junk and exact duplicates, keeping the first copy of anything repeated.
+
+    ``excluded_hashes`` is the contamination guard: pass the validation or
+    benchmark hashes in here and those documents can never leak into training,
+    which would otherwise make the evaluation scores meaningless.
+    """
+
     if min_characters < 0 or max_characters < min_characters:
         raise ValueError("invalid character bounds")
+    # Hashes seen so far in this stream. Exact-duplicate removal only; near-
+    # duplicate detection is a bigger job and lives in `shards.py`.
     seen: set[str] = set()
     for document in documents:
         length = len(document.text)
@@ -193,6 +253,14 @@ def split_documents(
     *,
     validation_fraction: float = 0.01,
 ) -> tuple[list[Document], list[Document]]:
+    """Assign each document to train or validation by hashing its content.
+
+    Hashing instead of shuffling has a property that matters: the same document
+    always lands on the same side, no matter what order it arrives in, how many
+    other documents there are, or how many times the pipeline is re-run. That is
+    what keeps a validation set honest across re-runs.
+    """
+
     if not 0.0 < validation_fraction < 1.0:
         raise ValueError("validation_fraction must be in (0, 1)")
     train: list[Document] = []
@@ -208,7 +276,13 @@ def split_documents(
 
 
 def split_bucket(document: Document) -> int:
-    """Return a stable split bucket that survives provenance-preserving transforms."""
+    """Return a stable split bucket that survives provenance-preserving transforms.
+
+    Bucket 0-9,999 derived from the first 8 hex characters of the hash. Using the
+    *parent* hash when one exists is the important part: a FIM-rewritten copy of a
+    training document must not be able to land in validation, or the model would
+    be graded on text it has effectively already read.
+    """
 
     identity_hash = document.parent_content_hash or document.content_hash
     return int(identity_hash[:8], 16) % 10_000
@@ -221,14 +295,29 @@ def pack_documents(
     sequence_length: int,
     drop_remainder: bool = True,
 ) -> Iterator[PackedSequence]:
+    """Glue tokenized documents into one ribbon and slice fixed-length sequences.
+
+    Padding every document to ``sequence_length`` would spend most of the training
+    compute on padding tokens. Packing spends none: every position in every
+    sequence is a real token the model can learn from. The cost is that documents
+    get split across sequence boundaries, and that a sequence can contain the tail
+    of one document and the head of another -- with ``<|eos|>`` between them, so
+    the model can at least learn where the seam is.
+    """
+
     if sequence_length < 2:
         raise ValueError("sequence_length must be at least two")
     buffer: list[int] = []
     for document in documents:
+        # add_eos marks the end of this document inside the continuous ribbon.
         buffer.extend(tokenizer.encode(document.text, add_eos=True))
+        # Emit as many complete sequences as the buffer can supply, then keep the
+        # leftover to be continued by the next document.
         while len(buffer) >= sequence_length:
             yield PackedSequence(tuple(buffer[:sequence_length]), sequence_length)
             del buffer[:sequence_length]
+    # The final scrap is normally dropped: it is a rounding error's worth of
+    # tokens, and padding it would introduce the only padded batch in the run.
     if buffer and not drop_remainder:
         non_padding = len(buffer)
         buffer.extend([tokenizer.pad_id] * (sequence_length - len(buffer)))
@@ -236,7 +325,12 @@ def pack_documents(
 
 
 class PackedTokenDataset(IterableDataset[torch.Tensor]):
-    """Worker-sharded iterable over already deterministic packed sequences."""
+    """Worker-sharded iterable over already deterministic packed sequences.
+
+    With several DataLoader worker processes, each one walks the same stream and
+    keeps only every Nth sequence. Simple, and it guarantees no sequence is
+    delivered twice -- which would quietly train on the same tokens more than once.
+    """
 
     def __init__(self, sequences: Iterable[PackedSequence]) -> None:
         super().__init__()

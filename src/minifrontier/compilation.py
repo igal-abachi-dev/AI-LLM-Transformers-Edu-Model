@@ -1,4 +1,21 @@
-"""Path-specific ``torch.compile`` helpers with explicit diagnostics."""
+"""Path-specific ``torch.compile`` helpers with explicit diagnostics.
+
+Beginner's map of this file
+---------------------------
+``torch.compile`` traces a model's Python into a graph and generates fused
+kernels for it, which can be substantially faster. It is optional here on
+purpose: eager execution stays the correctness baseline, and anything compiled
+has to prove it produces the same numbers.
+
+Why "path-specific"? A model has three quite different execution shapes --
+training, prefilling a prompt, and decoding one token at a time -- and compiling
+one says nothing about the others. Each gets its own attempt and its own report,
+so a run record cannot claim more than was actually measured.
+
+Compilation is also allowed to fail. By default a failure is captured in the
+report and the original eager module is returned, because a slower run that works
+beats a fast one that does not exist.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +30,8 @@ CompilePath = Literal["training", "prefill", "decode"]
 
 @dataclass(frozen=True, slots=True)
 class CompileReport:
+    """What was asked for versus what actually happened, for the run record."""
+
     path: CompilePath
     requested: bool
     compiled: bool

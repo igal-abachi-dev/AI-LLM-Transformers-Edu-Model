@@ -1,5 +1,13 @@
 """Create native greedy/logprob evidence consumed by the later vLLM/llama.cpp parity gates."""
 
+# Records what the native PyTorch model outputs for a fixed set of prompts --
+# greedy tokens and log-probabilities -- so an external runtime can later be
+# checked against it.
+#
+# Greedy decoding is used because it is deterministic: any disagreement is then a
+# real difference in the implementation, not sampling luck. This file is the
+# reference answer sheet the parity gates grade against.
+
 from __future__ import annotations
 
 import argparse

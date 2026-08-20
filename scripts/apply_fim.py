@@ -1,5 +1,22 @@
 """Apply a deterministic, versioned FIM mixture to an approved code manifest."""
 
+# FIM = fill in the middle. Plain next-token training only teaches a model to
+# continue text at the END, but writing code means inserting in the MIDDLE -- which
+# is what an editor's autocomplete does all day.
+#
+# The trick is entirely in the data. A document is rearranged into:
+#
+#   <|fim_prefix|> text before <|fim_suffix|> text after <|fim_middle|> the hole
+#
+# The model still predicts left to right, one token at a time, exactly as before.
+# It has simply been shown the surrounding context first, so "whatever comes next"
+# happens to be the missing middle. No change to the model, the loss, or the
+# training loop is needed.
+#
+# Only a fraction of documents get this treatment (15% here) -- a model trained
+# only on FIM would lose the ordinary continuation skill. "Deterministic" means the
+# same input always produces the same holes, so two runs stay comparable.
+
 from __future__ import annotations
 
 import argparse

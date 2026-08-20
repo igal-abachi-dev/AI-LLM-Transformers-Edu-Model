@@ -1,5 +1,20 @@
 """Evaluate a MiniFrontier release on local validation text and optional lm-eval tasks."""
 
+# How good is the model, on text it has never seen? Three numbers come out:
+#
+# * loss (nats/token) -- average surprise; the training objective itself.
+# * perplexity = exp(loss) -- "as unsure as if picking among this many tokens".
+#   Only comparable between models sharing a tokenizer.
+# * bits per byte -- the same thing rescaled to raw UTF-8 bytes, which IS
+#   comparable across tokenizers, and so the honest number for outside comparison.
+#
+# The optional lm-eval tasks are the standard public benchmarks. Expect a
+# 150M-parameter model to score near chance on most of them; the point is having a
+# comparable number rather than a flattering one.
+#
+# Validation text must be text the model never trained on, which is why the split
+# happens by content hash back in step 2 rather than being chosen afterwards.
+
 from __future__ import annotations
 
 import argparse

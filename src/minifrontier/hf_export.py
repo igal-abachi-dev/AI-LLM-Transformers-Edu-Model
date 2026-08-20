@@ -1,4 +1,15 @@
-"""Hub-ready Transformers export without changing the native MiniFrontier checkpoint."""
+"""Hub-ready Transformers export without changing the native MiniFrontier checkpoint.
+
+Beginner's map of this file
+---------------------------
+Writes a second copy of a release in the layout the Transformers library expects,
+so ``AutoModelForCausalLM.from_pretrained(...)`` works on it. The raw-PyTorch
+checkpoint stays the reference implementation and is not modified -- this is a
+translation for other people's tools, not a dependency of the model itself.
+
+The export has to earn its claim through parity tests: same prompt, same outputs
+as the native path, or the export is wrong.
+"""
 
 from __future__ import annotations
 

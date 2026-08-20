@@ -1,5 +1,25 @@
 """Canonical single-process MiniFrontier pretraining entry point."""
 
+# STEP 3 OF THE PIPELINE, and the one that takes the hours. This is where a
+# randomly initialized model becomes one that has read a lot of text.
+#
+# What happens here, at a glance: build the model from a config, wire up the data
+# shards from step 2, and hand both to `train_updates` in
+# `src/minifrontier/training.py` -- which is the actual loop and the file to read
+# if you want to understand training itself.
+#
+# A few things worth knowing before your first run:
+#
+# * A "step" means one optimizer update, not one batch. With gradient accumulation
+#   several batches contribute to a single update.
+# * The run is resumable. It checkpoints weights, optimizer state, schedule
+#   position and the data cursor together, so an interrupted run continues exactly
+#   where it stopped rather than re-reading data it has already learned from.
+# * Loss is reported in nats per token. Starting value is around ln(vocab_size),
+#   about 9.7 for a 16,384-token vocabulary -- that is the model guessing blind.
+# * Do not start a serious run until the tests, the overfit proof, and the data
+#   checks pass. Debugging at hour six is far more expensive than at minute one.
+
 from __future__ import annotations
 
 import argparse

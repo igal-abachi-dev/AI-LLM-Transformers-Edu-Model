@@ -1,5 +1,13 @@
 """Compare base and SFT releases on the versioned original chat prompt set."""
 
+# Did fine-tuning actually change the behaviour? Runs the same prompts through the
+# base model and the SFT model side by side.
+#
+# The expected difference is qualitative rather than a score: the base model
+# continues your question (often with more questions), while the SFT model answers
+# it and stops cleanly at <|eos|>. SFT teaches format and behaviour, not knowledge
+# -- everything the model knows still came from pretraining.
+
 from __future__ import annotations
 
 import argparse

@@ -1,4 +1,31 @@
-"""Canonical bounded-provider AdamW training loop and resumable control state."""
+"""Canonical bounded-provider AdamW training loop and resumable control state.
+
+Beginner's map of this file
+---------------------------
+Training is a loop of four steps, repeated for as many *updates* as you budget:
+
+1. **Forward** -- run a batch of token sequences through the model and measure how
+   surprised it was by the real next tokens (``loss.py``).
+2. **Backward** -- ``loss.backward()`` works out, for every single weight, which
+   direction would have made the model less surprised.
+3. **Clip** -- if the suggested nudge is enormous, shrink it, so one strange batch
+   cannot destroy hours of progress.
+4. **Step** -- the optimizer applies the nudge. AdamW is "nudge, but with memory
+   of recent nudges and a per-weight step size", plus weight decay pulling weights
+   gently toward zero.
+
+Vocabulary that trips people up: a **step** here means one optimizer update, not
+one batch. With ``gradient_accumulation_steps = 8`` the loop processes eight
+batches, adds up their gradients, and only then updates -- which simulates a big
+batch on a GPU that could not hold one.
+
+The learning rate is not constant. ``WarmupCosineSchedule`` starts it near zero
+(large steps on a freshly randomized model are destructive), ramps up over the
+first ``warmup_updates``, then eases back down along a cosine curve.
+
+Everything with a ``state_dict`` in this file exists so a run can be interrupted
+and resumed at exactly the token it stopped on -- see ``checkpoint.py``.
+"""
 
 from __future__ import annotations
 
@@ -18,19 +45,40 @@ from minifrontier.precision import Precision, PrecisionPolicy, resolve_precision
 
 @dataclass(frozen=True, slots=True)
 class TrainingConfig:
+    """Every knob of the training recipe, separate from the model's architecture."""
+
+    # How many optimizer updates this run performs. Also sets the cosine curve's
+    # length, so changing it mid-run would change the schedule shape.
     max_updates: int
+    # Peak learning rate: how big a nudge each update may apply at the top of the
+    # warmup ramp.
     learning_rate: float = 3e-4
+    # Floor the cosine decays toward, rather than going all the way to zero.
     min_learning_rate: float = 3e-5
+    # Updates spent ramping the learning rate up from ~0. Large early steps on a
+    # randomly initialized model are destructive.
     warmup_updates: int = 100
+    # AdamW's two memories: beta1 smooths the gradient direction, beta2 smooths its
+    # magnitude. 0.95 (rather than 0.999) is the usual LLM choice -- shorter memory
+    # suits a loss surface that keeps moving.
     beta1: float = 0.9
     beta2: float = 0.95
+    # Pull weights gently toward zero unless the data insists otherwise. Discourages
+    # memorizing individual examples.
     weight_decay: float = 0.1
     decay_embeddings: bool = True
+    # Rescale the whole gradient if its total length exceeds this. The single most
+    # effective guard against a loss spike wrecking a run.
     gradient_clip: float = 1.0
+    # Batches to accumulate before stepping. Simulates a bigger batch than fits.
     gradient_accumulation_steps: int = 1
+    # Run the validation callback every N updates; 0 disables it.
     validation_interval: int = 0
+    # "auto" picks BF16 on capable CUDA and FP32 elsewhere. See precision.py.
     precision: Precision = "auto"
+    # Trade extra compute for much less memory. Needed for the larger presets.
     activation_checkpointing: bool = False
+    # Force one attention kernel for the whole run; None means follow the config.
     attention_impl: AttentionImplementation | None = None
 
     def __post_init__(self) -> None:
@@ -54,12 +102,26 @@ class TrainingConfig:
 
 @dataclass(slots=True)
 class TrainingBatch:
+    """One batch: ``[batch, sequence]`` token IDs, plus optional grading rules.
+
+    ``labels`` defaults to ``tokens`` itself, because in plain pretraining the
+    answer key *is* the input -- the shift by one happens inside ``loss.py``.
+    SFT supplies a ``loss_mask`` so only assistant tokens are scored.
+    """
+
     tokens: torch.Tensor
     labels: torch.Tensor | None = None
     loss_mask: torch.Tensor | None = None
 
 
 class BatchProvider(Protocol):
+    """Anything that can hand out batches and say exactly where it left off.
+
+    The two ``state_dict`` methods are what make exact resume possible: on restart
+    the data stream continues from the same position rather than starting over,
+    which would quietly re-train on data the model has already seen.
+    """
+
     def next_batch(self) -> TrainingBatch: ...
 
     def state_dict(self) -> Mapping[str, Any]: ...
@@ -68,7 +130,14 @@ class BatchProvider(Protocol):
 
 
 class CombinedOptimizer:
-    """Small controller for disjoint first-party optimizers with one checkpoint surface."""
+    """Small controller for disjoint first-party optimizers with one checkpoint surface.
+
+    Used by the Muon experiment, where different kinds of weights are handed to
+    different optimizers. It makes several optimizers look like one to the training
+    loop: ``zero_grad``, ``step`` and the checkpoint calls fan out to all of them.
+    "Disjoint" is the safety property -- every parameter belongs to exactly one
+    optimizer, checked in ``muon.partition_muon_parameters``.
+    """
 
     def __init__(self, *optimizers: torch.optim.Optimizer) -> None:
         if not optimizers:
@@ -104,7 +173,12 @@ class CombinedOptimizer:
 
 
 class ListBatchProvider:
-    """Deterministic bounded provider used by tests and engineering smokes."""
+    """Deterministic bounded provider used by tests and engineering smokes.
+
+    Cycles through a fixed list forever. Perfect for proving a model *can* learn
+    (see ``overfit.py``) and useless for real training, where seeing the same
+    batches repeatedly is exactly what you do not want.
+    """
 
     def __init__(self, batches: Sequence[TrainingBatch]) -> None:
         if not batches:
@@ -128,7 +202,12 @@ class ListBatchProvider:
 
 
 class ShuffledBatchProvider:
-    """Deterministic epoch-shuffled in-memory provider with compact exact-resume state."""
+    """Deterministic epoch-shuffled in-memory provider with compact exact-resume state.
+
+    Same batches, reshuffled each pass through the data, so the model does not
+    learn the order as a pattern. "Deterministic" means the same seed reproduces
+    the same order exactly -- a requirement for comparing two runs honestly.
+    """
 
     def __init__(
         self,
@@ -198,6 +277,8 @@ class ShuffledBatchProvider:
 
 @dataclass(slots=True)
 class TrainingState:
+    """The run's progress counters -- what a checkpoint must restore to resume."""
+
     completed_updates: int = 0
     consumed_target_tokens: int = 0
     last_loss: float | None = None
@@ -213,7 +294,26 @@ class TrainingState:
 
 
 class WarmupCosineSchedule:
-    """Update-indexed warmup/cosine schedule with explicit serializable state."""
+    """Update-indexed warmup/cosine schedule with explicit serializable state.
+
+    The learning rate over a run, in two phases::
+
+        lr
+         |      ___
+         |    /     ---..__
+         |  /              ---..__
+         |/                        ----___
+         +--------------------------------- update
+          warmup      cosine decay
+
+    Warmup exists because a freshly randomized model has no idea what it is doing,
+    and full-size steps at that point mostly do damage. The cosine tail exists
+    because late in training you want small, careful refinements.
+
+    "Update-indexed" means the rate is a pure function of the update number, so
+    resuming from a checkpoint reproduces the identical schedule -- no hidden
+    counter drifting out of sync.
+    """
 
     def __init__(self, config: TrainingConfig, completed_updates: int = 0) -> None:
         if not 0 <= completed_updates <= config.max_updates:
@@ -224,11 +324,15 @@ class WarmupCosineSchedule:
     def learning_rate_for_update(self, update_index: int) -> float:
         if not 0 <= update_index < self.config.max_updates:
             raise IndexError("update index is outside the configured schedule")
+        # Warmup: a straight line from lr/warmup up to the peak.
         if self.config.warmup_updates and update_index < self.config.warmup_updates:
             return self.config.learning_rate * (update_index + 1) / self.config.warmup_updates
         decay_updates = self.config.max_updates - self.config.warmup_updates
         decay_index = update_index - self.config.warmup_updates
+        # progress runs 0 -> 1 across the decay phase...
         progress = 1.0 if decay_updates <= 1 else decay_index / (decay_updates - 1)
+        # ...and cos(pi * progress) turns that into a smooth 1 -> 0 fall, which is
+        # then stretched between min_learning_rate and learning_rate.
         cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
         return self.config.min_learning_rate + cosine * (
             self.config.learning_rate - self.config.min_learning_rate
@@ -247,6 +351,18 @@ class WarmupCosineSchedule:
 def _parameter_groups(
     model: MiniFrontier, config: TrainingConfig
 ) -> tuple[list[dict[str, Any]], dict[str, list[str]]]:
+    """Split weights into "decay these" and "leave these alone".
+
+    Weight decay suits matrices, where shrinking unused directions is a genuine
+    regularizer. It does not suit the 1-D parameters -- RMSNorm scales -- where
+    pulling toward zero just fights the normalization the layer exists to do. The
+    ``parameter.ndim >= 2`` test below is exactly that distinction.
+
+    ``seen`` matters because tied embeddings make ``lm_head.weight`` and
+    ``token_embedding.weight`` the same tensor; adding it twice would apply decay
+    to it twice.
+    """
+
     decay: list[torch.nn.Parameter] = []
     no_decay: list[torch.nn.Parameter] = []
     names = {"decay": [], "no_decay": []}
@@ -271,6 +387,12 @@ def _parameter_groups(
 def build_adamw(
     model: MiniFrontier, config: TrainingConfig
 ) -> tuple[torch.optim.AdamW, dict[str, list[str]]]:
+    """Create the baseline optimizer, and report which weights landed in which group.
+
+    The names are returned so a run record can state exactly what was decayed,
+    instead of leaving it to be inferred from the code later.
+    """
+
     groups, names = _parameter_groups(model, config)
     optimizer = torch.optim.AdamW(
         groups,
@@ -281,7 +403,16 @@ def build_adamw(
 
 
 def validate_cpu_batch(batch: TrainingBatch, *, vocab_size: int) -> tuple[torch.Tensor, int]:
-    """Validate IDs before CUDA transfer and return labels plus valid target count."""
+    """Validate IDs before CUDA transfer and return labels plus valid target count.
+
+    Why CPU-side, and why so fussy? An out-of-range token ID is a memory fault
+    inside the embedding lookup on a GPU, which surfaces as an unrecoverable
+    device-side assert with no useful message and usually takes the whole process
+    with it. Ten microseconds of checking here turns that into a clear sentence.
+
+    Returning the valid-target count also lets the caller weight microbatches by
+    real token count instead of by batch count.
+    """
 
     tokens = batch.tokens
     labels = batch.labels if batch.labels is not None else tokens
@@ -329,6 +460,13 @@ def train_updates(
 ]:
     """Run explicit optimizer updates without assuming an in-memory corpus.
 
+    This is the actual training loop, and it is worth reading top to bottom once:
+    everything above is setup, and the ``while`` below is the whole of pretraining.
+
+    Each pass around the loop performs ONE optimizer update, which may consume
+    several batches (gradient accumulation). Data arrives through ``provider``
+    rather than a list, because a real corpus is far too large to hold in memory.
+
     ``stop_after_updates`` is an absolute update count used for bounded runs and
     deterministic interruption tests. It does not alter the serialized schedule.
     """
@@ -349,17 +487,24 @@ def train_updates(
     execution_model.train()
 
     while state.completed_updates < update_limit:
+        # Collect every microbatch that will contribute to this single update.
         cpu_batches = [provider.next_batch() for _ in range(config.gradient_accumulation_steps)]
         validated = [
             validate_cpu_batch(batch, vocab_size=model.config.vocab_size) for batch in cpu_batches
         ]
+        # Total real (non-skipped) targets across the whole update. Dividing by this
+        # -- rather than by the number of microbatches -- makes the result identical
+        # to what one big batch would have produced.
         target_count = sum(count for _, count in validated)
+        # Gradients accumulate by default in PyTorch, so clear last update's first.
         optimizer.zero_grad(set_to_none=True)
         detached_loss_sum = torch.zeros((), device=torch_device)
         for batch, (labels, _) in zip(cpu_batches, validated, strict=True):
             tokens_device = batch.tokens.to(torch_device)
             labels_device = labels.to(torch_device)
             mask_device = batch.loss_mask.to(torch_device) if batch.loss_mask is not None else None
+            # Under BF16 autocast the matmuls run in half precision while the
+            # sensitive reductions stay FP32. On CPU this context does nothing.
             with policy.autocast_context():
                 logits = execution_model(
                     tokens_device,
@@ -371,15 +516,29 @@ def train_updates(
                     labels_device,
                     loss_mask=mask_device,
                 )
+                # Pre-divided so the gradients from all microbatches sum to exactly
+                # the gradient of the full batch's mean loss.
                 scaled_loss = loss_sum / target_count
+            # Compute this microbatch's gradients and ADD them to what is already
+            # stored on each parameter. No optimizer step happens yet.
             scaled_loss.backward()
+            # `.detach()` keeps the running total out of the autograd graph, which
+            # would otherwise pin every microbatch's activations in memory.
             detached_loss_sum += loss_sum.detach().float()
 
+        # All microbatches are in; now the single update for this iteration.
         update_index = state.completed_updates
         learning_rate = schedule.learning_rate_for_update(update_index)
         for group in optimizer.param_groups:
+            # `lr_scale` lets one schedule drive two optimizers at different rates,
+            # which the Muon/AdamW experiment needs. It is 1.0 for plain AdamW.
             group["lr"] = learning_rate * float(group.get("lr_scale", 1.0))
+        # If the combined gradient is longer than `gradient_clip`, scale the whole
+        # thing down to that length. Direction preserved, magnitude capped -- one
+        # freak batch cannot then blow the model up. The returned norm is the
+        # pre-clipping length, which is a useful health signal in the logs.
         gradient_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip)
+        # Apply the nudge. This is the only line that changes the model's weights.
         optimizer.step()
         state.completed_updates += 1
         schedule.completed_updates = state.completed_updates

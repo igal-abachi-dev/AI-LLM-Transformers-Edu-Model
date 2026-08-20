@@ -1,5 +1,14 @@
 """Exercise vLLM's OpenAI completions/chat transport and retain the raw responses."""
 
+# vLLM is a high-throughput serving engine that speaks the OpenAI API, so ordinary
+# client libraries can talk to a locally served model. This checks that transport
+# works and keeps the raw responses as evidence.
+#
+# Note what a successful connection does NOT prove. The API answering is a
+# transport fact; whether the served model produces the same tokens as the native
+# implementation is a separate parity question, and only that earns a
+# compatibility claim.
+
 from __future__ import annotations
 
 import argparse

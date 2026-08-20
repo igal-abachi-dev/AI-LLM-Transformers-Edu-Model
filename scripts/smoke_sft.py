@@ -1,5 +1,13 @@
 """Persist a bounded CPU assistant-only SFT overfit and chat-path record."""
 
+# The SFT counterpart of the overfit proof: fine-tune on a handful of
+# conversations until they are memorized, and confirm the loss mask really is
+# assistant-only -- the model should learn the replies while learning nothing from
+# the user turns. Then run the chat path end to end.
+#
+# Cheap, CPU-friendly, and it catches the mask being off by one, which is the
+# classic SFT bug and completely invisible in the loss curve.
+
 from __future__ import annotations
 
 import argparse

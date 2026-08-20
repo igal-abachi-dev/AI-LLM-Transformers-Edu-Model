@@ -1,5 +1,13 @@
 """Load-test and audit matched MiniFrontier Edu/Modern release directories."""
 
+# The last gate before publishing. Loads each release exactly as a stranger with a
+# fresh clone would, checks every file against the SHA-256 manifest, and confirms
+# the Edu and Modern pair really are matched -- same tokenizer, same budget, same
+# evaluation -- since "matched" is the only thing that makes comparing them fair.
+#
+# Failures here are the boring, expensive kind: a missing file, a stale hash, a
+# model that only loads because of something left over in your working directory.
+
 from __future__ import annotations
 
 import argparse
