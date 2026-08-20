@@ -16,6 +16,7 @@ MiniFrontier is a from-scratch, educational decoder-only language model built wi
 
 ## Introduction (read first)
 - [Introduction to LLM / Transformers / Attention](introduction.md)
+- [Architecture / Diagrams](minifrontier-architecture-diagrams.md)
 
 ## What we are building
 
@@ -39,6 +40,38 @@ manual attention -> SDPA -> RoPE -> MHA -> GQA -> QK-Norm
 ```
 
 The neural architecture and decoding machinery should remain small enough to read in an afternoon and clear enough to explain on a whiteboard.
+
+
+
+
+
+### What it is
+
+**MiniFrontier** (the core of the repo) is a clean, from-scratch PyTorch implementation of a decoder-only language model designed for learning. It targets a single consumer GPU and deliberately keeps the code small and readable enough to study in an afternoon.
+**It's a solid, high-quality educational repo** — especially if your goal is to deeply understand how modern decoder-only transformers (LLMs) work under the hood.
+
+It offers two presets that share the same codebase:
+- **Edu**: Classic modern baseline (pre-RMSNorm, RoPE, full causal MHA, SwiGLU, tied embeddings).
+- **Modern**: Adds practical upgrades — GQA, QK-Norm, hybrid local/global attention (3 local + 1 global), optional NoPE experiments.
+
+Supported sizes go from tiny toy models (~29k parameters for teaching) up to planned 50M / 150M (canonical target) / 350M / 500M presets( and 1B-3B model later for modern preset). It includes a 16k-token byte-level BPE tokenizer, full training loop (AdamW + experimental Muon), KV-cache generation, FIM/code data handling, assistant-only SFT, evaluation tooling, and export paths.
+
+### Strengths (why it’s good)
+- **Excellent teaching material**. The `introduction.md` is one of the best plain-language walkthroughs I’ve seen. It explains next-token prediction, tokens, residual streams, RoPE, attention, etc., with zero math prerequisites and maps every concept directly to the source files.
+- **Clean, intentional architecture**. Explicit teaching paths (manual attention) sit alongside optimized ones (SDPA/GQA). Residual stream, pre-norm, etc., are treated as first-class concepts.
+- **Strong engineering hygiene**. 182 CPU tests (most in the default gate), rigorous parity checks, deterministic data pipelines, provenance tracking for code data, checkpoint/resume, safetensors, overfit proofs, and detailed task backlog with acceptance criteria.
+- **Modern techniques without bloat**. GQA, hybrid attention, QK-Norm, FIM, Muon lab, SFT — all implemented in a focused way. Explicitly excludes MoE, multi-GPU, custom kernels, agents, etc., so it stays educational.
+- **Well-organized**. Clear structure (`src/minifrontier/`, labs, tests, configs, tasks/), good docs (`plan.md`, architecture diagrams, AGENTS.md), and a sensible learning progression.
+
+in addition to /src folder there is /scripts and /labs folders , and documentation
+
+Current limitations
+- Single-GPU / educational scope only — not a production framework or high-performance training stack.
+
+ If you want to understand *why* modern LLMs are built the way they are (attention, RoPE, GQA, residuals, training loop, decoding, SFT, etc.) 
+ by reading and running real code rather than high-level frameworks, this is one of the cleaner and more thoughtfully designed options available right now. 
+
+Start with `introduction.md`, then the tiny models and labs — that’s clearly the intended path.
 
 ## Frozen V1 targets
 
@@ -111,6 +144,9 @@ docs/                    Research references
 MiniFrontier requires Python 3.12 and [`uv`](https://docs.astral.sh/uv/). On Windows, install `uv`
 with any one of these methods.
 
+
+- [Install instructions](install.md)
+
 Official PowerShell installer:
 
 ```powershell
@@ -149,7 +185,7 @@ The normal developer loop is:
 ```bat
 uv sync --extra cpu --group dev
 uv run --extra cpu ruff check .
-uv run --extra cpu pytest
+uv run --extra cu130 python -m pytest
 ```
 
 Do not start a serious training run until primitive tests, Edu overfit, data tests, checkpoint resume, and baseline evaluation gates pass.
