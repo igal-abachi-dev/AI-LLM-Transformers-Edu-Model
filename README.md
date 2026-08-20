@@ -86,6 +86,8 @@ All sizes use a single 16,384-token byte-level BPE tokenizer, 64-dimensional att
 
 The required hardware target is one NVIDIA GPU with 24 GB for comfortable 50M/150M work; larger presets require profiling and may need smaller microbatches or activation checkpointing. CPU mode supports setup, correctness tests, and small labs.
 
+8GB will work on 50M-150M , for 500M you need 24GB gpu
+
 ## V1 scope
 
 V1 includes:
