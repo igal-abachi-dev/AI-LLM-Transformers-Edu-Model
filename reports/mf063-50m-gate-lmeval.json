@@ -1,0 +1,5273 @@
+{
+  "adapter_smoke": {
+    "generated_utf8_bytes": 2,
+    "is_greedy": false,
+    "loglikelihood": -29.325223445892334,
+    "status": "completed"
+  },
+  "harness": {
+    "results": {
+      "config": {
+        "batch_size": null,
+        "batch_sizes": [],
+        "bootstrap_iters": 100000,
+        "device": null,
+        "fewshot_seed": 1234,
+        "gen_kwargs": null,
+        "limit": 20,
+        "model": "MiniFrontierEvalLM",
+        "model_args": null,
+        "numpy_seed": 1234,
+        "random_seed": 0,
+        "torch_seed": 1234,
+        "use_cache": null
+      },
+      "configs": {
+        "arc_easy": {
+          "dataset_name": "ARC-Easy",
+          "dataset_path": "allenai/ai2_arc",
+          "description": "",
+          "doc_to_choice": "{{choices.text}}",
+          "doc_to_decontamination_query": "Question: {{question}}\nAnswer:",
+          "doc_to_target": "{{choices.label.index(answerKey)}}",
+          "doc_to_text": "Question: {{question}}\nAnswer:",
+          "fewshot_config": {
+            "doc_to_choice": "{{choices.text}}",
+            "doc_to_target": "{{choices.label.index(answerKey)}}",
+            "doc_to_text": "Question: {{question}}\nAnswer:",
+            "fewshot_delimiter": "\n\n",
+            "fewshot_indices": null,
+            "gen_prefix": null,
+            "process_docs": null,
+            "sampler": "default",
+            "samples": null,
+            "split": null,
+            "target_delimiter": " "
+          },
+          "fewshot_delimiter": "\n\n",
+          "metadata": {
+            "config_source": "D:\\Libraries\\Repositories\\AI-LLM-Transformers-Edu-Model\\.venv\\Lib\\site-packages\\lm_eval\\tasks\\arc\\arc_easy.yaml",
+            "version": 1.0
+          },
+          "metric_list": [
+            {
+              "aggregation": "mean",
+              "higher_is_better": true,
+              "metric": "acc"
+            },
+            {
+              "aggregation": "mean",
+              "higher_is_better": true,
+              "metric": "acc_norm"
+            }
+          ],
+          "num_fewshot": 0,
+          "output_type": "multiple_choice",
+          "repeats": 1,
+          "should_decontaminate": true,
+          "target_delimiter": " ",
+          "task": "arc_easy",
+          "test_split": "test",
+          "training_split": "train",
+          "unsafe_code": false,
+          "validation_split": "validation"
+        },
+        "hellaswag": {
+          "dataset_path": "Rowan/hellaswag",
+          "description": "",
+          "doc_to_choice": "choices",
+          "doc_to_target": "{{label}}",
+          "doc_to_text": "{{query}}",
+          "fewshot_config": {
+            "doc_to_choice": "choices",
+            "doc_to_target": "{{label}}",
+            "doc_to_text": "{{query}}",
+            "fewshot_delimiter": "\n\n",
+            "fewshot_indices": null,
+            "gen_prefix": null,
+            "process_docs": "<function process_docs at 0x000001DF5D81E160>",
+            "sampler": "default",
+            "samples": null,
+            "split": null,
+            "target_delimiter": " "
+          },
+          "fewshot_delimiter": "\n\n",
+          "metadata": {
+            "config_source": "D:\\Libraries\\Repositories\\AI-LLM-Transformers-Edu-Model\\.venv\\Lib\\site-packages\\lm_eval\\tasks\\hellaswag\\hellaswag.yaml",
+            "version": 1.0
+          },
+          "metric_list": [
+            {
+              "aggregation": "mean",
+              "higher_is_better": true,
+              "metric": "acc"
+            },
+            {
+              "aggregation": "mean",
+              "higher_is_better": true,
+              "metric": "acc_norm"
+            }
+          ],
+          "num_fewshot": 0,
+          "output_type": "multiple_choice",
+          "process_docs": "def process_docs(dataset: datasets.Dataset) -> datasets.Dataset:\n    def _process_doc(doc):\n        ctx = doc[\"ctx_a\"] + \" \" + doc[\"ctx_b\"].capitalize()\n        out_doc = {\n            \"query\": preprocess(doc[\"activity_label\"] + \": \" + ctx),\n            \"choices\": [preprocess(ending) for ending in doc[\"endings\"]],\n            \"gold\": int(doc[\"label\"]),\n        }\n        return out_doc\n\n    return dataset.map(_process_doc)\n",
+          "repeats": 1,
+          "should_decontaminate": false,
+          "target_delimiter": " ",
+          "task": "hellaswag",
+          "training_split": "train",
+          "unsafe_code": false,
+          "validation_split": "validation"
+        },
+        "piqa": {
+          "dataset_path": "baber/piqa",
+          "description": "",
+          "doc_to_choice": "{{[sol1, sol2]}}",
+          "doc_to_decontamination_query": "goal",
+          "doc_to_target": "label",
+          "doc_to_text": "Question: {{goal}}\nAnswer:",
+          "fewshot_config": {
+            "doc_to_choice": "{{[sol1, sol2]}}",
+            "doc_to_target": "label",
+            "doc_to_text": "Question: {{goal}}\nAnswer:",
+            "fewshot_delimiter": "\n\n",
+            "fewshot_indices": null,
+            "gen_prefix": null,
+            "process_docs": null,
+            "sampler": "default",
+            "samples": null,
+            "split": null,
+            "target_delimiter": " "
+          },
+          "fewshot_delimiter": "\n\n",
+          "metadata": {
+            "config_source": "D:\\Libraries\\Repositories\\AI-LLM-Transformers-Edu-Model\\.venv\\Lib\\site-packages\\lm_eval\\tasks\\piqa\\piqa.yaml",
+            "version": 1.0
+          },
+          "metric_list": [
+            {
+              "aggregation": "mean",
+              "higher_is_better": true,
+              "metric": "acc"
+            },
+            {
+              "aggregation": "mean",
+              "higher_is_better": true,
+              "metric": "acc_norm"
+            }
+          ],
+          "num_fewshot": 0,
+          "output_type": "multiple_choice",
+          "repeats": 1,
+          "should_decontaminate": true,
+          "target_delimiter": " ",
+          "task": "piqa",
+          "training_split": "train",
+          "unsafe_code": false,
+          "validation_split": "validation"
+        }
+      },
+      "date": 1787275013.048316,
+      "git_hash": "ad47b50",
+      "group_subtasks": {},
+      "higher_is_better": {
+        "arc_easy": {
+          "acc": true,
+          "acc_norm": true
+        },
+        "hellaswag": {
+          "acc": true,
+          "acc_norm": true
+        },
+        "piqa": {
+          "acc": true,
+          "acc_norm": true
+        }
+      },
+      "lm_eval_version": "0.4.12",
+      "n-samples": {
+        "arc_easy": {
+          "effective": 20,
+          "original": 2376
+        },
+        "hellaswag": {
+          "effective": 20,
+          "original": 10042
+        },
+        "piqa": {
+          "effective": 20,
+          "original": 1838
+        }
+      },
+      "n-shot": {
+        "arc_easy": 0,
+        "hellaswag": 0,
+        "piqa": 0
+      },
+      "pretty_env_info": "PyTorch version: 2.13.0+cu130\nIs debug build: False\nCUDA used to build PyTorch: 13.0\nROCM used to build PyTorch: N/A\n\nOS: Microsoft Windows 11 Pro for Workstations (10.0.26200 64-bit)\nGCC version: (MinGW-W64 x86_64-posix-seh, built by Brecht Sanders) 11.1.0\r\nClang version: Could not collect\nCMake version: Could not collect\nLibc version: N/A\n\nPython version: 3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)] (64-bit runtime)\nPython platform: Windows-11-10.0.26200-SP0\nIs CUDA available: True\nCUDA runtime version: Could not collect\nCUDA_MODULE_LOADING set to: \nGPU models and configuration: GPU 0: NVIDIA GeForce RTX 2070 SUPER\nNvidia driver version: 591.86\ncuDNN version: Could not collect\nIs XPU available: False\nHIP runtime version: N/A\nMIOpen runtime version: N/A\nIs XNNPACK available: False\nCaching allocator config: N/A\n\nCPU:\nName: AMD Ryzen 9 5900X 12-Core Processor            \nManufacturer: AuthenticAMD\nFamily: 107\nArchitecture: 9\nProcessorType: 3\nDeviceID: CPU0\nCurrentClockSpeed: 3701\nMaxClockSpeed: 3701\nL2CacheSize: 6144\nL2CacheSpeed: None\nRevision: 8448\n\nVersions of relevant libraries:\n[pip3] numpy==2.5.2\n[pip3] torch==2.13.0+cu130\n[conda] Could not collect",
+      "results": {
+        "arc_easy": {
+          "acc,none": 0.2,
+          "acc_norm,none": 0.15,
+          "acc_norm_stderr,none": 0.08191780219091253,
+          "acc_stderr,none": 0.0917662935482247,
+          "alias": "arc_easy",
+          "name": "arc_easy",
+          "sample_len": 20
+        },
+        "hellaswag": {
+          "acc,none": 0.3,
+          "acc_norm,none": 0.3,
+          "acc_norm_stderr,none": 0.10513149660756935,
+          "acc_stderr,none": 0.10513149660756935,
+          "alias": "hellaswag",
+          "name": "hellaswag",
+          "sample_len": 20
+        },
+        "piqa": {
+          "acc,none": 0.6,
+          "acc_norm,none": 0.45,
+          "acc_norm_stderr,none": 0.11413288653790232,
+          "acc_stderr,none": 0.11239029738980327,
+          "alias": "piqa",
+          "name": "piqa",
+          "sample_len": 20
+        }
+      },
+      "samples": {
+        "arc_easy": [
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: Which statement best explains why photosynthesis is the foundation of most food webs?\nAnswer:",
+                " Sunlight is the source of energy for nearly all ecosystems."
+              ],
+              [
+                "Question: Which statement best explains why photosynthesis is the foundation of most food webs?\nAnswer:",
+                " Most ecosystems are found on land instead of in water."
+              ],
+              [
+                "Question: Which statement best explains why photosynthesis is the foundation of most food webs?\nAnswer:",
+                " Carbon dioxide is more available than other gases."
+              ],
+              [
+                "Question: Which statement best explains why photosynthesis is the foundation of most food webs?\nAnswer:",
+                " The producers in all ecosystems are plants."
+              ]
+            ],
+            "doc": {
+              "answerKey": "A",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "Sunlight is the source of energy for nearly all ecosystems.",
+                  "Most ecosystems are found on land instead of in water.",
+                  "Carbon dioxide is more available than other gases.",
+                  "The producers in all ecosystems are plants."
+                ]
+              },
+              "id": "Mercury_417466",
+              "question": "Which statement best explains why photosynthesis is the foundation of most food webs?"
+            },
+            "doc_hash": "b91fe1a8fdc40a80b9364f6256ac729d010ba076b02e75a362c2cf7ad3303bdf",
+            "doc_id": 0,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -70.86676461994648,
+                false
+              ],
+              [
+                -67.3425981104374,
+                false
+              ],
+              [
+                -61.373050928115845,
+                false
+              ],
+              [
+                -50.02429246902466,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "f804da9f5e214341d08d56228bb255177a0e5740f82e61b45887fcb5dc5c08ce",
+            "resps": [
+              [
+                [
+                  -70.86676461994648,
+                  false
+                ]
+              ],
+              [
+                [
+                  -67.3425981104374,
+                  false
+                ]
+              ],
+              [
+                [
+                  -61.373050928115845,
+                  false
+                ]
+              ],
+              [
+                [
+                  -50.02429246902466,
+                  false
+                ]
+              ]
+            ],
+            "target": 0,
+            "target_hash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Question: Which piece of safety equipment is used to keep mold spores from entering the respiratory system?\nAnswer:",
+                " safety goggles"
+              ],
+              [
+                "Question: Which piece of safety equipment is used to keep mold spores from entering the respiratory system?\nAnswer:",
+                " breathing mask"
+              ],
+              [
+                "Question: Which piece of safety equipment is used to keep mold spores from entering the respiratory system?\nAnswer:",
+                " rubber gloves"
+              ],
+              [
+                "Question: Which piece of safety equipment is used to keep mold spores from entering the respiratory system?\nAnswer:",
+                " lead apron"
+              ]
+            ],
+            "doc": {
+              "answerKey": "B",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "safety goggles",
+                  "breathing mask",
+                  "rubber gloves",
+                  "lead apron"
+                ]
+              },
+              "id": "Mercury_7081673",
+              "question": "Which piece of safety equipment is used to keep mold spores from entering the respiratory system?"
+            },
+            "doc_hash": "864be3c890aba1a77f2d3e9592fa7ec90942afb66250f0e99ac11b30a1330e5a",
+            "doc_id": 1,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -40.51066589355469,
+                false
+              ],
+              [
+                -24.866291999816895,
+                false
+              ],
+              [
+                -29.97638511657715,
+                false
+              ],
+              [
+                -28.67173480987549,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "6a93081b5b26e4862753ccd0003303f0323bda7ba6ca7c495000f9905a37fce5",
+            "resps": [
+              [
+                [
+                  -40.51066589355469,
+                  false
+                ]
+              ],
+              [
+                [
+                  -24.866291999816895,
+                  false
+                ]
+              ],
+              [
+                [
+                  -29.97638511657715,
+                  false
+                ]
+              ],
+              [
+                [
+                  -28.67173480987549,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: Meiosis is a type of cell division in which germ cells divide to produce haploid cells. Where does meiosis occur?\nAnswer:",
+                " brain cells"
+              ],
+              [
+                "Question: Meiosis is a type of cell division in which germ cells divide to produce haploid cells. Where does meiosis occur?\nAnswer:",
+                " bone cells"
+              ],
+              [
+                "Question: Meiosis is a type of cell division in which germ cells divide to produce haploid cells. Where does meiosis occur?\nAnswer:",
+                " muscle cells"
+              ],
+              [
+                "Question: Meiosis is a type of cell division in which germ cells divide to produce haploid cells. Where does meiosis occur?\nAnswer:",
+                " ovary cells"
+              ]
+            ],
+            "doc": {
+              "answerKey": "D",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "brain cells",
+                  "bone cells",
+                  "muscle cells",
+                  "ovary cells"
+                ]
+              },
+              "id": "Mercury_7239733",
+              "question": "Meiosis is a type of cell division in which germ cells divide to produce haploid cells. Where does meiosis occur?"
+            },
+            "doc_hash": "c79937cfecd9c1d852b0a65a6816710ce98507019ed48c57239077092a4963b6",
+            "doc_id": 2,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -17.48950958251953,
+                false
+              ],
+              [
+                -14.694347381591797,
+                false
+              ],
+              [
+                -16.578760623931885,
+                false
+              ],
+              [
+                -23.040504455566406,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "f24174cef34920abaa4009384735df768e4b3832cb8b18246fcd6917f6c1f945",
+            "resps": [
+              [
+                [
+                  -17.48950958251953,
+                  false
+                ]
+              ],
+              [
+                [
+                  -14.694347381591797,
+                  false
+                ]
+              ],
+              [
+                [
+                  -16.578760623931885,
+                  false
+                ]
+              ],
+              [
+                [
+                  -23.040504455566406,
+                  false
+                ]
+              ]
+            ],
+            "target": 3,
+            "target_hash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: Which characteristic describes the texture of a kitten's fur?\nAnswer:",
+                " gray"
+              ],
+              [
+                "Question: Which characteristic describes the texture of a kitten's fur?\nAnswer:",
+                " warm"
+              ],
+              [
+                "Question: Which characteristic describes the texture of a kitten's fur?\nAnswer:",
+                " long"
+              ],
+              [
+                "Question: Which characteristic describes the texture of a kitten's fur?\nAnswer:",
+                " soft"
+              ]
+            ],
+            "doc": {
+              "answerKey": "D",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "gray",
+                  "warm",
+                  "long",
+                  "soft"
+                ]
+              },
+              "id": "NYSEDREGENTS_2015_4_8",
+              "question": "Which characteristic describes the texture of a kitten's fur?"
+            },
+            "doc_hash": "0b1d32d8fff63c6f801aa24ea0d27d565a4433b59fa7720e7d2682c8b772594f",
+            "doc_id": 3,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -10.768291473388672,
+                false
+              ],
+              [
+                -10.572978973388672,
+                false
+              ],
+              [
+                -9.635478973388672,
+                false
+              ],
+              [
+                -10.135478973388672,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "6e97b5b88ed30269249a32f617efecbdde79e2d13d39061ce3fce23c0f152888",
+            "resps": [
+              [
+                [
+                  -10.768291473388672,
+                  false
+                ]
+              ],
+              [
+                [
+                  -10.572978973388672,
+                  false
+                ]
+              ],
+              [
+                [
+                  -9.635478973388672,
+                  false
+                ]
+              ],
+              [
+                [
+                  -10.135478973388672,
+                  false
+                ]
+              ]
+            ],
+            "target": 3,
+            "target_hash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: Which best describes the structure of an atom?\nAnswer:",
+                " a lightweight core surrounded by neutral particles"
+              ],
+              [
+                "Question: Which best describes the structure of an atom?\nAnswer:",
+                " a massive core surrounded by negatively-charged particles"
+              ],
+              [
+                "Question: Which best describes the structure of an atom?\nAnswer:",
+                " a network of interacting positive and negative particles"
+              ],
+              [
+                "Question: Which best describes the structure of an atom?\nAnswer:",
+                " overlapping layers of neutral, positive, and negative particles"
+              ]
+            ],
+            "doc": {
+              "answerKey": "B",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "a lightweight core surrounded by neutral particles",
+                  "a massive core surrounded by negatively-charged particles",
+                  "a network of interacting positive and negative particles",
+                  "overlapping layers of neutral, positive, and negative particles"
+                ]
+              },
+              "id": "Mercury_7037258",
+              "question": "Which best describes the structure of an atom?"
+            },
+            "doc_hash": "d864a18b0f67ac89ae51c69c131dfb95a8d866e5b751391658f795dd173e0c28",
+            "doc_id": 4,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -66.98325681686401,
+                false
+              ],
+              [
+                -80.22421669960022,
+                false
+              ],
+              [
+                -59.81236267089844,
+                false
+              ],
+              [
+                -79.29927015304565,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "db2e78924b0f06335f46af5876767f1f8dd92425f9c80597c94a9895607fd67d",
+            "resps": [
+              [
+                [
+                  -66.98325681686401,
+                  false
+                ]
+              ],
+              [
+                [
+                  -80.22421669960022,
+                  false
+                ]
+              ],
+              [
+                [
+                  -59.81236267089844,
+                  false
+                ]
+              ],
+              [
+                [
+                  -79.29927015304565,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: To express the distance between the Milky Way galaxy and other galaxies, the most appropriate unit of measurement is the\nAnswer:",
+                " meter."
+              ],
+              [
+                "Question: To express the distance between the Milky Way galaxy and other galaxies, the most appropriate unit of measurement is the\nAnswer:",
+                " kilometer."
+              ],
+              [
+                "Question: To express the distance between the Milky Way galaxy and other galaxies, the most appropriate unit of measurement is the\nAnswer:",
+                " light-year."
+              ],
+              [
+                "Question: To express the distance between the Milky Way galaxy and other galaxies, the most appropriate unit of measurement is the\nAnswer:",
+                " astronomical unit."
+              ]
+            ],
+            "doc": {
+              "answerKey": "C",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "meter.",
+                  "kilometer.",
+                  "light-year.",
+                  "astronomical unit."
+                ]
+              },
+              "id": "CSZ20679",
+              "question": "To express the distance between the Milky Way galaxy and other galaxies, the most appropriate unit of measurement is the"
+            },
+            "doc_hash": "2ad43d968ffc99e1b2a73c7757f38b272afcb3b9647a05c76ec5cf8f26281310",
+            "doc_id": 5,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -15.464991569519043,
+                false
+              ],
+              [
+                -22.974068641662598,
+                false
+              ],
+              [
+                -23.546608209609985,
+                false
+              ],
+              [
+                -34.31755757331848,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "ca6340c0a56291c8fff926247ca0684c52d1ffed3cbf974f8064a5f777fa5978",
+            "resps": [
+              [
+                [
+                  -15.464991569519043,
+                  false
+                ]
+              ],
+              [
+                [
+                  -22.974068641662598,
+                  false
+                ]
+              ],
+              [
+                [
+                  -23.546608209609985,
+                  false
+                ]
+              ],
+              [
+                [
+                  -34.31755757331848,
+                  false
+                ]
+              ]
+            ],
+            "target": 2,
+            "target_hash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: A student has just completed a laboratory activity. What is the last action that the student should perform before leaving the lab area?\nAnswer:",
+                " wash hands"
+              ],
+              [
+                "Question: A student has just completed a laboratory activity. What is the last action that the student should perform before leaving the lab area?\nAnswer:",
+                " turn off all equipment"
+              ],
+              [
+                "Question: A student has just completed a laboratory activity. What is the last action that the student should perform before leaving the lab area?\nAnswer:",
+                " put away all glassware"
+              ],
+              [
+                "Question: A student has just completed a laboratory activity. What is the last action that the student should perform before leaving the lab area?\nAnswer:",
+                " wash instruments and table tops"
+              ]
+            ],
+            "doc": {
+              "answerKey": "A",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "wash hands",
+                  "turn off all equipment",
+                  "put away all glassware",
+                  "wash instruments and table tops"
+                ]
+              },
+              "id": "Mercury_182158",
+              "question": "A student has just completed a laboratory activity. What is the last action that the student should perform before leaving the lab area?"
+            },
+            "doc_hash": "f4474d28f6064f40d5343be38d4da2976befc1813be9490ec7b4772360cdac7d",
+            "doc_id": 6,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -21.443251609802246,
+                false
+              ],
+              [
+                -30.812131881713867,
+                false
+              ],
+              [
+                -44.13713455200195,
+                false
+              ],
+              [
+                -49.47380042076111,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "447745ef526f1caf3279975333fb886cd4cab80f5d8f066f8176a04a1ab25510",
+            "resps": [
+              [
+                [
+                  -21.443251609802246,
+                  false
+                ]
+              ],
+              [
+                [
+                  -30.812131881713867,
+                  false
+                ]
+              ],
+              [
+                [
+                  -44.13713455200195,
+                  false
+                ]
+              ],
+              [
+                [
+                  -49.47380042076111,
+                  false
+                ]
+              ]
+            ],
+            "target": 0,
+            "target_hash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: Students are investigating the effects of different fertilizers on plant growth. Which units would be best to measure the mass of the fertilizer used?\nAnswer:",
+                " meters"
+              ],
+              [
+                "Question: Students are investigating the effects of different fertilizers on plant growth. Which units would be best to measure the mass of the fertilizer used?\nAnswer:",
+                " centimeters"
+              ],
+              [
+                "Question: Students are investigating the effects of different fertilizers on plant growth. Which units would be best to measure the mass of the fertilizer used?\nAnswer:",
+                " grams"
+              ],
+              [
+                "Question: Students are investigating the effects of different fertilizers on plant growth. Which units would be best to measure the mass of the fertilizer used?\nAnswer:",
+                " milligrams"
+              ]
+            ],
+            "doc": {
+              "answerKey": "C",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "meters",
+                  "centimeters",
+                  "grams",
+                  "milligrams"
+                ]
+              },
+              "id": "Mercury_7216668",
+              "question": "Students are investigating the effects of different fertilizers on plant growth. Which units would be best to measure the mass of the fertilizer used?"
+            },
+            "doc_hash": "bdf22e417c39d42f49cafeb9731041d701e027adc75ffb8c8607ccfd9173b968",
+            "doc_id": 7,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -10.934696197509766,
+                false
+              ],
+              [
+                -26.37228775024414,
+                false
+              ],
+              [
+                -11.403446197509766,
+                false
+              ],
+              [
+                -27.28695297241211,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "5ef14b419dda9e87350e95fecc17b8aec2372bb763922340826e65f03b1ec54c",
+            "resps": [
+              [
+                [
+                  -10.934696197509766,
+                  false
+                ]
+              ],
+              [
+                [
+                  -26.37228775024414,
+                  false
+                ]
+              ],
+              [
+                [
+                  -11.403446197509766,
+                  false
+                ]
+              ],
+              [
+                [
+                  -27.28695297241211,
+                  false
+                ]
+              ]
+            ],
+            "target": 2,
+            "target_hash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: Plants use sunlight to make\nAnswer:",
+                " soil."
+              ],
+              [
+                "Question: Plants use sunlight to make\nAnswer:",
+                " minerals."
+              ],
+              [
+                "Question: Plants use sunlight to make\nAnswer:",
+                " food."
+              ],
+              [
+                "Question: Plants use sunlight to make\nAnswer:",
+                " water."
+              ]
+            ],
+            "doc": {
+              "answerKey": "C",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "soil.",
+                  "minerals.",
+                  "food.",
+                  "water."
+                ]
+              },
+              "id": "MCAS_2001_5_19",
+              "question": "Plants use sunlight to make"
+            },
+            "doc_hash": "53c446572bbe1742d595bca18fbb48e2afcd59aff9cd14aee84a7b08cd0b93f0",
+            "doc_id": 8,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -13.805465698242188,
+                false
+              ],
+              [
+                -14.854708671569824,
+                false
+              ],
+              [
+                -13.731240272521973,
+                false
+              ],
+              [
+                -13.009364128112793,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "7fefaad40aafcb4acd97c590c6868ffcb0fd0170a5ac9b44a0c10cc376bec409",
+            "resps": [
+              [
+                [
+                  -13.805465698242188,
+                  false
+                ]
+              ],
+              [
+                [
+                  -14.854708671569824,
+                  false
+                ]
+              ],
+              [
+                [
+                  -13.731240272521973,
+                  false
+                ]
+              ],
+              [
+                [
+                  -13.009364128112793,
+                  false
+                ]
+              ]
+            ],
+            "target": 2,
+            "target_hash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: Which of these correctly identifies the way materials are transported in a plant?\nAnswer:",
+                " Xylem carries water from the roots to the leaves."
+              ],
+              [
+                "Question: Which of these correctly identifies the way materials are transported in a plant?\nAnswer:",
+                " Phloem carries minerals from the roots to the leaves."
+              ],
+              [
+                "Question: Which of these correctly identifies the way materials are transported in a plant?\nAnswer:",
+                " Xylem carries sugars from the flowers to the stems."
+              ],
+              [
+                "Question: Which of these correctly identifies the way materials are transported in a plant?\nAnswer:",
+                " Phloem carries water from the flowers to the stems."
+              ]
+            ],
+            "doc": {
+              "answerKey": "A",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "Xylem carries water from the roots to the leaves.",
+                  "Phloem carries minerals from the roots to the leaves.",
+                  "Xylem carries sugars from the flowers to the stems.",
+                  "Phloem carries water from the flowers to the stems."
+                ]
+              },
+              "id": "Mercury_SC_413631",
+              "question": "Which of these correctly identifies the way materials are transported in a plant?"
+            },
+            "doc_hash": "7f47698765741ab2d9dafc93bf09f3530b534f061a2319760dce0e0f55a6c91c",
+            "doc_id": 9,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -75.57182264328003,
+                false
+              ],
+              [
+                -77.8636714220047,
+                false
+              ],
+              [
+                -88.10217046737671,
+                false
+              ],
+              [
+                -74.93683195114136,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "f091d181c484319e55a300cf050aff6c69cd3c24901f1c85874c41d53e500ba7",
+            "resps": [
+              [
+                [
+                  -75.57182264328003,
+                  false
+                ]
+              ],
+              [
+                [
+                  -77.8636714220047,
+                  false
+                ]
+              ],
+              [
+                [
+                  -88.10217046737671,
+                  false
+                ]
+              ],
+              [
+                [
+                  -74.93683195114136,
+                  false
+                ]
+              ]
+            ],
+            "target": 0,
+            "target_hash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: When trees develop leaves in the spring, 10 changes occur on the forest floor. Why does the development of leaves cause changes on the forest floor?\nAnswer:",
+                " Rainfall increases."
+              ],
+              [
+                "Question: When trees develop leaves in the spring, 10 changes occur on the forest floor. Why does the development of leaves cause changes on the forest floor?\nAnswer:",
+                " Sunlight is reduced."
+              ],
+              [
+                "Question: When trees develop leaves in the spring, 10 changes occur on the forest floor. Why does the development of leaves cause changes on the forest floor?\nAnswer:",
+                " Wind speed increases."
+              ],
+              [
+                "Question: When trees develop leaves in the spring, 10 changes occur on the forest floor. Why does the development of leaves cause changes on the forest floor?\nAnswer:",
+                " Animal migration is stopped."
+              ]
+            ],
+            "doc": {
+              "answerKey": "B",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "Rainfall increases.",
+                  "Sunlight is reduced.",
+                  "Wind speed increases.",
+                  "Animal migration is stopped."
+                ]
+              },
+              "id": "MCAS_2005_5_10",
+              "question": "When trees develop leaves in the spring, 10 changes occur on the forest floor. Why does the development of leaves cause changes on the forest floor?"
+            },
+            "doc_hash": "834bd1c15768df73c4a854009254c40a7ae85fa795a5512aed97bbddcd537000",
+            "doc_id": 10,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -33.6211302280426,
+                false
+              ],
+              [
+                -34.88260078430176,
+                false
+              ],
+              [
+                -31.957216501235962,
+                false
+              ],
+              [
+                -40.49334096908569,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "8a49b05a1b06cba1367f07d27c518012aec4385a441358b7da3e35447055c526",
+            "resps": [
+              [
+                [
+                  -33.6211302280426,
+                  false
+                ]
+              ],
+              [
+                [
+                  -34.88260078430176,
+                  false
+                ]
+              ],
+              [
+                [
+                  -31.957216501235962,
+                  false
+                ]
+              ],
+              [
+                [
+                  -40.49334096908569,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: The circulatory system and the endocrine system work together in the human body. Which describes one way in which these systems interact?\nAnswer:",
+                " taking in oxygen and transporting it to cells of the body"
+              ],
+              [
+                "Question: The circulatory system and the endocrine system work together in the human body. Which describes one way in which these systems interact?\nAnswer:",
+                " releasing hormones and transporting them to cells of the body"
+              ],
+              [
+                "Question: The circulatory system and the endocrine system work together in the human body. Which describes one way in which these systems interact?\nAnswer:",
+                " absorbing nutrients from food and transporting them to cells in the body"
+              ],
+              [
+                "Question: The circulatory system and the endocrine system work together in the human body. Which describes one way in which these systems interact?\nAnswer:",
+                " collecting waste products from the cells and transporting it out of the body"
+              ]
+            ],
+            "doc": {
+              "answerKey": "B",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "taking in oxygen and transporting it to cells of the body",
+                  "releasing hormones and transporting them to cells of the body",
+                  "absorbing nutrients from food and transporting them to cells in the body",
+                  "collecting waste products from the cells and transporting it out of the body"
+                ]
+              },
+              "id": "Mercury_7166145",
+              "question": "The circulatory system and the endocrine system work together in the human body. Which describes one way in which these systems interact?"
+            },
+            "doc_hash": "2b87c31ea5d82bb13d4092b0727d61d7647c5deffc31a3241a9f621e008cb5a5",
+            "doc_id": 11,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -66.42627799510956,
+                false
+              ],
+              [
+                -71.07279205322266,
+                false
+              ],
+              [
+                -85.66740727424622,
+                false
+              ],
+              [
+                -76.46232903003693,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "64c6b3bacb0668bad86894cbea653fd2db20685e827556a26405b3df4526f6e0",
+            "resps": [
+              [
+                [
+                  -66.42627799510956,
+                  false
+                ]
+              ],
+              [
+                [
+                  -71.07279205322266,
+                  false
+                ]
+              ],
+              [
+                [
+                  -85.66740727424622,
+                  false
+                ]
+              ],
+              [
+                [
+                  -76.46232903003693,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: A student throws a ball into the air. While the ball travels up, the speed of the ball decreases. What force causes the ball to slow while traveling up?\nAnswer:",
+                " electricity"
+              ],
+              [
+                "Question: A student throws a ball into the air. While the ball travels up, the speed of the ball decreases. What force causes the ball to slow while traveling up?\nAnswer:",
+                " gravity"
+              ],
+              [
+                "Question: A student throws a ball into the air. While the ball travels up, the speed of the ball decreases. What force causes the ball to slow while traveling up?\nAnswer:",
+                " magnetism"
+              ],
+              [
+                "Question: A student throws a ball into the air. While the ball travels up, the speed of the ball decreases. What force causes the ball to slow while traveling up?\nAnswer:",
+                " tension"
+              ]
+            ],
+            "doc": {
+              "answerKey": "B",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "electricity",
+                  "gravity",
+                  "magnetism",
+                  "tension"
+                ]
+              },
+              "id": "MSA_2013_5_6",
+              "question": "A student throws a ball into the air. While the ball travels up, the speed of the ball decreases. What force causes the ball to slow while traveling up?"
+            },
+            "doc_hash": "39771cb49c5e425f2564a4719a0a746d8961e79d9d5ee3ac5f0d65bbf08f635c",
+            "doc_id": 12,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -10.143088340759277,
+                false
+              ],
+              [
+                -10.205588340759277,
+                false
+              ],
+              [
+                -16.623726844787598,
+                false
+              ],
+              [
+                -12.119650840759277,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "d3ca56721ef5e0cd71cffa63ac0e6b44e8a86095fd3cbbb73d4b62838bf03aee",
+            "resps": [
+              [
+                [
+                  -10.143088340759277,
+                  false
+                ]
+              ],
+              [
+                [
+                  -10.205588340759277,
+                  false
+                ]
+              ],
+              [
+                [
+                  -16.623726844787598,
+                  false
+                ]
+              ],
+              [
+                [
+                  -12.119650840759277,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: Which of these will most likely harm a habitat?\nAnswer:",
+                " planting trees"
+              ],
+              [
+                "Question: Which of these will most likely harm a habitat?\nAnswer:",
+                " water pollution"
+              ],
+              [
+                "Question: Which of these will most likely harm a habitat?\nAnswer:",
+                " rainfall"
+              ],
+              [
+                "Question: Which of these will most likely harm a habitat?\nAnswer:",
+                " sunlight"
+              ]
+            ],
+            "doc": {
+              "answerKey": "B",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "planting trees",
+                  "water pollution",
+                  "rainfall",
+                  "sunlight"
+                ]
+              },
+              "id": "Mercury_SC_405199",
+              "question": "Which of these will most likely harm a habitat?"
+            },
+            "doc_hash": "62fdf7ac0d5a7ee975b0b63b98d86419f36b1b30541beeea62417ea961276dec",
+            "doc_id": 13,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -20.27743148803711,
+                false
+              ],
+              [
+                -18.317211151123047,
+                false
+              ],
+              [
+                -11.116321563720703,
+                false
+              ],
+              [
+                -9.398548126220703,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "d7007b687cf0556bd16b2cbe46877fb5fc62d28ba039021b580dc78f383ddb35",
+            "resps": [
+              [
+                [
+                  -20.27743148803711,
+                  false
+                ]
+              ],
+              [
+                [
+                  -18.317211151123047,
+                  false
+                ]
+              ],
+              [
+                [
+                  -11.116321563720703,
+                  false
+                ]
+              ],
+              [
+                [
+                  -9.398548126220703,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Question: All living and nonliving material is composed of\nAnswer:",
+                " air"
+              ],
+              [
+                "Question: All living and nonliving material is composed of\nAnswer:",
+                " elements"
+              ],
+              [
+                "Question: All living and nonliving material is composed of\nAnswer:",
+                " water"
+              ],
+              [
+                "Question: All living and nonliving material is composed of\nAnswer:",
+                " soil"
+              ]
+            ],
+            "doc": {
+              "answerKey": "2",
+              "choices": {
+                "label": [
+                  "1",
+                  "2",
+                  "3",
+                  "4"
+                ],
+                "text": [
+                  "air",
+                  "elements",
+                  "water",
+                  "soil"
+                ]
+              },
+              "id": "NYSEDREGENTS_2015_8_28",
+              "question": "All living and nonliving material is composed of"
+            },
+            "doc_hash": "d6cefe3b3986a9b85fe6e68cd556b0ad5e5857b192f3a896d0cb8d87840e4e31",
+            "doc_id": 14,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -10.304556846618652,
+                false
+              ],
+              [
+                -10.812369346618652,
+                false
+              ],
+              [
+                -8.776236534118652,
+                false
+              ],
+              [
+                -10.546744346618652,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "82626b146948fb241ce3ca70a294453f6b0a25c8d8ef3aee6d33457a3086a655",
+            "resps": [
+              [
+                [
+                  -10.304556846618652,
+                  false
+                ]
+              ],
+              [
+                [
+                  -10.812369346618652,
+                  false
+                ]
+              ],
+              [
+                [
+                  -8.776236534118652,
+                  false
+                ]
+              ],
+              [
+                [
+                  -10.546744346618652,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: Which process best explains how the Grand Canyon became so wide?\nAnswer:",
+                " folding"
+              ],
+              [
+                "Question: Which process best explains how the Grand Canyon became so wide?\nAnswer:",
+                " erosion"
+              ],
+              [
+                "Question: Which process best explains how the Grand Canyon became so wide?\nAnswer:",
+                " deposition"
+              ],
+              [
+                "Question: Which process best explains how the Grand Canyon became so wide?\nAnswer:",
+                " sedimentation"
+              ]
+            ],
+            "doc": {
+              "answerKey": "B",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "folding",
+                  "erosion",
+                  "deposition",
+                  "sedimentation"
+                ]
+              },
+              "id": "Mercury_SC_401777",
+              "question": "Which process best explains how the Grand Canyon became so wide?"
+            },
+            "doc_hash": "dc2b1148e9b6439baa628da48472ce75e4f269a987667a3b6b51cffcfc133147",
+            "doc_id": 15,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -14.023219585418701,
+                false
+              ],
+              [
+                -11.292915344238281,
+                false
+              ],
+              [
+                -17.912399291992188,
+                false
+              ],
+              [
+                -18.189348220825195,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "e1aed4f5f9d32f3a24cec0df6548526098790e0bf11e9b6eada6133fb0031e46",
+            "resps": [
+              [
+                [
+                  -14.023219585418701,
+                  false
+                ]
+              ],
+              [
+                [
+                  -11.292915344238281,
+                  false
+                ]
+              ],
+              [
+                [
+                  -17.912399291992188,
+                  false
+                ]
+              ],
+              [
+                [
+                  -18.189348220825195,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Question: As global temperatures increase, certain organisms will be more affected than others. The changes associated with global warming may result in an increase in sea level. Which organisms will be affected most as a result of the change in sea level?\nAnswer:",
+                " birds that eat fish from shallow waters"
+              ],
+              [
+                "Question: As global temperatures increase, certain organisms will be more affected than others. The changes associated with global warming may result in an increase in sea level. Which organisms will be affected most as a result of the change in sea level?\nAnswer:",
+                " fish that live in coral reefs in shallow waters"
+              ],
+              [
+                "Question: As global temperatures increase, certain organisms will be more affected than others. The changes associated with global warming may result in an increase in sea level. Which organisms will be affected most as a result of the change in sea level?\nAnswer:",
+                " mammals that swim in cold, deep ocean waters"
+              ],
+              [
+                "Question: As global temperatures increase, certain organisms will be more affected than others. The changes associated with global warming may result in an increase in sea level. Which organisms will be affected most as a result of the change in sea level?\nAnswer:",
+                " crustaceans at the bottom of deep sea ocean waters"
+              ]
+            ],
+            "doc": {
+              "answerKey": "B",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "birds that eat fish from shallow waters",
+                  "fish that live in coral reefs in shallow waters",
+                  "mammals that swim in cold, deep ocean waters",
+                  "crustaceans at the bottom of deep sea ocean waters"
+                ]
+              },
+              "id": "Mercury_7198188",
+              "question": "As global temperatures increase, certain organisms will be more affected than others. The changes associated with global warming may result in an increase in sea level. Which organisms will be affected most as a result of the change in sea level?"
+            },
+            "doc_hash": "ed9246f5dba2f6092643addd83791292ff22941fb348a9bc056bf367dc972119",
+            "doc_id": 16,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -55.4659538269043,
+                false
+              ],
+              [
+                -66.6596851348877,
+                false
+              ],
+              [
+                -70.96884799003601,
+                false
+              ],
+              [
+                -75.10329630970955,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "d9558f7613d5c601031b0bcf6119adb33e2adbeef01871a5836f6c071c37470a",
+            "resps": [
+              [
+                [
+                  -55.4659538269043,
+                  false
+                ]
+              ],
+              [
+                [
+                  -66.6596851348877,
+                  false
+                ]
+              ],
+              [
+                [
+                  -70.96884799003601,
+                  false
+                ]
+              ],
+              [
+                [
+                  -75.10329630970955,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: A dish of sugar water was left on a window sill. One week later, there were only sugar crystals left in the dish. The water was gone. The best explanation for the appearance of sugar crystals is\nAnswer:",
+                " some of the water was absorbed by the dish."
+              ],
+              [
+                "Question: A dish of sugar water was left on a window sill. One week later, there were only sugar crystals left in the dish. The water was gone. The best explanation for the appearance of sugar crystals is\nAnswer:",
+                " the air condensed."
+              ],
+              [
+                "Question: A dish of sugar water was left on a window sill. One week later, there were only sugar crystals left in the dish. The water was gone. The best explanation for the appearance of sugar crystals is\nAnswer:",
+                " the light shining on the window sill produced more sugar."
+              ],
+              [
+                "Question: A dish of sugar water was left on a window sill. One week later, there were only sugar crystals left in the dish. The water was gone. The best explanation for the appearance of sugar crystals is\nAnswer:",
+                " the water evaporated."
+              ]
+            ],
+            "doc": {
+              "answerKey": "D",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "some of the water was absorbed by the dish.",
+                  "the air condensed.",
+                  "the light shining on the window sill produced more sugar.",
+                  "the water evaporated."
+                ]
+              },
+              "id": "MCAS_1998_4_11",
+              "question": "A dish of sugar water was left on a window sill. One week later, there were only sugar crystals left in the dish. The water was gone. The best explanation for the appearance of sugar crystals is"
+            },
+            "doc_hash": "91a03b17fb5115c962419c23e1c9f7ef2eef8a134b52af47bb37db2d53f9564b",
+            "doc_id": 17,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -47.98219656944275,
+                false
+              ],
+              [
+                -38.13775873184204,
+                false
+              ],
+              [
+                -86.04991012811661,
+                false
+              ],
+              [
+                -33.75856804847717,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "8d12c6ab497c6dbaceb590e6632e001c88df85359bab72e962b9d1514e493a18",
+            "resps": [
+              [
+                [
+                  -47.98219656944275,
+                  false
+                ]
+              ],
+              [
+                [
+                  -38.13775873184204,
+                  false
+                ]
+              ],
+              [
+                [
+                  -86.04991012811661,
+                  false
+                ]
+              ],
+              [
+                [
+                  -33.75856804847717,
+                  false
+                ]
+              ]
+            ],
+            "target": 3,
+            "target_hash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: Using a softball bat to hit a softball is an example of using which simple machine?\nAnswer:",
+                " pulley"
+              ],
+              [
+                "Question: Using a softball bat to hit a softball is an example of using which simple machine?\nAnswer:",
+                " lever"
+              ],
+              [
+                "Question: Using a softball bat to hit a softball is an example of using which simple machine?\nAnswer:",
+                " inclined plane"
+              ],
+              [
+                "Question: Using a softball bat to hit a softball is an example of using which simple machine?\nAnswer:",
+                " wheel and axle"
+              ]
+            ],
+            "doc": {
+              "answerKey": "B",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "pulley",
+                  "lever",
+                  "inclined plane",
+                  "wheel and axle"
+                ]
+              },
+              "id": "Mercury_SC_LBS10784",
+              "question": "Using a softball bat to hit a softball is an example of using which simple machine?"
+            },
+            "doc_hash": "48f5e7962156a90e34214ae5fd0dca3d01abcb005c791842e1cbc2243ab1b225",
+            "doc_id": 18,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -14.785493850708008,
+                false
+              ],
+              [
+                -15.829235076904297,
+                false
+              ],
+              [
+                -29.232772827148438,
+                false
+              ],
+              [
+                -33.75173902511597,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "84dc8e6871253e6a7c0ee4cf569efc0211fcf6104f6954a133893c05c3e3f613",
+            "resps": [
+              [
+                [
+                  -14.785493850708008,
+                  false
+                ]
+              ],
+              [
+                [
+                  -15.829235076904297,
+                  false
+                ]
+              ],
+              [
+                [
+                  -29.232772827148438,
+                  false
+                ]
+              ],
+              [
+                [
+                  -33.75173902511597,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: When an igneous intrusion comes into contact with surrounding rock, the surrounding rock will\nAnswer:",
+                " erode."
+              ],
+              [
+                "Question: When an igneous intrusion comes into contact with surrounding rock, the surrounding rock will\nAnswer:",
+                " foliate."
+              ],
+              [
+                "Question: When an igneous intrusion comes into contact with surrounding rock, the surrounding rock will\nAnswer:",
+                " precipitate."
+              ],
+              [
+                "Question: When an igneous intrusion comes into contact with surrounding rock, the surrounding rock will\nAnswer:",
+                " recrystallize."
+              ]
+            ],
+            "doc": {
+              "answerKey": "D",
+              "choices": {
+                "label": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "text": [
+                  "erode.",
+                  "foliate.",
+                  "precipitate.",
+                  "recrystallize."
+                ]
+              },
+              "id": "Mercury_7033548",
+              "question": "When an igneous intrusion comes into contact with surrounding rock, the surrounding rock will"
+            },
+            "doc_hash": "af7a5e94647391d05e8954031a71cf27e8f8ad46d1310c749afcc3d5e2161bf6",
+            "doc_id": 19,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -21.578343629837036,
+                false
+              ],
+              [
+                -25.986351490020752,
+                false
+              ],
+              [
+                -26.425456523895264,
+                false
+              ],
+              [
+                -39.25124478340149,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "74899fa59189bf88a1bd2b9b9920fc9ee742e816ec084592ca2fd9afac145bd3",
+            "resps": [
+              [
+                [
+                  -21.578343629837036,
+                  false
+                ]
+              ],
+              [
+                [
+                  -25.986351490020752,
+                  false
+                ]
+              ],
+              [
+                [
+                  -26.425456523895264,
+                  false
+                ]
+              ],
+              [
+                [
+                  -39.25124478340149,
+                  false
+                ]
+              ]
+            ],
+            "target": 3,
+            "target_hash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce"
+          }
+        ],
+        "hellaswag": [
+          {
+            "acc": 0.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Roof shingle removal: A man is sitting on a roof. He",
+                " is using wrap to wrap a pair of skis."
+              ],
+              [
+                "Roof shingle removal: A man is sitting on a roof. He",
+                " is ripping level tiles off."
+              ],
+              [
+                "Roof shingle removal: A man is sitting on a roof. He",
+                " is holding a rubik's cube."
+              ],
+              [
+                "Roof shingle removal: A man is sitting on a roof. He",
+                " starts pulling up roofing on a roof."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Roof shingle removal",
+              "choices": [
+                "is using wrap to wrap a pair of skis.",
+                "is ripping level tiles off.",
+                "is holding a rubik's cube.",
+                "starts pulling up roofing on a roof."
+              ],
+              "ctx": "A man is sitting on a roof. he",
+              "ctx_a": "A man is sitting on a roof.",
+              "ctx_b": "he",
+              "endings": [
+                "is using wrap to wrap a pair of skis.",
+                "is ripping level tiles off.",
+                "is holding a rubik's cube.",
+                "starts pulling up roofing on a roof."
+              ],
+              "gold": 3,
+              "ind": 24,
+              "label": "3",
+              "query": "Roof shingle removal: A man is sitting on a roof. He",
+              "source_id": "activitynet~v_-JhWjGDPHMY",
+              "split": "val",
+              "split_type": "indomain"
+            },
+            "doc_hash": "5fa398b50d156bdf77b474f3b43a03352e9a46bddfc7bb62e1038f7b4f12bbd1",
+            "doc_id": 0,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -81.68079209327698,
+                false
+              ],
+              [
+                -58.48461365699768,
+                false
+              ],
+              [
+                -58.712398290634155,
+                false
+              ],
+              [
+                -67.03034770488739,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "e63087504993cd36ee0de69dc9b1ab25ac86550530f0b38fd17b14d3c4cf4f38",
+            "resps": [
+              [
+                [
+                  -81.68079209327698,
+                  false
+                ]
+              ],
+              [
+                [
+                  -58.48461365699768,
+                  false
+                ]
+              ],
+              [
+                [
+                  -58.712398290634155,
+                  false
+                ]
+              ],
+              [
+                [
+                  -67.03034770488739,
+                  false
+                ]
+              ]
+            ],
+            "target": 3,
+            "target_hash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Clean and jerk: A lady walks to a barbell. She bends down and grabs the pole. The lady",
+                " swings and lands in her arms."
+              ],
+              [
+                "Clean and jerk: A lady walks to a barbell. She bends down and grabs the pole. The lady",
+                " pulls the barbell forward."
+              ],
+              [
+                "Clean and jerk: A lady walks to a barbell. She bends down and grabs the pole. The lady",
+                " pulls a rope attached to the barbell."
+              ],
+              [
+                "Clean and jerk: A lady walks to a barbell. She bends down and grabs the pole. The lady",
+                " stands and lifts the weight over her head."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Clean and jerk",
+              "choices": [
+                "swings and lands in her arms.",
+                "pulls the barbell forward.",
+                "pulls a rope attached to the barbell.",
+                "stands and lifts the weight over her head."
+              ],
+              "ctx": "A lady walks to a barbell. She bends down and grabs the pole. the lady",
+              "ctx_a": "A lady walks to a barbell. She bends down and grabs the pole.",
+              "ctx_b": "the lady",
+              "endings": [
+                "swings and lands in her arms.",
+                "pulls the barbell forward.",
+                "pulls a rope attached to the barbell.",
+                "stands and lifts the weight over her head."
+              ],
+              "gold": 3,
+              "ind": 92,
+              "label": "3",
+              "query": "Clean and jerk: A lady walks to a barbell. She bends down and grabs the pole. The lady",
+              "source_id": "activitynet~v_-lJS58hyo1c",
+              "split": "val",
+              "split_type": "zeroshot"
+            },
+            "doc_hash": "08296d87a2d1cb270a714773cb78d37f02f82661a082462fa53b437dfa0e3a5e",
+            "doc_id": 1,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -50.105321645736694,
+                false
+              ],
+              [
+                -48.818838596343994,
+                false
+              ],
+              [
+                -65.4565920829773,
+                false
+              ],
+              [
+                -61.65123999118805,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "3b9f9052a08d02c8e1569c3193b21da7a40a88d23a03431937a57658ccfbd8e3",
+            "resps": [
+              [
+                [
+                  -50.105321645736694,
+                  false
+                ]
+              ],
+              [
+                [
+                  -48.818838596343994,
+                  false
+                ]
+              ],
+              [
+                [
+                  -65.4565920829773,
+                  false
+                ]
+              ],
+              [
+                [
+                  -61.65123999118805,
+                  false
+                ]
+              ]
+            ],
+            "target": 3,
+            "target_hash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Canoeing: Two women in a child are shown in a canoe while a man pulls the canoe while standing in the water, with other individuals visible in the background. The child and a different man",
+                " are then shown paddling down a river in a boat while a woman talks."
+              ],
+              [
+                "Canoeing: Two women in a child are shown in a canoe while a man pulls the canoe while standing in the water, with other individuals visible in the background. The child and a different man",
+                " are driving the canoe, they go down the river flowing side to side."
+              ],
+              [
+                "Canoeing: Two women in a child are shown in a canoe while a man pulls the canoe while standing in the water, with other individuals visible in the background. The child and a different man",
+                " sit in a canoe while the man paddles."
+              ],
+              [
+                "Canoeing: Two women in a child are shown in a canoe while a man pulls the canoe while standing in the water, with other individuals visible in the background. The child and a different man",
+                " walking go down the rapids, while the man in his helicopter almost falls and goes out of canoehood."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Canoeing",
+              "choices": [
+                "are then shown paddling down a river in a boat while a woman talks.",
+                "are driving the canoe, they go down the river flowing side to side.",
+                "sit in a canoe while the man paddles.",
+                "walking go down the rapids, while the man in his helicopter almost falls and goes out of canoehood."
+              ],
+              "ctx": "Two women in a child are shown in a canoe while a man pulls the canoe while standing in the water, with other individuals visible in the background. the child and a different man",
+              "ctx_a": "Two women in a child are shown in a canoe while a man pulls the canoe while standing in the water, with other individuals visible in the background.",
+              "ctx_b": "the child and a different man",
+              "endings": [
+                "are then shown paddling down a river in a boat while a woman talks.",
+                "are driving the canoe, they go down the river flowing side to side.",
+                "sit in a canoe while the man paddles.",
+                "walking go down the rapids, while the man in his helicopter almost falls and goes out of canoehood."
+              ],
+              "gold": 2,
+              "ind": 106,
+              "label": "2",
+              "query": "Canoeing: Two women in a child are shown in a canoe while a man pulls the canoe while standing in the water, with other individuals visible in the background. The child and a different man",
+              "source_id": "activitynet~v_-xQvJmC2jhk",
+              "split": "val",
+              "split_type": "indomain"
+            },
+            "doc_hash": "14dc9b1c3f03ef369e0e9976562d362f58e37cadb9bebf25ee5dabdc3ff6ad7d",
+            "doc_id": 2,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -102.29439604282379,
+                false
+              ],
+              [
+                -101.3500280380249,
+                false
+              ],
+              [
+                -72.08619809150696,
+                false
+              ],
+              [
+                -164.4452154636383,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "fe85f7beb5549c53ae662741c373d9e854aa42fc4c070ba4503a0ded863f2dfe",
+            "resps": [
+              [
+                [
+                  -102.29439604282379,
+                  false
+                ]
+              ],
+              [
+                [
+                  -101.3500280380249,
+                  false
+                ]
+              ],
+              [
+                [
+                  -72.08619809150696,
+                  false
+                ]
+              ],
+              [
+                [
+                  -164.4452154636383,
+                  false
+                ]
+              ]
+            ],
+            "target": 2,
+            "target_hash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "High jump: A boy is running down a track. The boy",
+                " runs into a car."
+              ],
+              [
+                "High jump: A boy is running down a track. The boy",
+                " gets in a mat."
+              ],
+              [
+                "High jump: A boy is running down a track. The boy",
+                " lifts his body above the height of a pole."
+              ],
+              [
+                "High jump: A boy is running down a track. The boy",
+                " stands on his hands and springs."
+              ]
+            ],
+            "doc": {
+              "activity_label": "High jump",
+              "choices": [
+                "runs into a car.",
+                "gets in a mat.",
+                "lifts his body above the height of a pole.",
+                "stands on his hands and springs."
+              ],
+              "ctx": "A boy is running down a track. the boy",
+              "ctx_a": "A boy is running down a track.",
+              "ctx_b": "the boy",
+              "endings": [
+                "runs into a car.",
+                "gets in a mat.",
+                "lifts his body above the height of a pole.",
+                "stands on his hands and springs."
+              ],
+              "gold": 2,
+              "ind": 114,
+              "label": "2",
+              "query": "High jump: A boy is running down a track. The boy",
+              "source_id": "activitynet~v_-zHX3Gdx6I4",
+              "split": "val",
+              "split_type": "zeroshot"
+            },
+            "doc_hash": "7a5346b1d9309aa52799e598a5ccbff33ccd8c18c1d1056da412389ea5bd9e8b",
+            "doc_id": 3,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -29.09624171257019,
+                false
+              ],
+              [
+                -26.370885848999023,
+                false
+              ],
+              [
+                -69.19915902614594,
+                false
+              ],
+              [
+                -47.12969470024109,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "a2df73697ab4570dea4ab99211b81e98edfa0a5615a9b83a38f48341c0734e80",
+            "resps": [
+              [
+                [
+                  -29.09624171257019,
+                  false
+                ]
+              ],
+              [
+                [
+                  -26.370885848999023,
+                  false
+                ]
+              ],
+              [
+                [
+                  -69.19915902614594,
+                  false
+                ]
+              ],
+              [
+                [
+                  -47.12969470024109,
+                  false
+                ]
+              ]
+            ],
+            "target": 2,
+            "target_hash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "High jump: The boy lifts his body above the height of a pole. The boy lands on his back on to a red mat. The boy",
+                " turns his body around on the mat."
+              ],
+              [
+                "High jump: The boy lifts his body above the height of a pole. The boy lands on his back on to a red mat. The boy",
+                " gets up from the mat."
+              ],
+              [
+                "High jump: The boy lifts his body above the height of a pole. The boy lands on his back on to a red mat. The boy",
+                " continues to lift his body over the pole."
+              ],
+              [
+                "High jump: The boy lifts his body above the height of a pole. The boy lands on his back on to a red mat. The boy",
+                " wiggles out of the mat."
+              ]
+            ],
+            "doc": {
+              "activity_label": "High jump",
+              "choices": [
+                "turns his body around on the mat.",
+                "gets up from the mat.",
+                "continues to lift his body over the pole.",
+                "wiggles out of the mat."
+              ],
+              "ctx": "The boy lifts his body above the height of a pole. The boy lands on his back on to a red mat. the boy",
+              "ctx_a": "The boy lifts his body above the height of a pole. The boy lands on his back on to a red mat.",
+              "ctx_b": "the boy",
+              "endings": [
+                "turns his body around on the mat.",
+                "gets up from the mat.",
+                "continues to lift his body over the pole.",
+                "wiggles out of the mat."
+              ],
+              "gold": 1,
+              "ind": 116,
+              "label": "1",
+              "query": "High jump: The boy lifts his body above the height of a pole. The boy lands on his back on to a red mat. The boy",
+              "source_id": "activitynet~v_-zHX3Gdx6I4",
+              "split": "val",
+              "split_type": "zeroshot"
+            },
+            "doc_hash": "0ea20e56c00cb5efbd1db09b523ddfb3dca721b1e17d740270d39d0296ee621c",
+            "doc_id": 4,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -49.572870910167694,
+                false
+              ],
+              [
+                -30.50484162569046,
+                false
+              ],
+              [
+                -49.81733214855194,
+                false
+              ],
+              [
+                -52.109442472457886,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "8a1432f2aa0f0a07e3c133ac5c43561fc3849ada1e1c45066a6f13aa4ccac951",
+            "resps": [
+              [
+                [
+                  -49.572870910167694,
+                  false
+                ]
+              ],
+              [
+                [
+                  -30.50484162569046,
+                  false
+                ]
+              ],
+              [
+                [
+                  -49.81733214855194,
+                  false
+                ]
+              ],
+              [
+                [
+                  -52.109442472457886,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "High jump: The boy lands on his back on to a red mat. The boy gets up from the mat. The boy",
+                " starts doing spins."
+              ],
+              [
+                "High jump: The boy lands on his back on to a red mat. The boy gets up from the mat. The boy",
+                " celebrates by clapping and flexing both arms."
+              ],
+              [
+                "High jump: The boy lands on his back on to a red mat. The boy gets up from the mat. The boy",
+                " is dancing on the mat."
+              ],
+              [
+                "High jump: The boy lands on his back on to a red mat. The boy gets up from the mat. The boy",
+                " does jump jacks on his stick."
+              ]
+            ],
+            "doc": {
+              "activity_label": "High jump",
+              "choices": [
+                "starts doing spins.",
+                "celebrates by clapping and flexing both arms.",
+                "is dancing on the mat.",
+                "does jump jacks on his stick."
+              ],
+              "ctx": "The boy lands on his back on to a red mat. The boy gets up from the mat. the boy",
+              "ctx_a": "The boy lands on his back on to a red mat. The boy gets up from the mat.",
+              "ctx_b": "the boy",
+              "endings": [
+                "starts doing spins.",
+                "celebrates by clapping and flexing both arms.",
+                "is dancing on the mat.",
+                "does jump jacks on his stick."
+              ],
+              "gold": 1,
+              "ind": 117,
+              "label": "1",
+              "query": "High jump: The boy lands on his back on to a red mat. The boy gets up from the mat. The boy",
+              "source_id": "activitynet~v_-zHX3Gdx6I4",
+              "split": "val",
+              "split_type": "zeroshot"
+            },
+            "doc_hash": "c10764353478517efdd4ff86e98cae2843877ae3bff5e1af117d05e581340b96",
+            "doc_id": 5,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -37.561644554138184,
+                false
+              ],
+              [
+                -82.08594155311584,
+                false
+              ],
+              [
+                -35.15508884191513,
+                false
+              ],
+              [
+                -56.82406401634216,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "b31af94ae9da048b8880edf3975c89966e1b43e56bbd9411fcb16783729c235c",
+            "resps": [
+              [
+                [
+                  -37.561644554138184,
+                  false
+                ]
+              ],
+              [
+                [
+                  -82.08594155311584,
+                  false
+                ]
+              ],
+              [
+                [
+                  -35.15508884191513,
+                  false
+                ]
+              ],
+              [
+                [
+                  -56.82406401634216,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Playing harmonica: A man is standing in front of a camera. He starts playing a harmonica for the camera. He",
+                " begins to play the harmonica with his body while looking at the camera."
+              ],
+              [
+                "Playing harmonica: A man is standing in front of a camera. He starts playing a harmonica for the camera. He",
+                " seems to be singing while playing the harmonica."
+              ],
+              [
+                "Playing harmonica: A man is standing in front of a camera. He starts playing a harmonica for the camera. He",
+                " rocks back and forth to the music as he goes."
+              ],
+              [
+                "Playing harmonica: A man is standing in front of a camera. He starts playing a harmonica for the camera. He",
+                " painted a fence in front of the camera."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Playing harmonica",
+              "choices": [
+                "begins to play the harmonica with his body while looking at the camera.",
+                "seems to be singing while playing the harmonica.",
+                "rocks back and forth to the music as he goes.",
+                "painted a fence in front of the camera."
+              ],
+              "ctx": "A man is standing in front of a camera. He starts playing a harmonica for the camera. he",
+              "ctx_a": "A man is standing in front of a camera. He starts playing a harmonica for the camera.",
+              "ctx_b": "he",
+              "endings": [
+                "begins to play the harmonica with his body while looking at the camera.",
+                "seems to be singing while playing the harmonica.",
+                "rocks back and forth to the music as he goes.",
+                "painted a fence in front of the camera."
+              ],
+              "gold": 2,
+              "ind": 149,
+              "label": "2",
+              "query": "Playing harmonica: A man is standing in front of a camera. He starts playing a harmonica for the camera. He",
+              "source_id": "activitynet~v_0RUMAGGab1k",
+              "split": "val",
+              "split_type": "zeroshot"
+            },
+            "doc_hash": "cf8a9b3f0c6672e4f6502cc4bb4add452f8ea8a996a72179a69f28d2e2218d27",
+            "doc_id": 6,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -89.81004023551941,
+                false
+              ],
+              [
+                -72.00317680835724,
+                false
+              ],
+              [
+                -67.84671473503113,
+                false
+              ],
+              [
+                -50.87702965736389,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "2125cc80f3a2322cc77c38dce4e23d737b484e2170b182f8709e3832f548cc6d",
+            "resps": [
+              [
+                [
+                  -89.81004023551941,
+                  false
+                ]
+              ],
+              [
+                [
+                  -72.00317680835724,
+                  false
+                ]
+              ],
+              [
+                [
+                  -67.84671473503113,
+                  false
+                ]
+              ],
+              [
+                [
+                  -50.87702965736389,
+                  false
+                ]
+              ]
+            ],
+            "target": 2,
+            "target_hash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Sumo: A cartoon animation video is shown with people wandering around and rockets being shot. Two men",
+                " fight robots of evil and ends with a to be continued."
+              ],
+              [
+                "Sumo: A cartoon animation video is shown with people wandering around and rockets being shot. Two men",
+                " are then shown in closeups shooting a shot put."
+              ],
+              [
+                "Sumo: A cartoon animation video is shown with people wandering around and rockets being shot. Two men",
+                " push a child in a speedboat in the water."
+              ],
+              [
+                "Sumo: A cartoon animation video is shown with people wandering around and rockets being shot. Two men",
+                " look in the cameraman's eye and smile."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Sumo",
+              "choices": [
+                "fight robots of evil and ends with a to be continued.",
+                "are then shown in closeups shooting a shot put.",
+                "push a child in a speedboat in the water.",
+                "look in the cameraman's eye and smile."
+              ],
+              "ctx": "A cartoon animation video is shown with people wandering around and rockets being shot. two men",
+              "ctx_a": "A cartoon animation video is shown with people wandering around and rockets being shot.",
+              "ctx_b": "two men",
+              "endings": [
+                "fight robots of evil and ends with a to be continued.",
+                "are then shown in closeups shooting a shot put.",
+                "push a child in a speedboat in the water.",
+                "look in the cameraman's eye and smile."
+              ],
+              "gold": 0,
+              "ind": 170,
+              "label": "0",
+              "query": "Sumo: A cartoon animation video is shown with people wandering around and rockets being shot. Two men",
+              "source_id": "activitynet~v_0WVkoTBmhA0",
+              "split": "val",
+              "split_type": "indomain"
+            },
+            "doc_hash": "484959f4cb60c490dfc7ae2431a4fc70b81f0784109e5626ff465f3ce22430b6",
+            "doc_id": 7,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -72.5711920261383,
+                false
+              ],
+              [
+                -76.877077460289,
+                false
+              ],
+              [
+                -61.5090548992157,
+                false
+              ],
+              [
+                -70.44744563102722,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "18d0f3b52cea323e10cb807c98f1d19817a68167d4364461b1f8c7a4b4b57a5d",
+            "resps": [
+              [
+                [
+                  -72.5711920261383,
+                  false
+                ]
+              ],
+              [
+                [
+                  -76.877077460289,
+                  false
+                ]
+              ],
+              [
+                [
+                  -61.5090548992157,
+                  false
+                ]
+              ],
+              [
+                [
+                  -70.44744563102722,
+                  false
+                ]
+              ]
+            ],
+            "target": 0,
+            "target_hash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Sharpening knives: A man is holding a pocket knife while sitting on some rocks in the wilderness. Then he",
+                " opens a can of oil put oil on the knife, and puts oil on a knife and press it through a can filled with oil then cuts several pieces from the sandwiches."
+              ],
+              [
+                "Sharpening knives: A man is holding a pocket knife while sitting on some rocks in the wilderness. Then he",
+                " takes a small stone from the flowing river and smashes it on another stone."
+              ],
+              [
+                "Sharpening knives: A man is holding a pocket knife while sitting on some rocks in the wilderness. Then he",
+                " uses the knife to shave his leg."
+              ],
+              [
+                "Sharpening knives: A man is holding a pocket knife while sitting on some rocks in the wilderness. Then he",
+                " sand the rocks and tops them by using strong pressure."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Sharpening knives",
+              "choices": [
+                "opens a can of oil put oil on the knife, and puts oil on a knife and press it through a can filled with oil then cuts several pieces from the sandwiches.",
+                "takes a small stone from the flowing river and smashes it on another stone.",
+                "uses the knife to shave his leg.",
+                "sand the rocks and tops them by using strong pressure."
+              ],
+              "ctx": "A man is holding a pocket knife while sitting on some rocks in the wilderness. then he",
+              "ctx_a": "A man is holding a pocket knife while sitting on some rocks in the wilderness.",
+              "ctx_b": "then he",
+              "endings": [
+                "opens a can of oil put oil on the knife, and puts oil on a knife and press it through a can filled with oil then cuts several pieces from the sandwiches.",
+                "takes a small stone from the flowing river and smashes it on another stone.",
+                "uses the knife to shave his leg.",
+                "sand the rocks and tops them by using strong pressure."
+              ],
+              "gold": 1,
+              "ind": 180,
+              "label": "1",
+              "query": "Sharpening knives: A man is holding a pocket knife while sitting on some rocks in the wilderness. Then he",
+              "source_id": "activitynet~v_0bosp4-pyTM",
+              "split": "val",
+              "split_type": "zeroshot"
+            },
+            "doc_hash": "0126fc20b6dd7239b4da25fc7fa0ed5c3ccfc4c6060cbf91aefc99002f10f791",
+            "doc_id": 8,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -238.84203791618347,
+                false
+              ],
+              [
+                -96.9026449918747,
+                false
+              ],
+              [
+                -55.342122316360474,
+                false
+              ],
+              [
+                -73.75557231903076,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "45e62663742a4c7c3befabde85ab526edc2d9b60e460a34f2eaa3292c9d41109",
+            "resps": [
+              [
+                [
+                  -238.84203791618347,
+                  false
+                ]
+              ],
+              [
+                [
+                  -96.9026449918747,
+                  false
+                ]
+              ],
+              [
+                [
+                  -55.342122316360474,
+                  false
+                ]
+              ],
+              [
+                [
+                  -73.75557231903076,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Sharpening knives: Then he takes a small stone from the flowing river and smashes it on another stone. He starts to crush the small stone to smaller pieces. He",
+                " cuts the center stone in half and blow it on to make it bigger."
+              ],
+              [
+                "Sharpening knives: Then he takes a small stone from the flowing river and smashes it on another stone. He starts to crush the small stone to smaller pieces. He",
+                " grind it hard to make the pieces smaller."
+              ],
+              [
+                "Sharpening knives: Then he takes a small stone from the flowing river and smashes it on another stone. He starts to crush the small stone to smaller pieces. He",
+                " eventually brings it back into view and adds it to the smaller ones to make a small triangular shaped piece."
+              ],
+              [
+                "Sharpening knives: Then he takes a small stone from the flowing river and smashes it on another stone. He starts to crush the small stone to smaller pieces. He",
+                " starts to party with them and throw the pieces by hand while they celebrate."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Sharpening knives",
+              "choices": [
+                "cuts the center stone in half and blow it on to make it bigger.",
+                "grind it hard to make the pieces smaller.",
+                "eventually brings it back into view and adds it to the smaller ones to make a small triangular shaped piece.",
+                "starts to party with them and throw the pieces by hand while they celebrate."
+              ],
+              "ctx": "Then he takes a small stone from the flowing river and smashes it on another stone. He starts to crush the small stone to smaller pieces. he",
+              "ctx_a": "Then he takes a small stone from the flowing river and smashes it on another stone. He starts to crush the small stone to smaller pieces.",
+              "ctx_b": "he",
+              "endings": [
+                "cuts the center stone in half and blow it on to make it bigger.",
+                "grind it hard to make the pieces smaller.",
+                "eventually brings it back into view and adds it to the smaller ones to make a small triangular shaped piece.",
+                "starts to party with them and throw the pieces by hand while they celebrate."
+              ],
+              "gold": 1,
+              "ind": 182,
+              "label": "1",
+              "query": "Sharpening knives: Then he takes a small stone from the flowing river and smashes it on another stone. He starts to crush the small stone to smaller pieces. He",
+              "source_id": "activitynet~v_0bosp4-pyTM",
+              "split": "val",
+              "split_type": "zeroshot"
+            },
+            "doc_hash": "582468b8b065e8950cbabd91aa14735d6c953b12ac8a01b5365d6c556d42f462",
+            "doc_id": 9,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -94.27047514915466,
+                false
+              ],
+              [
+                -60.876698315143585,
+                false
+              ],
+              [
+                -129.17410790920258,
+                false
+              ],
+              [
+                -97.10989367961884,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "cc372cb637fd587aec1ed3b6ec8b1b3d5bb9b57be79ccdc94f5aae343c2e354e",
+            "resps": [
+              [
+                [
+                  -94.27047514915466,
+                  false
+                ]
+              ],
+              [
+                [
+                  -60.876698315143585,
+                  false
+                ]
+              ],
+              [
+                [
+                  -129.17410790920258,
+                  false
+                ]
+              ],
+              [
+                [
+                  -97.10989367961884,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Sharpening knives: Then he takes a piece of bark and rubs the powered stone pieces onto it. The stone particles stick to the wet piece of wood. He",
+                " uses a small brush to polish one of the stone pieces."
+              ],
+              [
+                "Sharpening knives: Then he takes a piece of bark and rubs the powered stone pieces onto it. The stone particles stick to the wet piece of wood. He",
+                " then uses a strip of sealing tape to seal the board and then smooths the bottom of the board."
+              ],
+              [
+                "Sharpening knives: Then he takes a piece of bark and rubs the powered stone pieces onto it. The stone particles stick to the wet piece of wood. He",
+                " walks towards the camera."
+              ],
+              [
+                "Sharpening knives: Then he takes a piece of bark and rubs the powered stone pieces onto it. The stone particles stick to the wet piece of wood. He",
+                " then takes the knife and sharpens it against the wood piece."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Sharpening knives",
+              "choices": [
+                "uses a small brush to polish one of the stone pieces.",
+                "then uses a strip of sealing tape to seal the board and then smooths the bottom of the board.",
+                "walks towards the camera.",
+                "then takes the knife and sharpens it against the wood piece."
+              ],
+              "ctx": "Then he takes a piece of bark and rubs the powered stone pieces onto it. The stone particles stick to the wet piece of wood. he",
+              "ctx_a": "Then he takes a piece of bark and rubs the powered stone pieces onto it. The stone particles stick to the wet piece of wood.",
+              "ctx_b": "he",
+              "endings": [
+                "uses a small brush to polish one of the stone pieces.",
+                "then uses a strip of sealing tape to seal the board and then smooths the bottom of the board.",
+                "walks towards the camera.",
+                "then takes the knife and sharpens it against the wood piece."
+              ],
+              "gold": 3,
+              "ind": 185,
+              "label": "3",
+              "query": "Sharpening knives: Then he takes a piece of bark and rubs the powered stone pieces onto it. The stone particles stick to the wet piece of wood. He",
+              "source_id": "activitynet~v_0bosp4-pyTM",
+              "split": "val",
+              "split_type": "zeroshot"
+            },
+            "doc_hash": "2c66b3471927da82aeb19419c918c2fc86eb124aba74b4a74bfc4cadf754d6a5",
+            "doc_id": 10,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -74.42542868852615,
+                false
+              ],
+              [
+                -129.630206823349,
+                false
+              ],
+              [
+                -36.60938549041748,
+                false
+              ],
+              [
+                -84.66531783342361,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "72feaf2aadb2f61b7ecb2260b375cdb8a3b905007ae3e708f031ad8afaadc248",
+            "resps": [
+              [
+                [
+                  -74.42542868852615,
+                  false
+                ]
+              ],
+              [
+                [
+                  -129.630206823349,
+                  false
+                ]
+              ],
+              [
+                [
+                  -36.60938549041748,
+                  false
+                ]
+              ],
+              [
+                [
+                  -84.66531783342361,
+                  false
+                ]
+              ]
+            ],
+            "target": 3,
+            "target_hash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Sharpening knives: The stone particles stick to the wet piece of wood. He then takes the knife and sharpens it against the wood piece. He",
+                " then cuts off the excess hair of the wood."
+              ],
+              [
+                "Sharpening knives: The stone particles stick to the wet piece of wood. He then takes the knife and sharpens it against the wood piece. He",
+                " scrapes the wood with a broom in the cutting tool used in sharpening the instrument."
+              ],
+              [
+                "Sharpening knives: The stone particles stick to the wet piece of wood. He then takes the knife and sharpens it against the wood piece. He",
+                " writes on the board again."
+              ],
+              [
+                "Sharpening knives: The stone particles stick to the wet piece of wood. He then takes the knife and sharpens it against the wood piece. He",
+                " then notices a little black and green poisonous frog sitting next to him."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Sharpening knives",
+              "choices": [
+                "then cuts off the excess hair of the wood.",
+                "scrapes the wood with a broom in the cutting tool used in sharpening the instrument.",
+                "writes on the board again.",
+                "then notices a little black and green poisonous frog sitting next to him."
+              ],
+              "ctx": "The stone particles stick to the wet piece of wood. He then takes the knife and sharpens it against the wood piece. he",
+              "ctx_a": "The stone particles stick to the wet piece of wood. He then takes the knife and sharpens it against the wood piece.",
+              "ctx_b": "he",
+              "endings": [
+                "then cuts off the excess hair of the wood.",
+                "scrapes the wood with a broom in the cutting tool used in sharpening the instrument.",
+                "writes on the board again.",
+                "then notices a little black and green poisonous frog sitting next to him."
+              ],
+              "gold": 3,
+              "ind": 186,
+              "label": "3",
+              "query": "Sharpening knives: The stone particles stick to the wet piece of wood. He then takes the knife and sharpens it against the wood piece. He",
+              "source_id": "activitynet~v_0bosp4-pyTM",
+              "split": "val",
+              "split_type": "zeroshot"
+            },
+            "doc_hash": "7a95aeb6da7b8c30435620767171cd53f9dfde87ff88ab95ef356143375c808e",
+            "doc_id": 11,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -58.978708028793335,
+                false
+              ],
+              [
+                -128.5791368484497,
+                false
+              ],
+              [
+                -33.64638465642929,
+                false
+              ],
+              [
+                -113.51330590248108,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "504e31f4ca094b72e2aebe2d106153a04b8d75dbf9d8b2b4cb53ec9299b41c85",
+            "resps": [
+              [
+                [
+                  -58.978708028793335,
+                  false
+                ]
+              ],
+              [
+                [
+                  -128.5791368484497,
+                  false
+                ]
+              ],
+              [
+                [
+                  -33.64638465642929,
+                  false
+                ]
+              ],
+              [
+                [
+                  -113.51330590248108,
+                  false
+                ]
+              ]
+            ],
+            "target": 3,
+            "target_hash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Sharpening knives: He then takes the knife and sharpens it against the wood piece. He then notices a little black and green poisonous frog sitting next to him. The frog",
+                " eventually gets to get up and marches out of the room waving its body about."
+              ],
+              [
+                "Sharpening knives: He then takes the knife and sharpens it against the wood piece. He then notices a little black and green poisonous frog sitting next to him. The frog",
+                " then starts to get up from the chair and begins walking towards the camera."
+              ],
+              [
+                "Sharpening knives: He then takes the knife and sharpens it against the wood piece. He then notices a little black and green poisonous frog sitting next to him. The frog",
+                " then escapes and jumps away."
+              ],
+              [
+                "Sharpening knives: He then takes the knife and sharpens it against the wood piece. He then notices a little black and green poisonous frog sitting next to him. The frog",
+                " is acting crazy and attacking him while he is cooking."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Sharpening knives",
+              "choices": [
+                "eventually gets to get up and marches out of the room waving its body about.",
+                "then starts to get up from the chair and begins walking towards the camera.",
+                "then escapes and jumps away.",
+                "is acting crazy and attacking him while he is cooking."
+              ],
+              "ctx": "He then takes the knife and sharpens it against the wood piece. He then notices a little black and green poisonous frog sitting next to him. the frog",
+              "ctx_a": "He then takes the knife and sharpens it against the wood piece. He then notices a little black and green poisonous frog sitting next to him.",
+              "ctx_b": "the frog",
+              "endings": [
+                "eventually gets to get up and marches out of the room waving its body about.",
+                "then starts to get up from the chair and begins walking towards the camera.",
+                "then escapes and jumps away.",
+                "is acting crazy and attacking him while he is cooking."
+              ],
+              "gold": 2,
+              "ind": 187,
+              "label": "2",
+              "query": "Sharpening knives: He then takes the knife and sharpens it against the wood piece. He then notices a little black and green poisonous frog sitting next to him. The frog",
+              "source_id": "activitynet~v_0bosp4-pyTM",
+              "split": "val",
+              "split_type": "zeroshot"
+            },
+            "doc_hash": "62ab2f9bbb8f3420eb0fd351fb281d4caf54f8c19a1061b0b2f0bc59343f1803",
+            "doc_id": 12,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -110.68244695663452,
+                false
+              ],
+              [
+                -88.68773066997528,
+                false
+              ],
+              [
+                -62.75779318809509,
+                false
+              ],
+              [
+                -80.95208549499512,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "d1d027c3f78499e22d20d935c2d5cd4ffd4ba8dba378f1c185323e99d9e710a5",
+            "resps": [
+              [
+                [
+                  -110.68244695663452,
+                  false
+                ]
+              ],
+              [
+                [
+                  -88.68773066997528,
+                  false
+                ]
+              ],
+              [
+                [
+                  -62.75779318809509,
+                  false
+                ]
+              ],
+              [
+                [
+                  -80.95208549499512,
+                  false
+                ]
+              ]
+            ],
+            "target": 2,
+            "target_hash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Sharpening knives: He then notices a little black and green poisonous frog sitting next to him. The frog then escapes and jumps away. He",
+                " sits and hugs another man and also adjusts his camera."
+              ],
+              [
+                "Sharpening knives: He then notices a little black and green poisonous frog sitting next to him. The frog then escapes and jumps away. He",
+                " then sits there staring at his text machine as if he has actually been given a gift from god."
+              ],
+              [
+                "Sharpening knives: He then notices a little black and green poisonous frog sitting next to him. The frog then escapes and jumps away. He",
+                " explains how the frog secretes a poisonous fluid that can be extremely harmful."
+              ],
+              [
+                "Sharpening knives: He then notices a little black and green poisonous frog sitting next to him. The frog then escapes and jumps away. He",
+                " takes the frog on his hand and tickles the back of it."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Sharpening knives",
+              "choices": [
+                "sits and hugs another man and also adjusts his camera.",
+                "then sits there staring at his text machine as if he has actually been given a gift from god.",
+                "explains how the frog secretes a poisonous fluid that can be extremely harmful.",
+                "takes the frog on his hand and tickles the back of it."
+              ],
+              "ctx": "He then notices a little black and green poisonous frog sitting next to him. The frog then escapes and jumps away. he",
+              "ctx_a": "He then notices a little black and green poisonous frog sitting next to him. The frog then escapes and jumps away.",
+              "ctx_b": "he",
+              "endings": [
+                "sits and hugs another man and also adjusts his camera.",
+                "then sits there staring at his text machine as if he has actually been given a gift from god.",
+                "explains how the frog secretes a poisonous fluid that can be extremely harmful.",
+                "takes the frog on his hand and tickles the back of it."
+              ],
+              "gold": 2,
+              "ind": 188,
+              "label": "2",
+              "query": "Sharpening knives: He then notices a little black and green poisonous frog sitting next to him. The frog then escapes and jumps away. He",
+              "source_id": "activitynet~v_0bosp4-pyTM",
+              "split": "val",
+              "split_type": "zeroshot"
+            },
+            "doc_hash": "52663538776e90b5bf411555ce1b5fc5e6f3720b904f79f0e965699a766bca5b",
+            "doc_id": 13,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -90.451868891716,
+                false
+              ],
+              [
+                -132.90185570716858,
+                false
+              ],
+              [
+                -102.76717698574066,
+                false
+              ],
+              [
+                -77.42498779296875,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "a505754a101ea43aca2c0c6458e615e583f49f91c1674d11f1b27e693c717399",
+            "resps": [
+              [
+                [
+                  -90.451868891716,
+                  false
+                ]
+              ],
+              [
+                [
+                  -132.90185570716858,
+                  false
+                ]
+              ],
+              [
+                [
+                  -102.76717698574066,
+                  false
+                ]
+              ],
+              [
+                [
+                  -77.42498779296875,
+                  false
+                ]
+              ]
+            ],
+            "target": 2,
+            "target_hash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Playing bagpipes: A person is playing bagpipes out in a park. A man and two boys watching from a far. The camera",
+                " shoots areas all around the park while the bagpipes play."
+              ],
+              [
+                "Playing bagpipes: A person is playing bagpipes out in a park. A man and two boys watching from a far. The camera",
+                " is covered to the boy that is playing there."
+              ],
+              [
+                "Playing bagpipes: A person is playing bagpipes out in a park. A man and two boys watching from a far. The camera",
+                " then goes black and we see a black opening scene."
+              ],
+              [
+                "Playing bagpipes: A person is playing bagpipes out in a park. A man and two boys watching from a far. The camera",
+                " watching the boy and boy as they play a game of drums."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Playing bagpipes",
+              "choices": [
+                "shoots areas all around the park while the bagpipes play.",
+                "is covered to the boy that is playing there.",
+                "then goes black and we see a black opening scene.",
+                "watching the boy and boy as they play a game of drums."
+              ],
+              "ctx": "A person is playing bagpipes out in a park. A man and two boys watching from a far. the camera",
+              "ctx_a": "A person is playing bagpipes out in a park. A man and two boys watching from a far.",
+              "ctx_b": "the camera",
+              "endings": [
+                "shoots areas all around the park while the bagpipes play.",
+                "is covered to the boy that is playing there.",
+                "then goes black and we see a black opening scene.",
+                "watching the boy and boy as they play a game of drums."
+              ],
+              "gold": 0,
+              "ind": 192,
+              "label": "0",
+              "query": "Playing bagpipes: A person is playing bagpipes out in a park. A man and two boys watching from a far. The camera",
+              "source_id": "activitynet~v_0dgmG3h9RLA",
+              "split": "val",
+              "split_type": "indomain"
+            },
+            "doc_hash": "2680415957b99e4ddb3ccf808fdfedc675c462544e04007b2ed375dc37f7c024",
+            "doc_id": 14,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -93.1628303527832,
+                false
+              ],
+              [
+                -49.162840366363525,
+                false
+              ],
+              [
+                -69.25252544879913,
+                false
+              ],
+              [
+                -86.00881028175354,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "b75f0bbabcd50beffa5c062e4828f087feb7b788810b1ad7ead00544354d4152",
+            "resps": [
+              [
+                [
+                  -93.1628303527832,
+                  false
+                ]
+              ],
+              [
+                [
+                  -49.162840366363525,
+                  false
+                ]
+              ],
+              [
+                [
+                  -69.25252544879913,
+                  false
+                ]
+              ],
+              [
+                [
+                  -86.00881028175354,
+                  false
+                ]
+              ]
+            ],
+            "target": 0,
+            "target_hash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Playing water polo: Two people are seen passing a ball back and fourth in a pool and leads into one speaking to the camera. The man",
+                " dips the ball and walks back with the boy and pours detergent into a cup again."
+              ],
+              [
+                "Playing water polo: Two people are seen passing a ball back and fourth in a pool and leads into one speaking to the camera. The man",
+                " then throws the ball into the pool and begins running around with a sail in his hand while a group of men watch."
+              ],
+              [
+                "Playing water polo: Two people are seen passing a ball back and fourth in a pool and leads into one speaking to the camera. The man",
+                " then takes a drink having a conversation with another man and another man leads into him throwing balls in the water and laughing to the camera."
+              ],
+              [
+                "Playing water polo: Two people are seen passing a ball back and fourth in a pool and leads into one speaking to the camera. The man",
+                " demonstrates how to properly throw the ball with his hands while still speaking to the camera."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Playing water polo",
+              "choices": [
+                "dips the ball and walks back with the boy and pours detergent into a cup again.",
+                "then throws the ball into the pool and begins running around with a sail in his hand while a group of men watch.",
+                "then takes a drink having a conversation with another man and another man leads into him throwing balls in the water and laughing to the camera.",
+                "demonstrates how to properly throw the ball with his hands while still speaking to the camera."
+              ],
+              "ctx": "Two people are seen passing a ball back and fourth in a pool and leads into one speaking to the camera. the man",
+              "ctx_a": "Two people are seen passing a ball back and fourth in a pool and leads into one speaking to the camera.",
+              "ctx_b": "the man",
+              "endings": [
+                "dips the ball and walks back with the boy and pours detergent into a cup again.",
+                "then throws the ball into the pool and begins running around with a sail in his hand while a group of men watch.",
+                "then takes a drink having a conversation with another man and another man leads into him throwing balls in the water and laughing to the camera.",
+                "demonstrates how to properly throw the ball with his hands while still speaking to the camera."
+              ],
+              "gold": 3,
+              "ind": 200,
+              "label": "3",
+              "query": "Playing water polo: Two people are seen passing a ball back and fourth in a pool and leads into one speaking to the camera. The man",
+              "source_id": "activitynet~v_0hWGSkDnRHA",
+              "split": "val",
+              "split_type": "indomain"
+            },
+            "doc_hash": "0384db989930603e0809ceaf319f29925f5bf3cfb1abf72f042639a6696a64d5",
+            "doc_id": 15,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -138.02449375391006,
+                false
+              ],
+              [
+                -154.48721826076508,
+                false
+              ],
+              [
+                -179.6878523826599,
+                false
+              ],
+              [
+                -103.4031240940094,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "86efcb84bd36a457f529020d1d6ba9139565939fd71c39393f87e962d901690d",
+            "resps": [
+              [
+                [
+                  -138.02449375391006,
+                  false
+                ]
+              ],
+              [
+                [
+                  -154.48721826076508,
+                  false
+                ]
+              ],
+              [
+                [
+                  -179.6878523826599,
+                  false
+                ]
+              ],
+              [
+                [
+                  -103.4031240940094,
+                  false
+                ]
+              ]
+            ],
+            "target": 3,
+            "target_hash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Having an ice cream: A woman is sitting at a table in a fast food restaurant while eating. She continually speaks to nobody as she eats. She",
+                " is then seen sitting alone as she eats a cold brown ice cream."
+              ],
+              [
+                "Having an ice cream: A woman is sitting at a table in a fast food restaurant while eating. She continually speaks to nobody as she eats. She",
+                " pauses in the process of eating to enjoy her food."
+              ],
+              [
+                "Having an ice cream: A woman is sitting at a table in a fast food restaurant while eating. She continually speaks to nobody as she eats. She",
+                " stands up and grabs her purse, continuing to talk and laugh as she leaves."
+              ],
+              [
+                "Having an ice cream: A woman is sitting at a table in a fast food restaurant while eating. She continually speaks to nobody as she eats. She",
+                " picks up another chocolate bar and chews it as she talks."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Having an ice cream",
+              "choices": [
+                "is then seen sitting alone as she eats a cold brown ice cream.",
+                "pauses in the process of eating to enjoy her food.",
+                "stands up and grabs her purse, continuing to talk and laugh as she leaves.",
+                "picks up another chocolate bar and chews it as she talks."
+              ],
+              "ctx": "A woman is sitting at a table in a fast food restaurant while eating. She continually speaks to nobody as she eats. she",
+              "ctx_a": "A woman is sitting at a table in a fast food restaurant while eating. She continually speaks to nobody as she eats.",
+              "ctx_b": "she",
+              "endings": [
+                "is then seen sitting alone as she eats a cold brown ice cream.",
+                "pauses in the process of eating to enjoy her food.",
+                "stands up and grabs her purse, continuing to talk and laugh as she leaves.",
+                "picks up another chocolate bar and chews it as she talks."
+              ],
+              "gold": 2,
+              "ind": 225,
+              "label": "2",
+              "query": "Having an ice cream: A woman is sitting at a table in a fast food restaurant while eating. She continually speaks to nobody as she eats. She",
+              "source_id": "activitynet~v_15vwVfNA99o",
+              "split": "val",
+              "split_type": "zeroshot"
+            },
+            "doc_hash": "774e007f2eaa07ec1e4aa0cb1545908c84ba1b20ce4a7d3f556d13576cffffc4",
+            "doc_id": 16,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -109.78009569644928,
+                false
+              ],
+              [
+                -67.15390515327454,
+                false
+              ],
+              [
+                -122.68568217754364,
+                false
+              ],
+              [
+                -109.75823616981506,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "0ea9954019676be17596ecd77838fea5ddb2751209ef4ab56539e1e26c8ca90b",
+            "resps": [
+              [
+                [
+                  -109.78009569644928,
+                  false
+                ]
+              ],
+              [
+                [
+                  -67.15390515327454,
+                  false
+                ]
+              ],
+              [
+                [
+                  -122.68568217754364,
+                  false
+                ]
+              ],
+              [
+                [
+                  -109.75823616981506,
+                  false
+                ]
+              ]
+            ],
+            "target": 2,
+            "target_hash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Cheerleading: A group of cheerleaders run onto a stage before a cheering audience. They",
+                " get into formation, then begin dancing and flipping as male cheerleaders join them."
+              ],
+              [
+                "Cheerleading: A group of cheerleaders run onto a stage before a cheering audience. They",
+                " perform a cheer routine before the girls, along with makeup artists, spread out and pose."
+              ],
+              [
+                "Cheerleading: A group of cheerleaders run onto a stage before a cheering audience. They",
+                " take turns jumping on each other like they are performing karate."
+              ],
+              [
+                "Cheerleading: A group of cheerleaders run onto a stage before a cheering audience. They",
+                " are then shown performing the type of cheerleading dance, using batons and pole vaults."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Cheerleading",
+              "choices": [
+                "get into formation, then begin dancing and flipping as male cheerleaders join them.",
+                "perform a cheer routine before the girls, along with makeup artists, spread out and pose.",
+                "take turns jumping on each other like they are performing karate.",
+                "are then shown performing the type of cheerleading dance, using batons and pole vaults."
+              ],
+              "ctx": "A group of cheerleaders run onto a stage before a cheering audience. they",
+              "ctx_a": "A group of cheerleaders run onto a stage before a cheering audience.",
+              "ctx_b": "they",
+              "endings": [
+                "get into formation, then begin dancing and flipping as male cheerleaders join them.",
+                "perform a cheer routine before the girls, along with makeup artists, spread out and pose.",
+                "take turns jumping on each other like they are performing karate.",
+                "are then shown performing the type of cheerleading dance, using batons and pole vaults."
+              ],
+              "gold": 0,
+              "ind": 245,
+              "label": "0",
+              "query": "Cheerleading: A group of cheerleaders run onto a stage before a cheering audience. They",
+              "source_id": "activitynet~v_1AZxtWKkRlo",
+              "split": "val",
+              "split_type": "indomain"
+            },
+            "doc_hash": "f3f6dc9e0647507a2fa48c8dacfbc0c29165ac41b736aec1155bbf04190304a9",
+            "doc_id": 17,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -145.5471088886261,
+                false
+              ],
+              [
+                -123.63597631454468,
+                false
+              ],
+              [
+                -97.79218888282776,
+                false
+              ],
+              [
+                -137.2437349036336,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "bd356da53b44f39e0cfe8b2cd81e018020c5098cad8752091139618eabb91fdb",
+            "resps": [
+              [
+                [
+                  -145.5471088886261,
+                  false
+                ]
+              ],
+              [
+                [
+                  -123.63597631454468,
+                  false
+                ]
+              ],
+              [
+                [
+                  -97.79218888282776,
+                  false
+                ]
+              ],
+              [
+                [
+                  -137.2437349036336,
+                  false
+                ]
+              ]
+            ],
+            "target": 0,
+            "target_hash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Cheerleading: A group of cheerleaders run onto a stage before a cheering audience. They get into formation, then begin dancing and flipping as male cheerleaders join them. They all",
+                " dance and flip on stage while hanging their hats on the sides."
+              ],
+              [
+                "Cheerleading: A group of cheerleaders run onto a stage before a cheering audience. They get into formation, then begin dancing and flipping as male cheerleaders join them. They all",
+                " continue dancing and flipping, doing hand springs."
+              ],
+              [
+                "Cheerleading: A group of cheerleaders run onto a stage before a cheering audience. They get into formation, then begin dancing and flipping as male cheerleaders join them. They all",
+                " dance together with flip up their sleeves."
+              ],
+              [
+                "Cheerleading: A group of cheerleaders run onto a stage before a cheering audience. They get into formation, then begin dancing and flipping as male cheerleaders join them. They all",
+                " perform their routines as the studio rashes to a halt with cheerleaders in the audience."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Cheerleading",
+              "choices": [
+                "dance and flip on stage while hanging their hats on the sides.",
+                "continue dancing and flipping, doing hand springs.",
+                "dance together with flip up their sleeves.",
+                "perform their routines as the studio rashes to a halt with cheerleaders in the audience."
+              ],
+              "ctx": "A group of cheerleaders run onto a stage before a cheering audience. They get into formation, then begin dancing and flipping as male cheerleaders join them. they all",
+              "ctx_a": "A group of cheerleaders run onto a stage before a cheering audience. They get into formation, then begin dancing and flipping as male cheerleaders join them.",
+              "ctx_b": "they all",
+              "endings": [
+                "dance and flip on stage while hanging their hats on the sides.",
+                "continue dancing and flipping, doing hand springs.",
+                "dance together with flip up their sleeves.",
+                "perform their routines as the studio rashes to a halt with cheerleaders in the audience."
+              ],
+              "gold": 1,
+              "ind": 246,
+              "label": "1",
+              "query": "Cheerleading: A group of cheerleaders run onto a stage before a cheering audience. They get into formation, then begin dancing and flipping as male cheerleaders join them. They all",
+              "source_id": "activitynet~v_1AZxtWKkRlo",
+              "split": "val",
+              "split_type": "indomain"
+            },
+            "doc_hash": "c16d0f94317c1715fbffb7f2a88f39cdeaa5be7550445adb5f3987cf13f094e6",
+            "doc_id": 18,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -98.5436578989029,
+                false
+              ],
+              [
+                -83.31186509132385,
+                false
+              ],
+              [
+                -70.37026560306549,
+                false
+              ],
+              [
+                -150.69912314414978,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "b68132b02f78017757db5ac3ff9a327ddb6349f09fde6086f019383e851ef8e1",
+            "resps": [
+              [
+                [
+                  -98.5436578989029,
+                  false
+                ]
+              ],
+              [
+                [
+                  -83.31186509132385,
+                  false
+                ]
+              ],
+              [
+                [
+                  -70.37026560306549,
+                  false
+                ]
+              ],
+              [
+                [
+                  -150.69912314414978,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Cheerleading: They get into formation, then begin dancing and flipping as male cheerleaders join them. They all continue dancing and flipping, doing hand springs. When they",
+                " are done, they shake hands and walk away, but cheers are heard all around as they're finished."
+              ],
+              [
+                "Cheerleading: They get into formation, then begin dancing and flipping as male cheerleaders join them. They all continue dancing and flipping, doing hand springs. When they",
+                " are finished, they jump up and down happily and walk off the stage, exhausted."
+              ],
+              [
+                "Cheerleading: They get into formation, then begin dancing and flipping as male cheerleaders join them. They all continue dancing and flipping, doing hand springs. When they",
+                " are done, a male cheerleader is crowned and an instant replay is shown."
+              ],
+              [
+                "Cheerleading: They get into formation, then begin dancing and flipping as male cheerleaders join them. They all continue dancing and flipping, doing hand springs. When they",
+                " come down from their workout, they all stop to bow and applaud, then they continue dancing."
+              ]
+            ],
+            "doc": {
+              "activity_label": "Cheerleading",
+              "choices": [
+                "are done, they shake hands and walk away, but cheers are heard all around as they're finished.",
+                "are finished, they jump up and down happily and walk off the stage, exhausted.",
+                "are done, a male cheerleader is crowned and an instant replay is shown.",
+                "come down from their workout, they all stop to bow and applaud, then they continue dancing."
+              ],
+              "ctx": "They get into formation, then begin dancing and flipping as male cheerleaders join them. They all continue dancing and flipping, doing hand springs. when they",
+              "ctx_a": "They get into formation, then begin dancing and flipping as male cheerleaders join them. They all continue dancing and flipping, doing hand springs.",
+              "ctx_b": "when they",
+              "endings": [
+                "are done, they shake hands and walk away, but cheers are heard all around as they're finished.",
+                "are finished, they jump up and down happily and walk off the stage, exhausted.",
+                "are done, a male cheerleader is crowned and an instant replay is shown.",
+                "come down from their workout, they all stop to bow and applaud, then they continue dancing."
+              ],
+              "gold": 1,
+              "ind": 247,
+              "label": "1",
+              "query": "Cheerleading: They get into formation, then begin dancing and flipping as male cheerleaders join them. They all continue dancing and flipping, doing hand springs. When they",
+              "source_id": "activitynet~v_1AZxtWKkRlo",
+              "split": "val",
+              "split_type": "indomain"
+            },
+            "doc_hash": "c98d31121922704d814cc7ea9bf0e04e3d52284824d62a886a795fe540a4f1dc",
+            "doc_id": 19,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -122.07119333744049,
+                false
+              ],
+              [
+                -114.77060198783875,
+                false
+              ],
+              [
+                -125.20926558971405,
+                false
+              ],
+              [
+                -138.11110377311707,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "22b8224c4cb5425320cd6ae40564ef1f14e30ccfb8ba7a82b73326f1ea44c892",
+            "resps": [
+              [
+                [
+                  -122.07119333744049,
+                  false
+                ]
+              ],
+              [
+                [
+                  -114.77060198783875,
+                  false
+                ]
+              ],
+              [
+                [
+                  -125.20926558971405,
+                  false
+                ]
+              ],
+              [
+                [
+                  -138.11110377311707,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          }
+        ],
+        "piqa": [
+          {
+            "acc": 1.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Question: How do I ready a guinea pig cage for it's new occupants?\nAnswer:",
+                " Provide the guinea pig with a cage full of a few inches of bedding made of ripped paper strips, you will also need to supply it with a water bottle and a food dish."
+              ],
+              [
+                "Question: How do I ready a guinea pig cage for it's new occupants?\nAnswer:",
+                " Provide the guinea pig with a cage full of a few inches of bedding made of ripped jeans material, you will also need to supply it with a water bottle and a food dish."
+              ]
+            ],
+            "doc": {
+              "goal": "How do I ready a guinea pig cage for it's new occupants?",
+              "label": 0,
+              "sol1": "Provide the guinea pig with a cage full of a few inches of bedding made of ripped paper strips, you will also need to supply it with a water bottle and a food dish.",
+              "sol2": "Provide the guinea pig with a cage full of a few inches of bedding made of ripped jeans material, you will also need to supply it with a water bottle and a food dish."
+            },
+            "doc_hash": "ab177c9b9ad0fd48149e873e3d4804752991338a90c2072f52b975f86a7ca78e",
+            "doc_id": 0,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -253.2220972776413,
+                false
+              ],
+              [
+                -259.0068721175194,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "14e2e90bdc64add59c76a88c2efb217a132b459947f9f2e3bbe8580b71beb533",
+            "resps": [
+              [
+                [
+                  -253.2220972776413,
+                  false
+                ]
+              ],
+              [
+                [
+                  -259.0068721175194,
+                  false
+                ]
+              ]
+            ],
+            "target": 0,
+            "target_hash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: dresser\nAnswer:",
+                " replace drawer with bobby pin "
+              ],
+              [
+                "Question: dresser\nAnswer:",
+                " finish, woodgrain with  bobby pin "
+              ]
+            ],
+            "doc": {
+              "goal": "dresser",
+              "label": 1,
+              "sol1": "replace drawer with bobby pin ",
+              "sol2": "finish, woodgrain with  bobby pin "
+            },
+            "doc_hash": "efca48ba31552995499f4b6dd5d2a0cf39296941ffad6e951b7840b6a3b01795",
+            "doc_id": 1,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -75.53604459762573,
+                false
+              ],
+              [
+                -93.35063683986664,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "83ed1685df44e1de246dd58e93f1a55805949f19f2ad435bcaa59038262f877c",
+            "resps": [
+              [
+                [
+                  -75.53604459762573,
+                  false
+                ]
+              ],
+              [
+                [
+                  -93.35063683986664,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: To fight Ivan Drago in Rocky for sega master system.\nAnswer:",
+                " Drago isn't in this game because it was released before Rocky IV."
+              ],
+              [
+                "Question: To fight Ivan Drago in Rocky for sega master system.\nAnswer:",
+                " You have to defeat Apollo Creed and Clubber Lang first."
+              ]
+            ],
+            "doc": {
+              "goal": "To fight Ivan Drago in Rocky for sega master system.",
+              "label": 1,
+              "sol1": "Drago isn't in this game because it was released before Rocky IV.",
+              "sol2": "You have to defeat Apollo Creed and Clubber Lang first."
+            },
+            "doc_hash": "4abd7fecc2810cf1a912698be93697ef8d0930074475a6f07cf541e934cda3aa",
+            "doc_id": 2,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -98.81705820560455,
+                false
+              ],
+              [
+                -105.08092272281647,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "31c59e4fa20c69ae99d6dd53675910c792b3486675e5a5ffac293569819fa6ca",
+            "resps": [
+              [
+                [
+                  -98.81705820560455,
+                  false
+                ]
+              ],
+              [
+                [
+                  -105.08092272281647,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: Make outdoor pillow.\nAnswer:",
+                " Blow into tin can and tie with rubber band."
+              ],
+              [
+                "Question: Make outdoor pillow.\nAnswer:",
+                " Blow into trash bag and tie with rubber band."
+              ]
+            ],
+            "doc": {
+              "goal": "Make outdoor pillow.",
+              "label": 1,
+              "sol1": "Blow into tin can and tie with rubber band.",
+              "sol2": "Blow into trash bag and tie with rubber band."
+            },
+            "doc_hash": "96feb64b66ada8ee9b5e62a227494c70d7b18a5f1298cff287aad79a0fffbc91",
+            "doc_id": 3,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -88.23214054107666,
+                false
+              ],
+              [
+                -96.58942258358002,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "479df7fd3298379c1801efc235650d355dc67e78a8d94485d432ba9d56b8dc97",
+            "resps": [
+              [
+                [
+                  -88.23214054107666,
+                  false
+                ]
+              ],
+              [
+                [
+                  -96.58942258358002,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Question: ice box\nAnswer:",
+                " will turn into a cooler if you add water to it"
+              ],
+              [
+                "Question: ice box\nAnswer:",
+                " will turn into a cooler if you add soda to it"
+              ]
+            ],
+            "doc": {
+              "goal": "ice box",
+              "label": 0,
+              "sol1": "will turn into a cooler if you add water to it",
+              "sol2": "will turn into a cooler if you add soda to it"
+            },
+            "doc_hash": "8a5898846c3d77b7f1ef86092792adf8f142407667766e215cd9d318a494638b",
+            "doc_id": 4,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -68.52528858184814,
+                false
+              ],
+              [
+                -82.50345253944397,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "31b0de661145252c0dfc6bcec8a9e315e763b787a17f1c44665ae6bea0317a8a",
+            "resps": [
+              [
+                [
+                  -68.52528858184814,
+                  false
+                ]
+              ],
+              [
+                [
+                  -82.50345253944397,
+                  false
+                ]
+              ]
+            ],
+            "target": 0,
+            "target_hash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: Remove soap scum from shower door.\nAnswer:",
+                " Rub hard with bed sheets, then rinse."
+              ],
+              [
+                "Question: Remove soap scum from shower door.\nAnswer:",
+                " Rub hard with dryer sheets, then rinse."
+              ]
+            ],
+            "doc": {
+              "goal": "Remove soap scum from shower door.",
+              "label": 1,
+              "sol1": "Rub hard with bed sheets, then rinse.",
+              "sol2": "Rub hard with dryer sheets, then rinse."
+            },
+            "doc_hash": "4ce36c3721b0c07f932fa8a9b410e2bfec5eaf62fb6285638ea53f6808e20fe7",
+            "doc_id": 5,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -83.3425680398941,
+                false
+              ],
+              [
+                -87.87548851966858,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "3ce2c9aeb4ab9be042309c72cb5c48e3bdd02373f0c19e397e9ba86256f232b9",
+            "resps": [
+              [
+                [
+                  -83.3425680398941,
+                  false
+                ]
+              ],
+              [
+                [
+                  -87.87548851966858,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Question: Recycle a spray bottle for a new cleaner.\nAnswer:",
+                " Open the top of the empty spray bottle and check for damage. Rinse the bottle then fill halfway with warm water. Replace the spray nozzle and pump a few times to clear the hose. Empty sparrow bottle and allow to dry before using with a new cleaner."
+              ],
+              [
+                "Question: Recycle a spray bottle for a new cleaner.\nAnswer:",
+                " Open the top of the empty spray bottle and check for damage. Rinse the bottle then fill halfway with warm water. Replace the spray nozzle and pump a few times to clear the hose. Empty spray bottle and allow to dry before using with a new cleaner."
+              ]
+            ],
+            "doc": {
+              "goal": "Recycle a spray bottle for a new cleaner.",
+              "label": 1,
+              "sol1": "Open the top of the empty spray bottle and check for damage. Rinse the bottle then fill halfway with warm water. Replace the spray nozzle and pump a few times to clear the hose. Empty sparrow bottle and allow to dry before using with a new cleaner.",
+              "sol2": "Open the top of the empty spray bottle and check for damage. Rinse the bottle then fill halfway with warm water. Replace the spray nozzle and pump a few times to clear the hose. Empty spray bottle and allow to dry before using with a new cleaner."
+            },
+            "doc_hash": "8b4a4f7dfb6035e649303df3237b70eee56386cb6a9a46fed3558bcd938aa1e6",
+            "doc_id": 6,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -418.826656460762,
+                false
+              ],
+              [
+                -411.87082958221436,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "36ff22ee2423015cf2aaa5e657a19b53563bf6dfc6fd284d548655c81539c312",
+            "resps": [
+              [
+                [
+                  -418.826656460762,
+                  false
+                ]
+              ],
+              [
+                [
+                  -411.87082958221436,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Question: How do you attach toilet paper to a glass jar?\nAnswer:",
+                " Press a piece of double-sided tape to the glass jar and then press the toilet paper onto the tape."
+              ],
+              [
+                "Question: How do you attach toilet paper to a glass jar?\nAnswer:",
+                " Spread mayonnaise all over the jar with your palms and then roll the jar in toilet paper."
+              ]
+            ],
+            "doc": {
+              "goal": "How do you attach toilet paper to a glass jar?",
+              "label": 0,
+              "sol1": "Press a piece of double-sided tape to the glass jar and then press the toilet paper onto the tape.",
+              "sol2": "Spread mayonnaise all over the jar with your palms and then roll the jar in toilet paper."
+            },
+            "doc_hash": "90a1a24dcba318e7ae192de2710f4c245600425e7e4009ab5d192153667bc5e4",
+            "doc_id": 7,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -163.5278381705284,
+                false
+              ],
+              [
+                -170.00067400932312,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "b8929987a61e8e5b607375fc7466bd37c1a5134bb7cf30fdd3cf9f6c3e5d6927",
+            "resps": [
+              [
+                [
+                  -163.5278381705284,
+                  false
+                ]
+              ],
+              [
+                [
+                  -170.00067400932312,
+                  false
+                ]
+              ]
+            ],
+            "target": 0,
+            "target_hash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Question: How to make tissue paper window decorations?\nAnswer:",
+                " Find tissue paper and fold it in half. Take scissors and cut out pieces of the paper in the middle. When you are done tape it to your window."
+              ],
+              [
+                "Question: How to make tissue paper window decorations?\nAnswer:",
+                " Find tissue paper and fold it in half. Take scissors and tear out pieces of the paper in the middle. When you are done tape it to your window."
+              ]
+            ],
+            "doc": {
+              "goal": "How to make tissue paper window decorations?",
+              "label": 0,
+              "sol1": "Find tissue paper and fold it in half. Take scissors and cut out pieces of the paper in the middle. When you are done tape it to your window.",
+              "sol2": "Find tissue paper and fold it in half. Take scissors and tear out pieces of the paper in the middle. When you are done tape it to your window."
+            },
+            "doc_hash": "f3d2ad257b6663c4cd75fa70d41f8dc5a335ee1c9dfd8d2ca8d011f05c8bc3d5",
+            "doc_id": 8,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -205.27812576293945,
+                false
+              ],
+              [
+                -208.4828997850418,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "30d9543ecd27ee1ee3e254e9a0b72e9bde0f15656fefea7e0d98bf9c75df21ad",
+            "resps": [
+              [
+                [
+                  -205.27812576293945,
+                  false
+                ]
+              ],
+              [
+                [
+                  -208.4828997850418,
+                  false
+                ]
+              ]
+            ],
+            "target": 0,
+            "target_hash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: Neatly wrap up an extension cord.\nAnswer:",
+                " Wrap the cord around your hand and elbow."
+              ],
+              [
+                "Question: Neatly wrap up an extension cord.\nAnswer:",
+                " Wrap the cord around your hand and knee."
+              ]
+            ],
+            "doc": {
+              "goal": "Neatly wrap up an extension cord.",
+              "label": 0,
+              "sol1": "Wrap the cord around your hand and elbow.",
+              "sol2": "Wrap the cord around your hand and knee."
+            },
+            "doc_hash": "0c9eca023fb1e56eee4666f8d1f88b040a27fe1354c6a54fbcd1eab5769a3432",
+            "doc_id": 9,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -79.02146172523499,
+                false
+              ],
+              [
+                -69.14434313774109,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "66965c79359ecf4bda282a567aa3e3c81b856dff695ffc4ba2a18d94ac7bc918",
+            "resps": [
+              [
+                [
+                  -79.02146172523499,
+                  false
+                ]
+              ],
+              [
+                [
+                  -69.14434313774109,
+                  false
+                ]
+              ]
+            ],
+            "target": 0,
+            "target_hash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: Extend life of flowers in vase.\nAnswer:",
+                " Add small amount of coffee in vase."
+              ],
+              [
+                "Question: Extend life of flowers in vase.\nAnswer:",
+                " Add small amount of 7UP in vase."
+              ]
+            ],
+            "doc": {
+              "goal": "Extend life of flowers in vase.",
+              "label": 1,
+              "sol1": "Add small amount of coffee in vase.",
+              "sol2": "Add small amount of 7UP in vase."
+            },
+            "doc_hash": "c06efded47018519082e4d3554e9fb9f78a9f016971d64b62d7d4bc1d1fc4529",
+            "doc_id": 10,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -58.34406143426895,
+                false
+              ],
+              [
+                -71.16666430234909,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "03d172f4ba2335b45837defb17f8e2a399fc8be5c2ba6fb7073909aa24799cf6",
+            "resps": [
+              [
+                [
+                  -58.34406143426895,
+                  false
+                ]
+              ],
+              [
+                [
+                  -71.16666430234909,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Question: how do you put eyelashes on?\nAnswer:",
+                " glue them on with mascara."
+              ],
+              [
+                "Question: how do you put eyelashes on?\nAnswer:",
+                " put eyelash glue on the fake eyelashes and then let it get tacky. then, place it on top of your actual eyelashes and let it dry on."
+              ]
+            ],
+            "doc": {
+              "goal": "how do you put eyelashes on?",
+              "label": 1,
+              "sol1": "glue them on with mascara.",
+              "sol2": "put eyelash glue on the fake eyelashes and then let it get tacky. then, place it on top of your actual eyelashes and let it dry on."
+            },
+            "doc_hash": "46fdb2eaea91dbf9626ba0771a221b0f8f46bac75055fc75b8e066b9b2bc87bc",
+            "doc_id": 11,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -65.07821869850159,
+                false
+              ],
+              [
+                -266.81527173519135,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "c6cc3ead1c074c78e55d1233df501dc653c391c1dafd0e8cd445f51ab72094dd",
+            "resps": [
+              [
+                [
+                  -65.07821869850159,
+                  false
+                ]
+              ],
+              [
+                [
+                  -266.81527173519135,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: Find spices easily in the kitchen.\nAnswer:",
+                " Arrange spices from hot to mild in the kitchen in order to find them by taste."
+              ],
+              [
+                "Question: Find spices easily in the kitchen.\nAnswer:",
+                " Arrange your spices alphabetically to make finding them easy."
+              ]
+            ],
+            "doc": {
+              "goal": "Find spices easily in the kitchen.",
+              "label": 1,
+              "sol1": "Arrange spices from hot to mild in the kitchen in order to find them by taste.",
+              "sol2": "Arrange your spices alphabetically to make finding them easy."
+            },
+            "doc_hash": "edeb8b5ed13fe9d8fab88c71533c7d06a240e8b43a3a9e6bdb35056a4ff97dab",
+            "doc_id": 12,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -115.6862643957138,
+                false
+              ],
+              [
+                -100.95511984825134,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "aea7b6f056018f34b7b44f0b6e1f23c250b6a13ff1632edd84676ba04ce6fb87",
+            "resps": [
+              [
+                [
+                  -115.6862643957138,
+                  false
+                ]
+              ],
+              [
+                [
+                  -100.95511984825134,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Question: peeler\nAnswer:",
+                " can be used as a decoration on a television "
+              ],
+              [
+                "Question: peeler\nAnswer:",
+                " can be used as a decoration on a sock "
+              ]
+            ],
+            "doc": {
+              "goal": "peeler",
+              "label": 0,
+              "sol1": "can be used as a decoration on a television ",
+              "sol2": "can be used as a decoration on a sock "
+            },
+            "doc_hash": "cd86d1f7dfd4655a359eeb128588343db3f02466938e54ddb77ab0d8404386cb",
+            "doc_id": 13,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -60.84667885303497,
+                false
+              ],
+              [
+                -65.43141710758209,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "185609984dfb83733622b29c04775d70851a1bdcef256c020ef33e9f26a39b40",
+            "resps": [
+              [
+                [
+                  -60.84667885303497,
+                  false
+                ]
+              ],
+              [
+                [
+                  -65.43141710758209,
+                  false
+                ]
+              ]
+            ],
+            "target": 0,
+            "target_hash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: How to clean blinds without tearing them up\nAnswer:",
+                " Place a cloth on each side of a pair of tongs."
+              ],
+              [
+                "Question: How to clean blinds without tearing them up\nAnswer:",
+                " Find a feather duster, and cut the feathers off every two inches."
+              ]
+            ],
+            "doc": {
+              "goal": "How to clean blinds without tearing them up",
+              "label": 0,
+              "sol1": "Place a cloth on each side of a pair of tongs.",
+              "sol2": "Find a feather duster, and cut the feathers off every two inches."
+            },
+            "doc_hash": "8fbe666ce7651f81fabc1ebe6baf75bdc29c1e5202072b4317b1ee3ba350f6c3",
+            "doc_id": 14,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -73.9981780052185,
+                false
+              ],
+              [
+                -104.10218584537506,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "19c09760bd3108b9e203748e922d9cfb2431d504103ad571f2feba8280135209",
+            "resps": [
+              [
+                [
+                  -73.9981780052185,
+                  false
+                ]
+              ],
+              [
+                [
+                  -104.10218584537506,
+                  false
+                ]
+              ]
+            ],
+            "target": 0,
+            "target_hash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+          },
+          {
+            "acc": 0.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: What material is a steel rocking chair made out of?\nAnswer:",
+                " The frame is steel and then fabric can be added if you wish."
+              ],
+              [
+                "Question: What material is a steel rocking chair made out of?\nAnswer:",
+                " The frame is plastic and fabric can be added if you wish"
+              ]
+            ],
+            "doc": {
+              "goal": "What material is a steel rocking chair made out of?",
+              "label": 0,
+              "sol1": "The frame is steel and then fabric can be added if you wish.",
+              "sol2": "The frame is plastic and fabric can be added if you wish"
+            },
+            "doc_hash": "b976c004e4010d6652b425f8fa97280ad46115671501b84d013248fd5c60597a",
+            "doc_id": 15,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -82.3609904050827,
+                false
+              ],
+              [
+                -73.73690271377563,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "35143160c4b2b139bf103e72ed4156f444f21f2d3d4e8d7850811e0bc95881aa",
+            "resps": [
+              [
+                [
+                  -82.3609904050827,
+                  false
+                ]
+              ],
+              [
+                [
+                  -73.73690271377563,
+                  false
+                ]
+              ]
+            ],
+            "target": 0,
+            "target_hash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Question: To get a video game console for a cheap price,\nAnswer:",
+                " look for the console on a website that sells used goods."
+              ],
+              [
+                "Question: To get a video game console for a cheap price,\nAnswer:",
+                " look up which console is the cheapest one in store."
+              ]
+            ],
+            "doc": {
+              "goal": "To get a video game console for a cheap price,",
+              "label": 0,
+              "sol1": "look for the console on a website that sells used goods.",
+              "sol2": "look up which console is the cheapest one in store."
+            },
+            "doc_hash": "35b1a7c289b1eca3203f71a1b3f78a53834d803ce0552881c53c5c7f5b0aed0d",
+            "doc_id": 16,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -80.61194181442261,
+                false
+              ],
+              [
+                -82.62960541248322,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "bc0c85fc06a6aecdf6569475ea7ce7f23c2433feae5c92fd7e521b8bc5f50dab",
+            "resps": [
+              [
+                [
+                  -80.61194181442261,
+                  false
+                ]
+              ],
+              [
+                [
+                  -82.62960541248322,
+                  false
+                ]
+              ]
+            ],
+            "target": 0,
+            "target_hash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 1.0,
+            "arguments": [
+              [
+                "Question: How do you properly prepare a steak.\nAnswer:",
+                " Take the steak out of warm storage and let come to room temperature, generously add salt and pepper to both sides and let sit for 10 minutes."
+              ],
+              [
+                "Question: How do you properly prepare a steak.\nAnswer:",
+                " Take the steak out of cold storage and let come to room temperature, generously add salt and pepper to both sides and let sit for 10 minutes."
+              ]
+            ],
+            "doc": {
+              "goal": "How do you properly prepare a steak.",
+              "label": 1,
+              "sol1": "Take the steak out of warm storage and let come to room temperature, generously add salt and pepper to both sides and let sit for 10 minutes.",
+              "sol2": "Take the steak out of cold storage and let come to room temperature, generously add salt and pepper to both sides and let sit for 10 minutes."
+            },
+            "doc_hash": "f09e4029bdc34f57788af600e6437b1171e41b2dbfdcd43daca32d701f7b2908",
+            "doc_id": 17,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -217.23393499851227,
+                false
+              ],
+              [
+                -215.52549070119858,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "bc3e7c9fefb80b4201934b2ff06f37da43e51096fbc7947cda6482ea98dc21dd",
+            "resps": [
+              [
+                [
+                  -217.23393499851227,
+                  false
+                ]
+              ],
+              [
+                [
+                  -215.52549070119858,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: To cream butter and sugar together, you can\nAnswer:",
+                " Place it in a bowl and use a hand warmer"
+              ],
+              [
+                "Question: To cream butter and sugar together, you can\nAnswer:",
+                " Place in a bowl and use a hand mixer"
+              ]
+            ],
+            "doc": {
+              "goal": "To cream butter and sugar together, you can",
+              "label": 1,
+              "sol1": "Place it in a bowl and use a hand warmer",
+              "sol2": "Place in a bowl and use a hand mixer"
+            },
+            "doc_hash": "8a74c68d917f7129f924801f923235a7049416ac826bfed88406951a2f69191a",
+            "doc_id": 18,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -69.50107908248901,
+                false
+              ],
+              [
+                -66.41305756568909,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "f77c578296e519b1911072d28c5074cd8517a4d0e95212f2c1a7ff165553f1f6",
+            "resps": [
+              [
+                [
+                  -69.50107908248901,
+                  false
+                ]
+              ],
+              [
+                [
+                  -66.41305756568909,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          },
+          {
+            "acc": 1.0,
+            "acc_norm": 0.0,
+            "arguments": [
+              [
+                "Question: How to best cut the meat to place on a grill?\nAnswer:",
+                " Place a knife on the grill for around 15 minutes for the blade to be red hot. Gently push the knife through the meat to get a perfect cut."
+              ],
+              [
+                "Question: How to best cut the meat to place on a grill?\nAnswer:",
+                " Use a sharp knife or scissor and cut the meat properly as per the required size."
+              ]
+            ],
+            "doc": {
+              "goal": "How to best cut the meat to place on a grill?",
+              "label": 1,
+              "sol1": "Place a knife on the grill for around 15 minutes for the blade to be red hot. Gently push the knife through the meat to get a perfect cut.",
+              "sol2": "Use a sharp knife or scissor and cut the meat properly as per the required size."
+            },
+            "doc_hash": "45b660951a4ba21ba3acd5b0ff7bf793fe23347f3c5a979a1ce2421cb091eec3",
+            "doc_id": 19,
+            "filter": "none",
+            "filtered_resps": [
+              [
+                -212.12761330604553,
+                false
+              ],
+              [
+                -132.0433006286621,
+                false
+              ]
+            ],
+            "metrics": [
+              "acc",
+              "acc_norm"
+            ],
+            "prompt_hash": "de5d4eb1b6897f44263b8263caa43229cb160f1ddb0c61eee529f7eb4f7c7526",
+            "resps": [
+              [
+                [
+                  -212.12761330604553,
+                  false
+                ]
+              ],
+              [
+                [
+                  -132.0433006286621,
+                  false
+                ]
+              ]
+            ],
+            "target": 1,
+            "target_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+          }
+        ]
+      },
+      "transformers_version": "5.15.0",
+      "upper_git_hash": null,
+      "versions": {
+        "arc_easy": 1.0,
+        "hellaswag": 1.0,
+        "piqa": 1.0
+      }
+    },
+    "status": "completed"
+  },
+  "precision": {
+    "device_type": "cuda",
+    "fallback_reason": null,
+    "requested": "auto",
+    "resolved": "bfloat16"
+  },
+  "settings": {
+    "apply_chat_template": false,
+    "fewshot": 0,
+    "lm_eval_version": "0.4.12",
+    "log_samples": true,
+    "tasks": [
+      "arc_easy",
+      "hellaswag",
+      "piqa"
+    ]
+  },
+  "validation": null
+}

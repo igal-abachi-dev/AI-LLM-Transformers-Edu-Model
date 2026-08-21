@@ -229,5 +229,7 @@ htmlcov/
 *.py[cod]
 artifacts/*
 !artifacts/.gitignore
+data/*
+!data/.gitignore
 tmp/
 ai-LLM*.zip

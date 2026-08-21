@@ -89,6 +89,14 @@ class LayerKVCache:
 
         if min(batch_size, n_kv_heads, capacity, head_dim) <= 0:
             raise ValueError("all cache dimensions must be positive")
+        # A bare `torch.device("cuda")` has `index=None`, but every real CUDA tensor
+        # reports an explicit index (`cuda:0`) once allocated -- so the two compare
+        # UNEQUAL despite naming the same physical device. Resolve the index now,
+        # while the cache is still unallocated, so `validate()` later compares two
+        # fully-qualified devices instead of failing on this mismatch.
+        device = torch.device(device)
+        if device.type == "cuda" and device.index is None:
+            device = torch.device(device.type, torch.cuda.current_device())
         shape = (batch_size, n_kv_heads, capacity, head_dim)
         keys = torch.zeros(shape, device=device, dtype=dtype) if dtype is not None else None
         values = torch.zeros(shape, device=device, dtype=dtype) if dtype is not None else None

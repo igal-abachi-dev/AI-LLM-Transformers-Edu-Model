@@ -143,6 +143,12 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
 
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
+    # `state.consumed_target_tokens` is cumulative and survives resume, but `elapsed`
+    # only spans this process's wall time. Dividing the former by the latter after a
+    # resume would silently count tokens processed by an earlier, separate process
+    # against this run's clock -- reporting an inflated throughput that has nothing to
+    # do with this process's actual speed.
+    tokens_before_this_run = state.consumed_target_tokens
     started = time.perf_counter()
     optimizer, schedule, state, policy = train_updates(
         model,
@@ -188,7 +194,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         train_tokens=state.consumed_target_tokens,
         wall_seconds=elapsed,
         peak_memory_mb=peak_mb,
-        tokens_per_second=state.consumed_target_tokens / elapsed,
+        tokens_per_second=(state.consumed_target_tokens - tokens_before_this_run) / elapsed,
         train_loss=state.last_loss,
         metrics={
             "completed_updates": float(state.completed_updates),

@@ -228,6 +228,96 @@ def test_checkpoint_resume_is_exactly_equal_to_uninterrupted_training(tmp_path) 
         assert torch.equal(expected, actual)
 
 
+# --- CUDA-only tests: MF-046 (BF16 autocast) and MF-049 (activation checkpointing) -----------
+#
+# Everything above this line runs identically on CPU-only CI. The tests below require a real CUDA
+# device and skip cleanly without one. Tolerances are declared here, before any test has been run
+# against this hardware, per MF-046/049's "tolerances fixed before measurement" requirement -- they
+# are not tuned after the fact to make a run pass.
+
+_CUDA_BF16_LOGIT_ATOL = 5e-2  # BF16 keeps ~3 decimal digits of mantissa precision.
+_CUDA_FP32_GRAD_ATOL = 1e-5  # cuDNN/cuBLAS reductions aren't bit-identical to CPU's 1e-6 baseline.
+
+requires_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA device required")
+
+
+@requires_cuda
+def test_cuda_bfloat16_full_and_cached_logits_match_within_declared_tolerance() -> None:
+    torch.manual_seed(40)
+    device = torch.device("cuda")
+    config = ModelConfig.tiny_modern(max_seq_len=12, attention_impl="sdpa")
+    model = MiniFrontier(config).to(device).eval()
+    tokens = torch.randint(0, config.vocab_size, (1, 8), device=device)
+    with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        full = model(tokens).logits
+        cache = KVCache.allocate(config, batch_size=1, device=device, capacity=8)
+        assert cache.layers[0].dtype is None  # lazy: not inferred from the embedding output
+        pieces = [model(tokens[:, index : index + 1], cache=cache).logits for index in range(8)]
+        cached = torch.cat(pieces, dim=1)
+    # The cache adopted BF16 because that is what the BF16-autocast projections actually produced.
+    assert cache.layers[0].dtype == torch.bfloat16
+    assert torch.isfinite(full).all() and torch.isfinite(cached).all()
+    assert torch.allclose(full, cached, atol=_CUDA_BF16_LOGIT_ATOL)
+    assert torch.equal(full.argmax(dim=-1), cached.argmax(dim=-1))
+
+
+@requires_cuda
+def test_cuda_gradient_accumulation_matches_unsplit_batch() -> None:
+    torch.manual_seed(41)
+    device = torch.device("cuda")
+    model_full = MiniFrontier(ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)).to(
+        device
+    )
+    model_split = MiniFrontier(model_full.config).to(device)
+    model_split.load_state_dict(model_full.state_dict())
+    # Batch validation runs on CPU by design (see validate_cpu_batch); train_updates
+    # moves tokens/labels to `device` itself, so the batch must start out on CPU.
+    tokens = torch.randint(0, model_full.config.vocab_size, (4, 8))
+    base = dict(
+        max_updates=1,
+        learning_rate=1e-3,
+        min_learning_rate=1e-3,
+        warmup_updates=0,
+        weight_decay=0.0,
+        gradient_clip=1e9,
+        precision="float32",
+    )
+    train_updates(
+        model_full,
+        ListBatchProvider([TrainingBatch(tokens)]),
+        TrainingConfig(**base),
+        device=device,
+    )
+    train_updates(
+        model_split,
+        ListBatchProvider([TrainingBatch(tokens[:2]), TrainingBatch(tokens[2:])]),
+        TrainingConfig(**base, gradient_accumulation_steps=2),
+        device=device,
+    )
+    for full, split in zip(model_full.parameters(), model_split.parameters(), strict=True):
+        assert torch.allclose(full, split, atol=_CUDA_FP32_GRAD_ATOL)
+
+
+@requires_cuda
+def test_cuda_activation_checkpointing_matches_loss_and_gradients() -> None:
+    torch.manual_seed(42)
+    device = torch.device("cuda")
+    config = ModelConfig.tiny_edu(n_layers=2, d_model=16, n_heads=2, d_ff=32)
+    eager = MiniFrontier(config).to(device)
+    checkpointed = MiniFrontier(config).to(device)
+    checkpointed.load_state_dict(eager.state_dict())
+    tokens = torch.randint(0, config.vocab_size, (2, 8), device=device)
+    eager_loss = eager(tokens, labels=tokens).loss
+    checkpointed_loss = checkpointed(tokens, labels=tokens, activation_checkpointing=True).loss
+    assert eager_loss is not None and checkpointed_loss is not None
+    assert torch.allclose(eager_loss, checkpointed_loss, atol=_CUDA_FP32_GRAD_ATOL)
+    eager_loss.backward()
+    checkpointed_loss.backward()
+    for left, right in zip(eager.parameters(), checkpointed.parameters(), strict=True):
+        assert left.grad is not None and right.grad is not None
+        assert torch.allclose(left.grad, right.grad, atol=_CUDA_FP32_GRAD_ATOL)
+
+
 def test_precision_policy_and_compile_eager_backend() -> None:
     assert resolve_precision("auto", "cpu").resolved == "float32"
     assert resolve_precision("bfloat16", "cpu").resolved == "bfloat16"

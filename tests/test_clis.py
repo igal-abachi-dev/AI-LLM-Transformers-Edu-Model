@@ -16,6 +16,7 @@ import pytest
         "eval.py",
         "smoke_50m.py",
         "compare_optimizers.py",
+        "../train/pretrain.py",
         "../train/sft.py",
         "eval_sft.py",
         "freeze_protocol.py",

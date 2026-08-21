@@ -1,0 +1,15 @@
+{
+  "after_training": {
+    "bits_per_byte": 1.9914960180494896,
+    "cross_entropy": 6.109922307754969,
+    "perplexity": 450.3037287009213,
+    "predicted_tokens": 12276
+  },
+  "before_training": {
+    "bits_per_byte": 3.3081998473229812,
+    "cross_entropy": 10.149577936624308,
+    "perplexity": 25580.303418751402,
+    "predicted_tokens": 12276
+  },
+  "validation_sequences": 12
+}

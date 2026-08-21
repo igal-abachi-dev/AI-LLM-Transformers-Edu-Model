@@ -4,15 +4,21 @@ inspired by Muse-Glimmer / Llama4 / Qwen3/ GPT...
 
 # MiniFrontier
 
+[![CI](https://github.com/igal-abachi-dev/AI-LLM-Transformers-Edu-Model/actions/workflows/ci.yml/badge.svg)](https://github.com/igal-abachi-dev/AI-LLM-Transformers-Edu-Model/actions/workflows/ci.yml)
+
 MiniFrontier is a from-scratch, educational decoder-only language model built with raw PyTorch for a single consumer GPU. Its goal is to make the path from classic Transformer fundamentals to a small set of modern LLM techniques visible, testable, and measurable.
 
 > **task Status:** M4 Modern, the CPU-verifiable M5 path, M6 code/FIM, M7 Muon, and M8 assistant-only
 > SFT/chat are implemented. M9 protocol/export/release validation tooling is implemented, while the
 > real matched 150M training artifacts remain open. M10 preflight and the M11 Transformers/export,
 > external-runtime, and GGUF orchestration paths are implemented; hardware/upstream-runtime gates
-> remain unmeasured. The CPU suite passes all 182 tests (178 in the
-> default non-slow gate). By user scheduling, CUDA profiling and quality-scale runs occur after M10
-> implementation; no GPU performance or model-quality result is claimed yet.
+> remain unmeasured. The CPU suite passes all 186 tests (182 in the
+> default non-slow gate). The first home-GPU pass (RTX 2070 Super, 8GB) landed 2026-08-21: real CUDA
+> BF16/accumulation/activation-checkpointing parity, an initial 50M/150M profiling matrix, and a real
+> 1-5M-token FineWeb-Edu 50M-Edu training gate with decreasing loss/validation — see
+> `tasks/evidence/MF-046-050-063-home-rtx.md`. This is engineering/integration evidence on a real but
+> undertrained checkpoint, not a model-quality claim; the real matched 150M runs (MF-064/065) remain
+> open.
 
 ## Introduction (read first)
 - [Introduction to LLM / Transformers / Attention](introduction.md)
@@ -191,6 +197,11 @@ uv run --extra cu130 python -m pytest
 ```
 
 Do not start a serious training run until primitive tests, Edu overfit, data tests, checkpoint resume, and baseline evaluation gates pass.
+
+test with
+https://huggingface.co/api/datasets/HuggingFaceFW/fineweb-edu
+dataset
+
 
 ## Implemented CPU checks
 
