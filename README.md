@@ -161,7 +161,7 @@ These proportions are sensible:
   - RoPE everywhere by default is the safe choice; global NoPE should remain experimental.
 
 
-- [Future plan for 350M Modern model](future-plan.md)
+- [Future plan for 350M Modern model, 32K tokenizer - 2048 context](future-plan.md)
 better for general chat and coding completions
 
 (1B-3B need to lease paid servers to train the model , not feasable on home pc single gpu,
