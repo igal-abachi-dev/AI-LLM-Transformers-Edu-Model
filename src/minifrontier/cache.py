@@ -365,7 +365,15 @@ class KVCache:
     def capacity(self) -> int:
         return max(layer.capacity for layer in self.layers)
 
-    def validate(self, *, batch_size: int, device: torch.device) -> None:
+    def validate(
+        self,
+        *,
+        config: ModelConfig,
+        batch_size: int,
+        device: torch.device,
+    ) -> None:
+        if self.config != config:
+            raise ValueError("cache model configuration does not match the target model")
         for layer in self.layers:
             if layer.batch_size != batch_size:
                 raise ValueError("cache batch size does not match tokens")

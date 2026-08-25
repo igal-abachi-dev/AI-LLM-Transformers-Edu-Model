@@ -328,8 +328,60 @@ def test_precision_policy_and_compile_eager_backend() -> None:
         model, enabled=True, path="prefill", backend="eager", fullgraph=False
     )
     tokens = torch.randint(0, model.config.vocab_size, (1, 4))
+    assert report.wrapped and not report.compiled
     assert torch.allclose(model(tokens).logits, compiled(tokens).logits)
     assert report.compiled and report.path == "prefill"
+
+
+def test_compile_backend_failure_on_first_execution_falls_back_and_is_reported() -> None:
+    torch.manual_seed(91)
+    module = torch.nn.Linear(4, 3)
+    inputs = torch.randn(2, 4)
+    expected = module(inputs)
+    backend_calls = 0
+
+    def failing_backend(_graph, _example_inputs):
+        nonlocal backend_calls
+        backend_calls += 1
+        raise RuntimeError("injected lazy backend failure")
+
+    execution_module, report = maybe_compile(
+        module,
+        enabled=True,
+        path="prefill",
+        backend=failing_backend,
+    )
+    assert report.wrapped and not report.compiled and report.error is None
+
+    actual = execution_module(inputs)
+
+    assert torch.equal(actual, expected)
+    assert report.wrapped and not report.compiled
+    assert report.error is not None and "injected lazy backend failure" in report.error
+    assert backend_calls == 1
+    assert torch.equal(execution_module(inputs), expected)
+    assert backend_calls == 1
+
+
+def test_compile_backend_failure_on_first_execution_can_be_strict() -> None:
+    module = torch.nn.Linear(2, 2)
+
+    def failing_backend(_graph, _example_inputs):
+        raise RuntimeError("strict lazy backend failure")
+
+    execution_module, report = maybe_compile(
+        module,
+        enabled=True,
+        path="training",
+        backend=failing_backend,
+        fail_on_error=True,
+    )
+
+    with pytest.raises(RuntimeError, match="strict lazy backend failure"):
+        execution_module(torch.ones(1, 2))
+
+    assert report.wrapped and not report.compiled
+    assert report.error is not None and "strict lazy backend failure" in report.error
 
 
 def test_float16_precision_falls_back_on_cpu() -> None:

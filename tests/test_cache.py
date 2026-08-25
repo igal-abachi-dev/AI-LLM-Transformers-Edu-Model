@@ -104,6 +104,32 @@ def test_cache_is_inference_only_and_rolls_back_failed_append() -> None:
     assert cache.length == 0
 
 
+def test_cache_rejects_same_shaped_model_with_different_local_window() -> None:
+    cache_config = ModelConfig.tiny_modern(
+        max_seq_len=16,
+        local_window=8,
+        attention_impl="sdpa",
+    )
+    model_config = ModelConfig.tiny_modern(
+        max_seq_len=16,
+        local_window=4,
+        attention_impl="sdpa",
+    )
+    model = MiniFrontier(model_config).eval()
+    cache = KVCache.allocate(
+        cache_config,
+        batch_size=1,
+        device="cpu",
+        capacity=16,
+        bounded_local=True,
+    )
+
+    with pytest.raises(ValueError, match="configuration"):
+        model(torch.ones(1, 1, dtype=torch.long), cache=cache)
+
+    assert cache.length == 0
+
+
 def test_bounded_local_ring_cache_matches_full_history_across_wrap_and_chunks() -> None:
     torch.manual_seed(25)
     config = ModelConfig.tiny_modern(

@@ -226,11 +226,15 @@ class MiniFrontier(nn.Module):
                 f"positions [{start_pos}, {end_pos}) exceed max_seq_len {self.config.max_seq_len}"
             )
 
+        if cache is not None:
+            cache.validate(
+                config=self.config,
+                batch_size=tokens.shape[0],
+                device=tokens.device,
+            )
         # IDs become vectors: [B, S] -> [B, S, d_model]. From here to the top of
         # the stack, `hidden` IS the residual stream.
         hidden = self.token_embedding(tokens)
-        if cache is not None:
-            cache.validate(batch_size=tokens.shape[0], device=hidden.device)
         # Absolute positions for this call, e.g. [700] when decoding token 700.
         # The rotation tables are computed ONCE and reused by every layer.
         positions = torch.arange(start_pos, end_pos, device=tokens.device)

@@ -23,7 +23,9 @@ Run it with::
     uv run --extra cpu python labs/03_qk_norm.py
 
 What to look for. Two identically seeded Modern models, one with the flag on and
-one off, on the same tokens, printing loss and total gradient norm for each.
+one off, on the same tokens, printing loss and the common-parameter gradient norm
+for each. QK-Norm's additional scale parameters are deliberately excluded from
+that norm so the comparison covers the same parameter set on both sides.
 
 Read this one carefully: on a randomly initialized toy model the two columns land
 in the same neighbourhood, and neither ordering is evidence of anything. Untrained
@@ -41,21 +43,35 @@ from minifrontier.model import MiniFrontier
 
 
 def main() -> None:
-    # One seed for both models, so the random starting weights are comparable and
-    # `qk_norm` really is the only variable being changed.
+    # Reset the seed before EACH construction. Seeding once and constructing the
+    # models sequentially would give every ordinary projection different weights.
     torch.manual_seed(42)
     without = MiniFrontier(ModelConfig.tiny_modern(qk_norm=False, attention_impl="sdpa"))
+    torch.manual_seed(42)
     with_norm = MiniFrontier(ModelConfig.tiny_modern(qk_norm=True, attention_impl="sdpa"))
+    without_parameters = dict(without.named_parameters())
+    with_norm_parameters = dict(with_norm.named_parameters())
+    common_names = sorted(without_parameters.keys() & with_norm_parameters.keys())
+    assert all(
+        torch.equal(without_parameters[name], with_norm_parameters[name]) for name in common_names
+    )
     tokens = torch.randint(0, without.config.vocab_size, (2, 16))
     for label, model in (("off", without), ("on", with_norm)):
         # labels=tokens is plain next-token prediction; see loss.py for the shift.
         loss = model(tokens, labels=tokens).loss
         assert loss is not None
         loss.backward()
-        # clip_grad_norm_ with an infinite threshold clips nothing -- it is being
-        # used purely as a convenient way to MEASURE the total gradient length.
-        gradient_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf"))
-        print(f"qk_norm={label}: loss={loss.item():.6f}, grad_norm={gradient_norm.item():.6f}")
+        named_parameters = dict(model.named_parameters())
+        squared_norm = sum(
+            named_parameters[name].grad.float().square().sum()
+            for name in common_names
+            if named_parameters[name].grad is not None
+        )
+        common_gradient_norm = squared_norm.sqrt()
+        print(
+            f"qk_norm={label}: loss={loss.item():.6f}, "
+            f"common_grad_norm={common_gradient_norm.item():.6f}"
+        )
 
 
 if __name__ == "__main__":
