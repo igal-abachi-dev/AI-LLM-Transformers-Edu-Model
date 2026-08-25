@@ -47,6 +47,7 @@ Do not add DeltaNet, MLA, MoE, MTP, RL/GRPO, agents/tools, vision, distributed t
 - Prefer explicit tensor shapes in docstrings/comments at reshape, transpose, cache, and attention boundaries.
 - Validate configuration and tensor invariants early with actionable errors.
 - Preserve dtype and device. Use FP32 for correctness tests; gate BF16/CUDA features by capability.
+- Precision defaults are hardware-aware, not fixed. Prefer native BF16 only where the device truly has BF16 Tensor Cores (Ampere+; check `torch.cuda.is_bf16_supported(including_emulation=False)`, not PyTorch's emulation-inclusive default). On CUDA devices without native BF16 (e.g. Turing), train with FP16 plus gradient scaling rather than emulated BF16 — measured ~2.7x faster and lower peak VRAM on the reference RTX 2070 Super (`reports/mf049-rtx2070s-checkpointing-benchmark.md`). For inference on that same non-native-BF16 hardware, FP32 measured fastest at small batch size/short context (`reports/mf050-rtx2070s-profile-matrix.md`) — do not assume FP16/BF16 speeds up inference without measuring the target hardware and workload shape first.
 - Eager execution is the correctness baseline. Compilation and activation checkpointing must remain optional.
 - Never repeat K/V heads in the optimized GQA path merely for convenience. Explicit expansion is allowed only in reference tests/manual teaching code.
 - RoPE requires an independent primitive-parity test so two internally consistent paths cannot share the same convention bug.
