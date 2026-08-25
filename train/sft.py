@@ -51,7 +51,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--resume", type=Path)
     parser.add_argument("--device", default="cpu")
-    parser.add_argument("--precision", choices=("auto", "float32", "bfloat16"), default="auto")
+    parser.add_argument(
+        "--precision", choices=("auto", "float32", "bfloat16", "float16"), default="auto"
+    )
     parser.add_argument("--updates", type=int, required=True)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--learning-rate", type=float, default=1e-5)

@@ -44,3 +44,26 @@ GPU — see `tests/test_training.py`.
 This benchmark used 60-update bounded runs to keep wall-clock time reasonable for a first measurement
 pass, not a full training-length comparison. It reuses the real MF-063 gate data rather than synthetic
 tokens, so timings reflect genuine forward/backward/optimizer-step cost on real sequences.
+
+## Update (2026-08-25, MF-075): real FP16 is dramatically faster than emulated BF16 here
+
+The BF16 numbers above use emulated BF16 (this GPU has no native BF16 Tensor Cores — see
+`reports/mf050-rtx2070s-profile-matrix.md`). After adding real FP16 + GradScaler support
+(`tasks/backlog.md` MF-075), the identical 150M-edu / 60-update / real-data benchmark under FP16:
+
+| Batch size | Checkpointing | Tokens/s | Wall time | Peak allocated VRAM | vs. BF16 |
+| ---: | --- | ---: | ---: | ---: | --- |
+| 1 | off | **7424.2** | 8.3s | 3.34 GB | **2.7x faster**, 25% less VRAM |
+| 1 | on | **5830.5** | 10.5s | 3.19 GB | **2.7x faster** |
+| 4 | off | **10967.7** | 22.4s | 6.65 GB | BF16 never completed at this batch/checkpointing combination (thrashed) — FP16 completes cleanly and fast |
+| 8 | off | — | killed (near-VRAM-ceiling thrashing, same pattern as BF16 batch≥4) | GPU pinned at 7.85/8.19 GB | still exceeds this 8GB card without checkpointing |
+
+Raw records: `artifacts/mf075-150m-fp16-b1/run.json`, `artifacts/mf075-150m-fp16-checkpointed-b1/run.json`,
+`artifacts/mf075-150m-fp16-b4/run.json`.
+
+This is the headline finding from reviewing `future-plan.md`: real Tensor Core FP16 is not a marginal
+improvement over emulated BF16 on this Turing card, it roughly triples real training throughput and
+meaningfully raises the largest batch size that fits without activation checkpointing (batch_size=4
+now fits eager at 6.65GB, where BF16 needed checkpointing just to survive at that size). **FP16 should
+be the default recommendation for training on this hardware going forward** — BF16 remains available
+for explicit requests or Ampere+ hardware where it is genuinely native.

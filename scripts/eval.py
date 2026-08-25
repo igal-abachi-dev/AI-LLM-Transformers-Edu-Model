@@ -37,7 +37,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--text-field", default="text")
     parser.add_argument("--output", type=Path, default=Path("reports/evaluation.json"))
     parser.add_argument("--device", default="cpu")
-    parser.add_argument("--precision", choices=("auto", "float32", "bfloat16"), default="auto")
+    parser.add_argument(
+        "--precision", choices=("auto", "float32", "bfloat16", "float16"), default="auto"
+    )
     parser.add_argument("--run-harness", action="store_true")
     parser.add_argument("--include-gsm8k", action="store_true")
     parser.add_argument("--limit", type=int, default=10)

@@ -31,7 +31,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--prompt")
     parser.add_argument("--device", default="cpu")
-    parser.add_argument("--precision", choices=("auto", "float32", "bfloat16"), default="auto")
+    parser.add_argument(
+        "--precision", choices=("auto", "float32", "bfloat16", "float16"), default="auto"
+    )
     parser.add_argument("--max-new-tokens", type=int, default=64)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-k", type=int)

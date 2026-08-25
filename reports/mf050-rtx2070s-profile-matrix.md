@@ -32,6 +32,8 @@ storing it). Regression-covered by the new `test_cuda_*` tests in `tests/test_tr
 | 150M-modern | BF16 (auto) | no | 128/32 | 46.4 | 25.6 | 2.76 | 303 MB | hybrid local/global; eager FlexAttention on local layers is unfused (materializes full scores), explaining the low prefill number |
 | 150M-modern, 8K ctx, bounded-local cache | BF16 | no | 8176/8 | 223.0 | 23.5 | 36.67 | **10.87 GB** | **exceeds 8 GB physical VRAM** — see finding below |
 | 150M-modern, 8K ctx, full-history cache | BF16 | no | 8176/8 | 247.4 | 27.3 | 33.05 | **10.96 GB** | same overflow; included to isolate the cache-size effect |
+| 50M-edu | **FP16** | no | 64/16 | 232.7 | 39.7 | 0.27 | 121 MB | real Tensor Core FP16 (2026-08-25, MF-075) |
+| 150M-edu | **FP16** | no | 128/32 | 549.7 | 44.3 | 0.23 | 335 MB | real Tensor Core FP16 (2026-08-25, MF-075) |
 
 ## Findings
 
@@ -59,6 +61,21 @@ storing it). Regression-covered by the new `test_cuda_*` tests in `tests/test_tr
    at comparable settings (46.4 vs 609.2 tok/s prefill, though prompt lengths also differ) — expected
    given the documented unfused-eager FlexAttention warning, and consistent with FlexAttention's
    design assuming `torch.compile` wrapping that this GPU can't use effectively for BF16.
+
+6. **Update (2026-08-25, MF-075): real FP16's inference story is mixed, but its *training* story is
+   dramatic.** For single-stream inference at this small scale, FP16 decode beats emulated BF16
+   (44.3 vs 31.7 tok/s on 150M-edu, a real Tensor Core benefit) but neither FP16 nor BF16 beats FP32
+   for prefill or decode here (FP32 remains fastest: 1122.4 prefill / 50.1 decode). At batch=1 and
+   these short prompt lengths, fixed per-op `autocast` dispatch overhead and SDPA's kernel-selection
+   heuristics likely swamp any Tensor Core advantage — FP32 skips autocast entirely, which may be why
+   it wins despite being twice the memory traffic. This is genuinely counter-intuitive and reported as
+   measured, not rationalized further without more evidence. **The real win is on the training side**,
+   where FP16 is ~2.7x faster than emulated BF16 and uses meaningfully less VRAM (see
+   `reports/mf049-rtx2070s-checkpointing-benchmark.md`'s 2026-08-25 update) — training's backward pass
+   is far more matmul-heavy than a short single-token decode step, so emulated-BF16's overhead compounds
+   there in a way it doesn't (yet) show up in these small inference numbers. **Recommendation: use FP16
+   for training on this hardware; precision choice for inference needs its own larger-scale/longer-
+   prompt measurement pass before recommending anything definitively.**
 
 ## What this matrix does not cover
 

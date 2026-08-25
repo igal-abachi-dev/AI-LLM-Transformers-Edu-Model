@@ -56,7 +56,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resume", type=Path)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--precision", choices=("auto", "float32", "bfloat16"), default="auto")
+    parser.add_argument(
+        "--precision", choices=("auto", "float32", "bfloat16", "float16"), default="auto"
+    )
     parser.add_argument("--attention-impl", choices=("auto", "manual", "sdpa", "flex"))
     parser.add_argument("--updates", type=int, required=True)
     parser.add_argument("--warmup-updates", type=int, default=100)

@@ -284,6 +284,10 @@ class TrainingState:
     last_loss: float | None = None
     last_gradient_norm: float | None = None
     last_learning_rate: float | None = None
+    # Only set under FP16 (see precision.py); None for BF16/FP32 runs, which never
+    # use a GradScaler. Restoring this on resume matters: losing the learned scale
+    # factor mid-run can reintroduce the overflow/underflow it exists to prevent.
+    grad_scaler_state: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -476,6 +480,13 @@ def train_updates(
     optimizer = optimizer or build_adamw(model, config)[0]
     schedule = schedule or WarmupCosineSchedule(config)
     state = state or TrainingState()
+    # Disabled (the BF16/FP32 case) makes every scaler call below a transparent
+    # no-op: .scale() returns its input unchanged, .step() just calls
+    # optimizer.step(), .unscale_()/.update() do nothing. So this is safe to call
+    # unconditionally rather than branching the training loop on precision.
+    scaler = torch.amp.GradScaler(device=torch_device.type, enabled=policy.needs_grad_scaler)
+    if policy.needs_grad_scaler and state.grad_scaler_state:
+        scaler.load_state_dict(state.grad_scaler_state)
     if state.completed_updates != schedule.completed_updates:
         raise ValueError("training and scheduler update counts disagree")
     update_limit = config.max_updates if stop_after_updates is None else stop_after_updates
@@ -520,8 +531,12 @@ def train_updates(
                 # the gradient of the full batch's mean loss.
                 scaled_loss = loss_sum / target_count
             # Compute this microbatch's gradients and ADD them to what is already
-            # stored on each parameter. No optimizer step happens yet.
-            scaled_loss.backward()
+            # stored on each parameter. No optimizer step happens yet. Under FP16,
+            # `scaler.scale` multiplies the loss up before backward so small
+            # gradients survive FP16's narrow exponent range instead of flushing to
+            # zero; the multiplication is undone below, before the gradients are
+            # actually used.
+            scaler.scale(scaled_loss).backward()
             # `.detach()` keeps the running total out of the autograd graph, which
             # would otherwise pin every microbatch's activations in memory.
             detached_loss_sum += loss_sum.detach().float()
@@ -533,19 +548,32 @@ def train_updates(
             # `lr_scale` lets one schedule drive two optimizers at different rates,
             # which the Muon/AdamW experiment needs. It is 1.0 for plain AdamW.
             group["lr"] = learning_rate * float(group.get("lr_scale", 1.0))
+        # Undo scaler.scale's multiplication before the gradients are read or
+        # clipped -- clip_grad_norm_ and the optimizer must see real gradients, not
+        # ones inflated by the FP16 scale factor. A no-op when the scaler is
+        # disabled (its gradients were never scaled in the first place).
+        scaler.unscale_(optimizer)
         # If the combined gradient is longer than `gradient_clip`, scale the whole
         # thing down to that length. Direction preserved, magnitude capped -- one
         # freak batch cannot then blow the model up. The returned norm is the
         # pre-clipping length, which is a useful health signal in the logs.
         gradient_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip)
         # Apply the nudge. This is the only line that changes the model's weights.
-        optimizer.step()
+        # Under FP16, the scaler skips this step instead (leaving the parameters
+        # untouched) whenever it detects an inf/nan gradient this update, then
+        # shrinks the scale factor for next time -- the schedule still advances
+        # below, so a skipped step still counts as one update, same as
+        # nanoGPT/nanochat's convention.
+        scaler.step(optimizer)
+        scaler.update()
         state.completed_updates += 1
         schedule.completed_updates = state.completed_updates
         state.consumed_target_tokens += target_count
         state.last_loss = (detached_loss_sum / target_count).item()
         state.last_gradient_norm = gradient_norm.item()
         state.last_learning_rate = learning_rate
+        if policy.needs_grad_scaler:
+            state.grad_scaler_state = scaler.state_dict()
         if update_callback is not None:
             update_callback(model, optimizer, schedule, state)
         if (

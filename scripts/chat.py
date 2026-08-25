@@ -27,7 +27,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--device", default="cpu")
-    parser.add_argument("--precision", choices=("auto", "float32", "bfloat16"), default="auto")
+    parser.add_argument(
+        "--precision", choices=("auto", "float32", "bfloat16", "float16"), default="auto"
+    )
     system = parser.add_mutually_exclusive_group()
     system.add_argument("--system", help="inline system-prompt override")
     system.add_argument("--system-file", type=Path, help="UTF-8 system-prompt override")

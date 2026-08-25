@@ -28,7 +28,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fixtures", type=Path, default=Path("eval/sft_prompts.json"))
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--device", default="cpu")
-    parser.add_argument("--precision", choices=("auto", "float32", "bfloat16"), default="auto")
+    parser.add_argument(
+        "--precision", choices=("auto", "float32", "bfloat16", "float16"), default="auto"
+    )
     parser.add_argument("--max-new-tokens", type=int, default=64)
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
