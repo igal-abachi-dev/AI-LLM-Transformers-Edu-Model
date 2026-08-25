@@ -861,3 +861,1126 @@ Yes — put it on Hugging Face and ship GGUF so people can run it in LM Studio, 
 But treat compatibility as an engineering project of its own (Transformers adapter → high-precision GGUF → quantized GGUF → server smoke tests). Uploading weights alone will produce frustrated users and false “it doesn’t work” reports.
 
 Once the 1B (and later 3B) Modern models are trained with good data + distillation + SFT, this distribution path is exactly what makes them useful to other people. Just don’t skip the parity and conversion work.
+
+
+
+-------------------------------------------
+
+Yes — **this is now a genuinely good educational LLM repo**. But there is an important distinction:
+
+> **MiniFrontier is currently a good LLM implementation/training laboratory, not yet a demonstrated good trained LLM.**
+
+The architecture of `tiny-edu` / `tiny-modern` is credible, modern, and worth continuing. The missing piece is no longer “better Transformer code”; it is **serious pretraining + post-training + evaluation at scale**.
+
+### My assessment
+
+| Dimension                                          |                            MiniFrontier now |
+| -------------------------------------------------- | ------------------------------------------: |
+| Learning/teaching Transformers                     |                                    **9/10** |
+| Modern architecture choices                        |                                  **8.5/10** |
+| Code readability                                   |                                  **8.5/10** |
+| Experimentability                                  |                                    **9/10** |
+| Training/runtime completeness                      |                                    **8/10** |
+| Current demonstrated model quality                 |                                    **2/10** |
+| Foundation for future useful small LLM             |                                    **8/10** |
+| Foundation for frontier ChatGPT/Claude-level model | **Architecture yes; resources/training no** |
+
+The repo itself correctly makes that distinction: the latest real GPU run is only a **1–5M-token FineWeb-Edu training gate on the 50M Edu model**, and the README explicitly says this is integration evidence, **not a model-quality claim**. The serious matched 150M training experiments are still outstanding. ([GitHub][1])
+
+## What exactly is this repo?
+
+It is no longer comparable to one of those 200-line “build GPT from scratch” tutorials.
+
+It is closer to a small **LLM research/education framework** built from raw PyTorch. You have the whole pipeline:
+
+**text → tokenizer → streaming/shards → packing → Transformer → training → checkpointing → evaluation → generation/KV cache → FIM/code → SFT/chat → HF export → serving/runtime experiments.**
+
+And the two-model design is particularly good pedagogically:
+
+|            | **Edu**                              | **Modern**                          |
+| ---------- | ------------------------------------ | ----------------------------------- |
+| Norm       | Pre-RMSNorm                          | Pre-RMSNorm + QK-Norm               |
+| Position   | RoPE                                 | RoPE + optional NoPE experiment     |
+| Heads      | MHA                                  | GQA                                 |
+| Attention  | Full causal                          | 3 local : 1 global                  |
+| FFN        | SwiGLU                               | SwiGLU                              |
+| Embeddings | tied                                 | tied                                |
+| Purpose    | understand the canonical Transformer | understand a contemporary small LLM |
+
+That progression is explicitly what your repository intends: manual attention → SDPA → RoPE → MHA/GQA → QK-Norm → hybrid attention → KV cache → Muon → FIM → SFT. ([GitHub][1])
+
+That is a **very good teaching design** because somebody can learn why each modern addition exists rather than staring at a production implementation containing 40 interacting optimizations.
+
+---
+
+# Is `tiny-modern` actually modern?
+
+Yes.
+
+In fact, one of the strongest validations I found is **Karpathy's current nanochat**. NanoGPT is now explicitly described by Karpathy as old/deprecated in favor of nanochat. ([GitHub][2])
+
+Nanochat has independently moved toward several of the same architectural ideas: modern normalization/attention techniques and short/long attention patterns, while Modded-NanoGPT uses RoPE, QK-Norm, Muon and other current training ideas. ([GitHub][3])
+
+So your Modern model isn't an obsolete GPT-2 with some fashionable names pasted onto it.
+
+The core:
+
+**Pre-RMSNorm + RoPE + QK-Norm + GQA + local/global attention + SwiGLU**
+
+is entirely reasonable for a compact decoder model in 2026.
+
+I would **not** start throwing MoE, MLA, latent attention, state-space layers, DeltaNet, exotic routing, etc. into this repo. You would harm its best feature: it remains possible to understand the entire model.
+
+---
+
+# The best comparison is actually nanochat
+
+Today I'd position them like this:
+
+| Project          | Best use                                                                 | Compared with MiniFrontier                      |
+| ---------------- | ------------------------------------------------------------------------ | ----------------------------------------------- |
+| **MiniFrontier** | Learn modern LLM internals + controlled experiments                      | **Best fit for your goal**                      |
+| **nanochat**     | Minimal end-to-end LLM training → chat with demonstrated training recipe | Strongest alternative                           |
+| nanoGPT          | Simple GPT training                                                      | Now deprecated in favor of nanochat             |
+| minGPT           | Understand classic GPT                                                   | Simpler, but much less modern                   |
+| Modded-NanoGPT   | Discover extreme training-efficiency tricks                              | Much harder to teach                            |
+| llm.c            | Understand GPU/CUDA implementation                                       | Excellent lower-level companion                 |
+| LitGPT           | Actually train/fine-tune many existing LLM families                      | Far more production-oriented, much less minimal |
+
+Nanochat is particularly interesting because it now covers tokenization, pretraining, fine-tuning, evaluation, inference and chat, and has an actual reproducible training target/leaderboard. ([GitHub][4])
+
+`llm.c` is the better repo when the lesson becomes “what does this computation really look like in CUDA?” rather than “how does an LLM architecture work?” ([GitHub][5])
+
+LitGPT is the better answer if somebody says “I don't care about implementing attention; I need to pretrain/fine-tune/deploy Llama/Gemma/etc.” ([GitHub][6])
+
+So I **wouldn't replace MiniFrontier with any of them**. I would use nanochat and Modded-NanoGPT as references from which MiniFrontier selectively steals only concepts that remain easy to explain.
+
+---
+
+## Edu vs Modern: keep both
+
+Definitely don't collapse them into one.
+
+`Edu` is valuable because it answers:
+
+> “What is a decoder Transformer?”
+
+`Modern` answers:
+
+> “What changes when we turn that simple Transformer into something closer to a current small LLM?”
+
+That's one of the strongest concepts in the repo.
+
+I would make **Modern the model you actually try to make good**, while Edu remains the reference model used for teaching and A/B experiments.
+
+There is one experimental caveat I found in the uploaded implementation.
+
+I instantiated your configurations without allocating weights and obtained approximately:
+
+| Config        | Actual parameters |
+| ------------- | ----------------: |
+| 50M Edu       |        **53.36M** |
+| 50M Modern    |        **47.86M** |
+| 150M Edu      |       **154.17M** |
+| 150M Modern   |       **138.45M** |
+| 350M Modern   |       **332.46M** |
+| “500M” Modern |       **433.91M** |
+
+The Modern difference is understandable because **GQA removes K/V parameters**.
+
+That's actually educationally useful.
+
+But it means an experiment called:
+
+> 150M Edu vs 150M Modern
+
+isn't really parameter-matched.
+
+Keep the current presets, but when you eventually claim Modern is better than Edu, I'd add one additional **parameter-matched control**.
+
+---
+
+# Can 50M/150M become a good general chat model?
+
+Not in the sense you're probably aiming for.
+
+The best reality check is SmolLM2.
+
+Hugging Face's **135M SmolLM2** was pretrained on **2 trillion tokens**, using a mixture including FineWeb-Edu, DCLM and The Stack, on **64 H100 GPUs**. Its instruct version then received SFT and DPO. Even after that enormous effort, it remains a tiny model with substantial limitations. ([Hugging Face][7])
+
+Compare that with your current 1–5M-token smoke run.
+
+That's the difference between:
+
+**“our implementation learns”**
+
+and
+
+**“the weights contain a useful language model.”**
+
+Architecture tweaks will not bridge that gulf.
+
+### Roughly what I'd expect
+
+|   Model size | Realistic role                                                         |
+| -----------: | ---------------------------------------------------------------------- |
+|      **50M** | architecture experiments, unit/smoke training, TinyStories-style tasks |
+|     **150M** | educational LLM, constrained completion, narrow specialized assistant  |
+| **350–500M** | potentially useful specialized assistant with excellent training       |
+|      **~1B** | first size I'd target for a genuinely useful small general chat model  |
+|      **~3B** | much more credible general chat + coding model                         |
+|    **3–7B+** | much more realistic starting point for good local agentic coding       |
+
+These aren't hard mathematical boundaries; data quality and distillation can shift them substantially.
+
+But they are sensible engineering targets.
+
+Google's Gemma 3 270M is another useful reference. Google explicitly says that its instruction model is **not designed for complex conversational use**, even though it can follow general instructions. ([Google Developers Blog][8])
+
+That is approximately the capability region your 350M-ish experiment would eventually inhabit, assuming very good training.
+
+---
+
+# But small models *can* be agentic
+
+This is where things get interesting.
+
+Google's **FunctionGemma 270M** shows that a 270M model can be useful in agent-like systems when its job is tightly defined. Google specifically positions it as a base for **specialized function calling**, and says it should be fine-tuned for the particular tools/workflow rather than treated as a general dialogue model. ([Google AI for Developers][9])
+
+That distinction matters enormously.
+
+A 300M MiniFrontier could potentially become very good at:
+
+> User instruction → select one of 30 tools → generate valid arguments → consume result → answer.
+
+That's plausible.
+
+A 300M model independently exploring a 500,000-line C# repo, discovering a race condition, planning a six-file refactor, editing it, fixing compiler failures and reasoning through tests?
+
+**No — that needs much more capability.**
+
+---
+
+# Can MiniFrontier eventually do coding?
+
+Yes. Your architecture does not prevent it.
+
+You've already made an important start by implementing **code data handling and FIM**.
+
+But FIM teaches:
+
+> “complete the code between these two regions.”
+
+Agentic coding requires much more:
+
+**understanding repositories, instruction following, generating patches, calling search/read/edit/build/test tools, interpreting compiler failures, remembering previous actions and correcting bad edits.**
+
+That's mainly a **training/post-training problem plus an agent-runtime problem**, rather than needing another attention architecture.
+
+So MiniFrontier Modern can absolutely be the neural core.
+
+---
+
+# Can it eventually be used by Cline/Aider/OpenCode/etc.?
+
+Yes, once the model becomes capable enough.
+
+You already have the right transport direction: HF export, vLLM experiments, and OpenAI-compatible serving are enough to make external clients communicate with it.
+
+But there's a major distinction between:
+
+**“Cline successfully sends prompts to my model”**
+
+and
+
+**“my model can reliably operate Cline.”**
+
+Your own current README correctly does not claim trained tool-use reliability yet. The code infrastructure is ahead of the model.
+
+For real agentic coding, you'll eventually need a trained protocol roughly equivalent to:
+
+`assistant → tool_call → tool_result → assistant → tool_call → ... → final`
+
+with training examples containing failed commands, test results, partial edits, retries and long trajectories.
+
+FunctionGemma demonstrates precisely why those special tool formats and training data matter. ([Google AI for Developers][10])
+
+---
+
+# What I would change for MiniFrontier V2
+
+I would **not redesign the Transformer**. I'd keep the current educational core and put almost all future complexity outside it:
+
+1. **Finish real 50M/150M scaling experiments first.** Get loss curves, compute/token efficiency, downstream evals and Edu-vs-Modern evidence.
+2. **Add 1B and ~3B Modern configs.** Those should be the eventual useful-model targets; keep 50M/150M as teaching sizes.
+3. **Increase context for the larger models.** 2K is fine pedagogically but poor for coding. I'd eventually target at least 8K/16K and preferably ~32K for the coding model.
+4. **Create tokenizer V2.** Keep your 16K BPE for education/backward compatibility, but benchmark ~32K–64K vocabulary on natural language + code + your target languages.
+5. **Make the data recipe the main research project.** General web + high-quality educational text + code + math/reasoning + synthetic data, followed by code-heavy continued pretraining.
+6. **Post-train seriously.** SFT → preference tuning/distillation → tool-use/coding trajectories. Distillation from a much stronger teacher will probably give you vastly more capability per unit of compute than inventing another architecture component.
+7. **Add an actual agent protocol and evals.** Function schemas, tool calls/results, filesystem/search/edit/build/test tools, then HumanEval/MBPP-style code evals followed eventually by repo/SWE-style evaluations.
+8. **Only then explore architecture extras.** ReLU² vs SwiGLU, tied vs untied embeddings, value residuals, logit soft-capping, etc. should be measured experiments, not additions because frontier models use them.
+
+That would preserve your **80/20 philosophy**.
+
+---
+
+## I also found two repo-cleanliness issues worth fixing
+
+First, parts of `future-plan.md` / older documentation appear to describe earlier states where features were still missing, while the current code and README have already implemented them. I would either regenerate those documents or move historical plans under something like `docs/archive/`. Otherwise a learner can get conflicting descriptions of the project.
+
+Second, the public GitHub tree currently contains:
+
+`workflows/ci.yml`
+
+at the repository root. ([GitHub][11])
+
+Yet your README says the source-archive process includes:
+
+`.github/workflows/ci.yml`. ([GitHub][1])
+
+For GitHub Actions, the latter is the important location. I'd verify that immediately; the current repository tree suggests the workflow has been misplaced during archive/upload. That's exactly the kind of small release-engineering problem worth fixing before calling the repo polished.
+
+I also couldn't independently execute the full test suite in my inspection environment because the sandbox didn't have your `tokenizers` dependency synchronized, so I'm treating the README's “186 tests” as the repository's claim rather than independently reproduced evidence.
+
+---
+
+# My final verdict
+
+**Keep this repo. The architecture is good.**
+
+I'd describe it publicly as:
+
+> **MiniFrontier is a compact, from-scratch modern LLM laboratory for understanding the path from a canonical Transformer to a small contemporary decoder model.**
+
+Not:
+
+> “A tiny frontier-quality LLM.”
+
+At present:
+
+**MiniFrontier Edu** = very good teaching model.
+**MiniFrontier Modern** = good small research architecture.
+**Current checkpoints** = not yet useful general LLMs.
+**150M eventually** = fun/educational/narrow assistant.
+**350–500M eventually** = potentially useful specialist.
+**1B Modern** = where I'd begin pursuing genuine general chat.
+**3B Modern** = where I'd seriously pursue general chat + coding + tool use.
+**Agentic coding** = absolutely possible with this codebase, but it will require scale, code-rich pretraining, long context, post-training and explicit tool-use trajectories—not another clever attention layer.
+
+And compared with alternatives, I think you've arrived at a sensible niche:
+
+> **nanochat is currently the better demonstrated minimal “train a small ChatGPT” project; MiniFrontier can become the better “understand every important part of a modern LLM and experiment with it” project.** ([GitHub][4])
+
+That's a worthwhile distinction. The next major gains should come from **training science and model capability**, not adding more architecture complexity.
+
+[1]: https://github.com/igal-abachi-dev/AI-LLM-Transformers-Edu-Model "GitHub - igal-abachi-dev/AI-LLM-Transformers-Edu-Model: AI LLM implementation for learning about transformers and ai models · GitHub"
+[2]: https://github.com/karpathy/nanoGPT/blob/master/README.md?plain=1&utm_source=chatgpt.com "nanoGPT/README.md at master · karpathy/nanoGPT · GitHub"
+[3]: https://github.com/karpathy/nanochat?utm_source=chatgpt.com "GitHub - karpathy/nanochat: The best ChatGPT that $100 can buy. · GitHub"
+[4]: https://github.com/karpathy/nanochat "GitHub - karpathy/nanochat: The best ChatGPT that $100 can buy. · GitHub"
+[5]: https://github.com/karpathy/llm.c?utm_source=chatgpt.com "GitHub - karpathy/llm.c: LLM training in simple, raw C/CUDA · GitHub"
+[6]: https://github.com/Lightning-AI/litgpt/blob/main/tutorials/pretrain.md?utm_source=chatgpt.com "litgpt/tutorials/pretrain.md at main · Lightning-AI/litgpt · GitHub"
+[7]: https://huggingface.co/HuggingFaceTB/SmolLM2-135M/blob/main/README.md?utm_source=chatgpt.com "README.md · HuggingFaceTB/SmolLM2-135M at main"
+[8]: https://developers.googleblog.com/introducing-gemma-3-270m/?utm_source=chatgpt.com "Introducing Gemma 3 270M: The compact model for hyper-efficient AI - Google Developers Blog"
+[9]: https://ai.google.dev/gemma/docs/functiongemma/model_card?utm_source=chatgpt.com "FunctionGemma model card  |  Google AI for Developers"
+[10]: https://ai.google.dev/gemma/docs/functiongemma/formatting-and-best-practices?utm_source=chatgpt.com "FunctionGemma formatting and best practices  |  Google AI for Developers"
+[11]: https://github.com/igal-abachi-dev/AI-LLM-Transformers-Edu-Model/blob/main/workflows/ci.yml "AI-LLM-Transformers-Edu-Model/workflows/ci.yml at main · igal-abachi-dev/AI-LLM-Transformers-Edu-Model · GitHub"
+
+
+
+
+------------
+
+Your own RTX 2070 Super measurements are already enough to put hard numbers on the problem. At 150M/1K context you measured roughly 2.1–2.75k training tokens/s, while the 150M Modern 8K inference path already spills past 8 GB VRAM (~10.9 GB). So “350M–1B + native 16–32K pretraining + hundreds of billions/trillions of tokens” is not a home-GPU plan; we need a different training strategy, not just a smaller copy of SmolLM2.
+
+
+The biggest actionable finding from the source comparison is already clear: your repo’s auto training precision is wrong for this particular GPU target. Tiny-Modern currently chooses BF16 only when supported and otherwise falls to FP32; Turing’s Tensor Cores support FP16 but not BF16, while nanoGPT/nanochat explicitly provide FP16 training with loss scaling. NVIDIA confirms Turing’s Tensor Core precision set is FP16/INT8/INT4/INT1, with BF16 arriving in Ampere.
+
+-----------------------
+
+
+
+Yes — **using a SmolLM2-like high-quality mixture is the right next direction for Tiny-Modern**, but I would change two parts of your proposed plan:
+
+> **Do not try to imitate SmolLM2's token count, and do not pretrain at 16–32K context.**
+
+On one RTX 2070 Super, the best project is a **compute-efficient 150M→350M research program**, with 350M as the serious home-GPU model. Keep 1B as a supported architecture/config and future rented-GPU training target.
+
+And after inspecting your uploaded nanoGPT and nanochat source, there are several concrete improvements that can make MiniFrontier substantially better without ruining its simplicity.
+
+# 1. First: SmolLM2's 2T tokens are not what you should copy
+
+The published SmolLM2 135M run really was enormous for such a small model: its Nanotron config used BF16, 64-way data parallelism and 2,000,000 steps. ([Hugging Face][1])
+
+Its 2T-token data wasn't simply:
+
+> FineWeb-Edu + DCLM + The Stack
+
+The released corpus description is more interesting:
+
+| Source         | Approx. tokens |
+| -------------- | -------------: |
+| DCLM-Edu       |       1,065.6B |
+| FineWeb-Edu    |         710.4B |
+| Stack-Edu      |           125B |
+| FineMath       |            34B |
+| InfiMM-WebMath |            40B |
+| Cosmopedia V2  |            30B |
+
+([Hugging Face][2])
+
+Notice **Stack-Edu**, not merely raw The Stack.
+
+And DCLM-Edu's authors specifically say that for small models, filtering to `edu_int_score >= 3` improved downstream performance. ([Hugging Face][3])
+
+That is extremely relevant to your situation.
+
+With 1 GPU, your scarce resource is **tokens you can afford to process**. Therefore every token needs to be better.
+
+---
+
+# 2. I would use a mixture — but a small, aggressively filtered one
+
+For a Tiny-Modern intended to eventually be decent at both general language and code, I'd start experiments around:
+
+| Dataset                                     | Starting share |
+| ------------------------------------------- | -------------: |
+| DCLM-Edu `score >= 3`                       |        **45%** |
+| FineWeb-Edu                                 |        **30%** |
+| Stack-Edu                                   |        **15%** |
+| FineMath / strong math                      |         **5%** |
+| Cosmopedia / other curated educational data |         **5%** |
+
+This is **not a magic proven optimum**. It's the first mixture I would experimentally test.
+
+It intentionally gives code more weight than SmolLM2-135M did because you care about coding.
+
+Then test perhaps three mixtures at 50M/150M rather than committing the expensive 350M run blindly:
+
+**A — General:** 55% DCLM / 35% FineWeb / 5% code / 5% math
+**B — Balanced:** 45 / 30 / 15 / 10
+**C — Code-heavy:** 35 / 25 / 30 / 10
+
+Use the same tokens, seed, tokenizer and schedule and compare BPB + HellaSwag/ARC/PIQA + code evaluations.
+
+That is far more scientifically useful than saying:
+
+> “SmolLM2 used these datasets, therefore I'll use exactly their percentages.”
+
+---
+
+# 3. There's an even more interesting dataset from nanochat
+
+Current nanochat no longer uses FineWeb-Edu for its record run.
+
+Karpathy reports that they repeatedly tried FineWeb, DCLM and OLMo alternatives without improving the run, then switched to NVIDIA **ClimbMix**, which produced a clear improvement. The Time-to-GPT-2 project went from around 3 hours originally to ~2 hours around the ClimbMix change and has since improved further. ([GitHub][4])
+
+ClimbMix is explicitly a **400B-token compute-efficient pretraining mixture**, constructed using topic clustering plus advertising and educational-quality filtering. ([Hugging Face][5])
+
+That's almost exactly the research question you care about:
+
+> **How do I get maximum capability per training token?**
+
+However, there's a catch:
+
+**ClimbMix is CC BY-NC 4.0 / research-and-development use**, so I would not make it the sole/default MiniFrontier training recipe if you want users to be able to build broadly reusable/commercial models. ([Hugging Face][5])
+
+Use it as an experimental benchmark:
+
+> Tiny-Modern 50M, same compute:
+>
+> FineWeb-Edu
+> DCLM-Edu
+> your balanced mixture
+> ClimbMix
+
+That could itself become a really nice MiniFrontier experiment.
+
+---
+
+# 4. Do NOT train from scratch at 16K or 32K
+
+This is one of the most important corrections.
+
+Even **SmolLM2-135M was pretrained at sequence length 2048**:
+
+```text
+sequence_length: 2048
+max_position_embeddings: 2048
+```
+
+([Hugging Face][1])
+
+The released HF model later supports 8192 positions and uses a larger RoPE theta. ([Hugging Face][6])
+
+So even Hugging Face, with 64 H100s, did not say:
+
+> “Let's make every pretraining sequence 32K.”
+
+Neither should you.
+
+For MiniFrontier I'd make:
+
+| Stage                 |                                      Context |
+| --------------------- | -------------------------------------------: |
+| Main pretraining      |                                     **2048** |
+| Optional intermediate |                                         4096 |
+| Context extension     |                                         8192 |
+| Later experiment      |                                          16K |
+| 32K                   | supported/experimental, not initial training |
+
+This is particularly important because attention compute and activation memory explode with sequence length unless the sliding-window structure handles most of it efficiently.
+
+Your 3-local:1-global Tiny-Modern design helps substantially, but global layers still cost real compute.
+
+### The model can nevertheless advertise 16K/32K architecture support.
+
+Those are different claims:
+
+**model implementation supports 32K**
+
+versus
+
+**the model was pretrained on 32K sequences.**
+
+You need the first now, not the second.
+
+---
+
+# 5. What can your RTX 2070 Super realistically do?
+
+Your own benchmark is useful here.
+
+At 150M, 1024 tokens, you measured approximately:
+
+**2,747 tok/s without activation checkpointing**
+**2,135 tok/s with checkpointing.**
+
+That's roughly:
+
+**237M tokens/day** at 2747 tok/s.
+
+So even at your existing 150M speed:
+
+| Training tokens | Ideal uninterrupted time |
+| --------------: | -----------------------: |
+|            100M |                ~10 hours |
+|            500M |                ~2.1 days |
+|              1B |                ~4.2 days |
+|              3B |               ~12.6 days |
+|              5B |                 ~21 days |
+|             10B |                 ~42 days |
+
+That's 150M, seq=1024, under your measured conditions.
+
+For ~332M Tiny-Modern, a simplistic inverse-parameter scaling from your measured 150M result gives roughly **1.2K tok/s**, or ~105–110M tokens/day.
+
+So approximately:
+
+| 350M target | Rough current-order estimate |
+| ----------: | ---------------------------: |
+| 500M tokens |                    ~4–5 days |
+|          1B |                   ~9–10 days |
+|          2B |                  ~18–20 days |
+|          3B |                  ~27–30 days |
+|          5B |                    ~45+ days |
+
+These are planning estimates, **not benchmarks**. 2K context, hybrid attention, VRAM pressure, optimizer behavior and compilation can change them substantially.
+
+And a 1B model is dramatically worse. A generous compute-only extrapolation already puts 1B tokens at several weeks — before dealing with the much larger memory/optimizer problem.
+
+So:
+
+### 350M: yes, potentially.
+
+### 1B scratch pretraining on the 2070S while refusing months: no.
+
+You could technically make all sorts of CPU offload/optimizer tricks allow it to execute.
+
+But:
+
+> **“can execute” ≠ “sensible training platform.”**
+
+I'd keep a `modern-1b` config and verify initialization/forward/inference/export, but I would **not pretrain 1B from scratch on this card**.
+
+---
+
+# 6. But I found something that should significantly improve your RTX 2070S situation
+
+This is probably the highest-ROI discovery from comparing your source with nanoGPT/nanochat.
+
+Your current:
+
+```python
+Precision = Literal[
+    "auto",
+    "float32",
+    "bfloat16",
+]
+```
+
+effectively does:
+
+```text
+BF16-capable CUDA → BF16
+otherwise → FP32
+```
+
+Your RTX 2070 Super is **Turing**.
+
+Turing Tensor Cores support FP16, but **not BF16 Tensor Core math**. NVIDIA's own compatibility table lists:
+
+| Architecture | Tensor-Core types           |
+| ------------ | --------------------------- |
+| Turing       | FP16, INT8, INT4, INT1      |
+| Ampere A100  | FP64, TF32, BF16, FP16, ... |
+
+([NVIDIA][7])
+
+That explains why your BF16 experiments weren't attractive on this machine.
+
+## nanoGPT handles this better
+
+The uploaded nanoGPT code literally chooses:
+
+```python
+'bfloat16'
+if torch.cuda.is_bf16_supported()
+else
+'float16'
+```
+
+and FP16 automatically activates `GradScaler`.
+
+nanochat does essentially the same thing conceptually: its README explicitly documents FP16 training and automatic gradient scaling. ([GitHub][8])
+
+### MiniFrontier should become:
+
+```text
+Ampere+ native BF16 → BF16
+Turing CUDA → FP16 + GradScaler
+CPU → FP32 / optional BF16 where appropriate
+```
+
+This is **priority zero** before attempting 350M.
+
+It could improve both memory and performance considerably on your GPU. Exactly how much needs to be measured on your implementation rather than assumed.
+
+---
+
+# 7. This changes what I recommend training
+
+Given your “not months” constraint:
+
+### My actual target would be **350M Modern, 2K pretraining context, ~1B tokens first**.
+
+Not 1B parameters.
+
+If the 1B-token checkpoint is improving well and the training rate after FP16 optimization is acceptable, extend it to **2–3B tokens**.
+
+That gives you a meaningful research model without committing blindly to a 30–60-day run.
+
+And crucially:
+
+> Don't wait until 3B tokens to discover your tokenizer, data mix or optimizer was bad.
+
+Use the 50M and 150M models as experimental proxies.
+
+That is exactly why having your whole **50M → 150M → 350M → 1B** MiniFrontier family is useful.
+
+---
+
+# 8. Nanochat changes my view of how many tokens you need experimentally
+
+There's another useful lesson.
+
+Nanochat deliberately targets a compute-efficient parameter:data ratio rather than “train on trillions because frontier labs do.”
+
+Its current base trainer actually derives the training horizon automatically from model parameter count and a configurable target parameter:data ratio. Its leaderboard describes experiments around roughly 8–10.5 tokens per scaling parameter depending on the speedrun. ([GitHub][4])
+
+That doesn't mean:
+
+> `350M × 10 = exactly 3.5B and you're done.`
+
+Nanochat's parameter accounting is unusual, architecture/data are different, and its objective is a particular CORE threshold.
+
+But it strongly reinforces this:
+
+### For MiniFrontier research, **billions**, not trillions, are the correct unit.
+
+For a **fully saturated 135M commercial-grade checkpoint**, Hugging Face could justify 2T.
+
+For:
+
+> “Can Tiny-Modern demonstrate that its architecture/data recipe works?”
+
+you absolutely do not need 2T.
+
+---
+
+# 9. What I learned from nanoGPT that should go into MiniFrontier
+
+nanoGPT's **architecture itself isn't something you should copy**.
+
+Karpathy now explicitly marks nanoGPT old/deprecated and directs people toward nanochat. ([GitHub][9])
+
+Tiny-Modern is already architecturally much more current than nanoGPT.
+
+But its engineering still has lessons.
+
+The highest-value items from the uploaded nanoGPT are:
+
+1. **FP16 + GradScaler**, as discussed above.
+2. Fused AdamW where PyTorch/device support it.
+3. Better automatic hardware-aware dtype selection.
+4. Explicit tokens/iteration reporting.
+5. MFU / achieved compute measurement.
+6. Very simple gradient accumulation accounting.
+7. `torch.compile` benchmarking as part of the standard training profile.
+
+You have parts of several already.
+
+The key is making **“performance engineering for normal GPUs”** part of MiniFrontier's identity.
+
+---
+
+# 10. Nanochat is much more interesting
+
+This is the serious comparison.
+
+Current nanochat is explicitly trying to be a minimal end-to-end experimental harness that produces a real conversational model, and Karpathy says the project now targets micro-models accessible under ~$1000 rather than becoming a giant configurable framework. ([GitHub][8])
+
+Its current Transformer has:
+
+**RoPE
+RMSNorm
+QK-Norm
+GQA support
+sliding-window attention
+ReLU²
+untied embedding/head
+embedding RMSNorm
+value residual/value embeddings
+learnable residual scaling
+x0 residual
+smear
+backout
+logit soft-capping
+FlashAttention 3
+Muon + AdamW**
+
+The current source documents many of these directly. ([GitHub][10])
+
+Some are fascinating.
+
+**I would absolutely not copy all of them.**
+
+---
+
+# 11. Tiny-Modern already makes some choices I prefer
+
+Your architecture is:
+
+```text
+RMSNorm
+   ↓
+GQA + QK-Norm + RoPE
+   ↓
+residual
+   ↓
+RMSNorm
+   ↓
+SwiGLU
+   ↓
+residual
+```
+
+with hybrid:
+
+```text
+Local
+Local
+Local
+Global
+```
+
+That's extremely clean.
+
+Nanochat's latest speedrun model has increasingly experimental things like value embeddings, smear, backout and learned residual coefficients.
+
+Those may make the metric better.
+
+But they make the explanation:
+
+> “this is how modern Transformers work”
+
+less clean.
+
+There's a revealing detail in nanochat's own leaderboard rules: Karpathy says changes can be rejected if they're too gnarly, bloated or esoteric even if they improve the metric. ([GitHub][4])
+
+That is exactly the principle MiniFrontier should follow.
+
+---
+
+# 12. What I would actually take from nanochat
+
+Here's my priority order:
+
+| Improvement                                   | Tiny-Modern             | Priority |
+| --------------------------------------------- | ----------------------- | -------: |
+| FP16 + GradScaler                             | **Default on Turing**   |    🔴 P0 |
+| Better local/sliding attention backend        | Yes                     |    🔴 P0 |
+| Fused AdamW                                   | Yes                     |    🔴 P0 |
+| Exact MFU / tok/s / memory dashboard          | Yes                     |    🔴 P0 |
+| Automatic token-budget calculator             | Yes                     |    🔴 P0 |
+| Automatic batch/grad accumulation suggestions | Yes                     |    🔴 P0 |
+| Data-mixture ablation framework               | Yes                     |    🔴 P0 |
+| 16K/32K context-extension experiment          | Yes                     |    🟠 P1 |
+| 16K vs 32K tokenizer experiment               | **32K candidate**       |    🟠 P1 |
+| BOS-aligned best-fit packing                  | experiment              |    🟠 P1 |
+| ReLU² vs SwiGLU                               | experiment              |    🟡 P2 |
+| tied vs untied embedding                      | experiment              |    🟡 P2 |
+| embedding RMSNorm                             | experiment              |    🟡 P2 |
+| logit softcap                                 | experiment              |    🟡 P2 |
+| value residual                                | experiment              |    🟡 P2 |
+| x0 residual scaling                           | experiment              |    🟡 P2 |
+| smear/backout                                 | probably no/default-off |     ⚪ P3 |
+| FP8                                           | no 2070S value          |        ❌ |
+| FA3/H100 specialization                       | no 2070S value          |        ❌ |
+
+The important architectural philosophy should be:
+
+```text
+tiny-modern/
+    clean baseline
+
+experiments/
+    relu2
+    untied_embeddings
+    value_residual
+    x0_residual
+    softcap
+    ...
+```
+
+Then a feature graduates to `tiny-modern` **only if it wins an A/B test enough to justify the extra concept**.
+
+That would be very strong.
+
+---
+
+# 13. There is another interesting nanochat idea: packing
+
+Your current MiniFrontier pretraining pipeline uses the classic continuous ribbon:
+
+```text
+document A <eos> document B <eos> document C ...
+────────────────────────────────────────────────
+          slice into fixed sequences
+```
+
+Simple. Efficient. Good for teaching.
+
+Current nanochat instead has an optional-looking but currently used **BOS-aligned best-fit** strategy:
+
+```text
+<BOS> document
+<BOS> document
+...
+```
+
+and fills each row by best-fitting documents, cropping when necessary.
+
+The source claims 100% training utilization but roughly **35% document-token cropping at T=2048**.
+
+This gives the model cleaner document boundaries but sacrifices some data.
+
+I would **not replace yours immediately**.
+
+I would implement:
+
+```text
+--packing ribbon
+--packing bos-bestfit
+```
+
+and measure.
+
+That's precisely the kind of controlled experiment MiniFrontier should excel at.
+
+---
+
+# 14. Another improvement: tokenizer V2
+
+Your 16,384 BPE tokenizer is appropriate for the educational model.
+
+For a 350M general+coding model, I think **32K deserves a real experiment**.
+
+Nanochat uses a more sophisticated ~32K tokenizer setup, while SmolLM2 uses 49,152 tokens. ([Hugging Face][1])
+
+Don't jump to 50K just because SmolLM2 does.
+
+At your model size, vocabulary parameters are expensive.
+
+Instead compare:
+
+```text
+16K
+32K
+48K
+```
+
+on:
+
+**bytes/token
+characters/token
+English BPB
+source-code compression
+JSON/code punctuation
+training throughput
+embedding parameter cost**
+
+My bet would be **32K** becoming Modern V2 and 16K remaining Edu.
+
+But benchmark it.
+
+---
+
+# 15. Your biggest remaining performance problem after FP16 is attention
+
+Your own 150M Modern benchmark exposes it.
+
+Your eager local FlexAttention path is painfully slow on the 2070S.
+
+This matters much more than adding some sexy architecture trick from a 2026 paper.
+
+Tiny-Modern needs:
+
+```text
+Attention interface
+      │
+      ├── PyTorch SDPA
+      ├── efficient sliding-window CUDA backend
+      └── reference/manual implementation
+```
+
+with automatic backend selection.
+
+nanochat has FlashAttention 3 plus an SDPA fallback. ([GitHub][10])
+
+FA3 itself is **not the answer for a 2070S**.
+
+The lesson is the abstraction:
+
+> Use the best implementation available for the hardware while preserving a clean reference implementation.
+
+That would also make your “Modern” model substantially more credible at 16K/32K eventually.
+
+---
+
+# 16. And I would steal nanochat's scaling UX
+
+This is perhaps its best feature.
+
+You can essentially say:
+
+```bash
+python -m scripts.base_train --depth=...
+```
+
+and it derives much of the model/training configuration automatically. Nanochat explicitly advertises this “single complexity dial.” ([GitHub][8])
+
+MiniFrontier shouldn't hide everything behind magical heuristics because teaching explicit configs is valuable.
+
+But add something like:
+
+```bash
+python scripts/plan_run.py \
+    --model modern-350m \
+    --gpu rtx2070s \
+    --budget-tokens 1B
+```
+
+and return:
+
+```text
+Parameters              332,456,xxx
+Trainable parameters     ...
+Context                  2048
+
+Precision                FP16
+Gradient scaler          yes
+Activation checkpoint    yes
+
+Micro batch              1
+Gradient accumulation    128
+Global tokens/update     262,144
+
+Target training tokens   1,000,000,000
+Steps                    ...
+Estimated optimizer mem  ...
+Estimated activation mem ...
+Measured tok/s           from benchmark DB
+```
+
+Now **that** would be useful to people.
+
+It preserves the explicit educational configuration while offering nanochat-style convenience.
+
+---
+
+# 17. How MiniFrontier can actually get people to choose it over nanochat
+
+Don't try to become:
+
+> “nanochat but written slightly differently.”
+
+Karpathy has an enormous ecosystem advantage. You won't win that game by cloning its current architecture.
+
+Instead MiniFrontier should have a very clear identity:
+
+> **The smallest understandable modern LLM laboratory that lets you learn, train, benchmark, modify and export every major component — including on normal consumer GPUs.**
+
+Then the comparison becomes:
+
+|                                  | nanoGPT    | nanochat             | **MiniFrontier**         |
+| -------------------------------- | ---------- | -------------------- | ------------------------ |
+| Classic Transformer education    | Good       | Medium               | **Excellent**            |
+| Modern architecture              | Old        | **Excellent**        | **Excellent**            |
+| Edu→Modern progression           | No         | No                   | **Unique**               |
+| Explicit MHA→GQA learning        | No         | Not primary goal     | **Yes**                  |
+| Controlled architectural A/Bs    | Hack it    | Speedrun oriented    | **Core feature**         |
+| Consumer 8GB GPU focus           | Limited    | H100-centered record | **Make this a strength** |
+| Code/FIM teaching                | Limited    | later stages         | **Already present**      |
+| HF export                        | not focus  | not primary          | **Yes**                  |
+| GGUF                             | not focus  | not primary          | **Yes**                  |
+| Clean ecosystem/runtime path     | Limited    | own runtime          | **Yes**                  |
+| Reproducible real quality result | Historical | **Major strength**   | **Currently missing**    |
+| Public competitive benchmark     | No current | **Excellent**        | **Need this**            |
+| Data efficiency research         | Old        | **Excellent**        | **Need this**            |
+
+The bottom three are where your next work should go.
+
+---
+
+# 18. So what should MiniFrontier V2 actually be?
+
+I wouldn't make V2 an architectural rewrite.
+
+I would make it:
+
+### **“Tiny-Modern becomes a real consumer-GPU-trained LLM.”**
+
+The sequence I would implement is:
+
+1. **FP16 + GradScaler + hardware-aware `auto` precision.**
+2. **Profile/fix Modern sliding attention on RTX 2070S.**
+3. Add fused optimizer paths and improve compile benchmarks.
+4. Add exact training-performance metrics: tokens/s, MFU, GPU memory, parameters, tokens processed.
+5. Add `plan_run.py` with parameter:data/run-budget calculations.
+6. Add dataset mixtures and deterministic weighted streaming for DCLM-Edu/FineWeb-Edu/Stack-Edu/FineMath.
+7. Add data-mixture A/B experiments at 50M first.
+8. Test tokenizer 16K vs 32K.
+9. Run 150M Modern on ~500M–1B high-quality tokens as the validation model.
+10. Run **350M Modern / 2K / initial 1B tokens**, inspect curves/evals, then decide whether 2–3B is worth continuing.
+11. Add 8K→16K context extension only after the base model is good.
+12. Add nanochat ideas such as ReLU², untied embeddings, value residual and soft-cap **one at a time**, requiring measured quality-per-compute improvement before moving into the default model.
+
+That is the 20% of changes I think gives you 80% of the gain.
+
+---
+
+# My revised target architecture
+
+I would currently aim for:
+
+```text
+Tiny-Modern 350M
+────────────────────────────────
+
+~330–350M actual parameters
+
+Pre-RMSNorm
+RoPE
+QK-Norm
+GQA
+3 local : 1 global attention
+SwiGLU
+tied embeddings
+
+Tokenizer:
+    32K candidate (after 16K/32K A/B)
+
+Main pretraining:
+    context = 2048
+    FP16 + GradScaler on RTX 2070S
+    activation checkpointing as required
+
+Data:
+    DCLM-Edu >=3
+    FineWeb-Edu
+    Stack-Edu
+    small FineMath/curated component
+
+Phase 1:
+    1B tokens
+
+Phase 2:
+    continue toward 2–3B only if
+    eval improvement justifies it
+
+Context extension:
+    4K → 8K → 16K
+    later / small continuation
+
+Post-training:
+    SFT after base quality is demonstrated
+
+Agent/tool training:
+    much later
+```
+
+## And 1B?
+
+Implement it.
+
+Test it.
+
+Support checkpointing/export/inference.
+
+But **don't use your 2070 Super to scratch-pretrain it** under your “not months” constraint.
+
+If the 350M experiment proves MiniFrontier is genuinely good, **that is the point where spending a small amount on rented modern GPU compute for a 1B run makes sense**. You will then be buying compute for a tested recipe rather than burning money while discovering basic training issues.
+
+Most importantly, I would now change my earlier framing slightly:
+
+> **Your next bottleneck isn't simply “you need huge compute.”**
+
+It's more specifically:
+
+> **MiniFrontier now needs a compute-efficient training recipe.**
+
+Nanochat is strong evidence that architecture + **data quality + optimizer + batching + precision + kernel efficiency + rigorous quality-per-wall-clock experimentation** can radically change how much compute you need. Its entire project has reduced its Time-to-GPT-2 objective from roughly three hours toward ~1.5–2 hours on the same class of 8×H100 setup through exactly that type of iteration. ([GitHub][11])
+
+That's the direction I would take your repo now: **not more Transformer features, but making Tiny-Modern the best understandable LLM you can actually train end-to-end on ordinary hardware.**
+
+[1]: https://huggingface.co/HuggingFaceTB/SmolLM2-nanotron-ckpt/blob/main/135M/final/config.yaml?utm_source=chatgpt.com "135M/final/config.yaml · HuggingFaceTB/SmolLM2-nanotron-ckpt at main"
+[2]: https://huggingface.co/datasets/EleutherAI/SmolLM2-135M-10B?utm_source=chatgpt.com "EleutherAI/SmolLM2-135M-10B · Datasets at Hugging Face"
+[3]: https://huggingface.co/datasets/HuggingFaceTB/dclm-edu?utm_source=chatgpt.com "HuggingFaceTB/dclm-edu · Datasets at Hugging Face"
+[4]: https://github.com/karpathy/nanochat/blob/master/dev/LEADERBOARD.md?utm_source=chatgpt.com "nanochat/dev/LEADERBOARD.md at master · karpathy/nanochat · GitHub"
+[5]: https://huggingface.co/datasets/nvidia/Nemotron-ClimbMix/blob/main/README.md?utm_source=chatgpt.com "README.md · nvidia/Nemotron-ClimbMix at main"
+[6]: https://huggingface.co/HuggingFaceTB/SmolLM2-135M/blob/d6a5589c239236d22370e2126bbe23d4843c47d9/config.json?utm_source=chatgpt.com "config.json · HuggingFaceTB/SmolLM2-135M at d6a5589c239236d22370e2126bbe23d4843c47d9"
+[7]: https://www.nvidia.com/en-eu/data-center/tensorcore/?utm_source=chatgpt.com "Tensor Cores: Versatility for HPC & AI | NVIDIA"
+[8]: https://github.com/karpathy/nanochat?utm_source=chatgpt.com "GitHub - karpathy/nanochat: The best ChatGPT that $100 can buy. · GitHub"
+[9]: https://github.com/karpathy/nanoGPT/blob/master/README.md?plain=1&utm_source=chatgpt.com "nanoGPT/README.md at master · karpathy/nanoGPT · GitHub"
+[10]: https://github.com/karpathy/nanochat/blob/master/nanochat/gpt.py?utm_source=chatgpt.com "nanochat/nanochat/gpt.py at master · karpathy/nanochat · GitHub"
+[11]: https://github.com/karpathy/nanochat/blob/master/README.md?utm_source=chatgpt.com "nanochat/README.md at master · karpathy/nanochat · GitHub"
+
+350M Modern, 2K pretraining context, ~1B tokens first.
+
+
+
+for 1B you need to rent , not at home gpu:
+Where to Rent the HardwareTo train the model at the lowest cost, you need to use cloud GPU providers that offer on-demand or spot instances for 8xH100 SXM nodes. Some of the most popular providers for this specific price tier include:Lambda Labs GPU Cloud: A standard choice for machine learning engineers with highly competitive hourly pricing.DataCrunch: Frequently recommended for offering highly affordable spot instance rates.Prime Intellect: A decentralized and aggregated orchestration layer ideal for multi-GPU setups.FluidStack or Vast.ai: Excellent alternatives for renting unutilized enterprise hardware at steep discounts.
+Log into your chosen provider's dashboard and launch an 8x H100 SXM (80 GB) node running Ubuntu 22.04 LTS. Make sure to add your SSH key for secure access.
+
+so for now 350M i good enough for at home consumer gpu , not h100/dgx

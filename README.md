@@ -24,6 +24,15 @@ MiniFrontier is a from-scratch, educational decoder-only language model built wi
 - [Introduction to LLM / Transformers / Attention](introduction.md)
 - [Architecture / Diagrams](minifrontier-architecture-diagrams.md)
 
+If your goal is to understand how modern decoder-only transformers actually work by reading and running real, well-structured code (attention → RoPE → GQA → training loop → decoding → SFT),
+Recommended starting path (as the repo itself suggests):
+
+Read introduction.md
+Look at the architecture diagrams
+Run the tiny overfit / labs and the CPU test suite
+Explore src/minifrontier/ (especially model.py, attention.py, rope.py, etc.)
+
+
 ## What we are building
 
 One compact codebase exposes two presets:
@@ -70,6 +79,7 @@ Supported sizes go from tiny toy models (~29k parameters for teaching) up to pla
 - **Well-organized**. Clear structure (`src/minifrontier/`, labs, tests, configs, tasks/), good docs (`plan.md`, architecture diagrams, AGENTS.md), and a sensible learning progression.
 
 in addition to /src folder there is /scripts and /labs folders , and documentation
+
 
 Current limitations
 - Single-GPU / educational scope only — not a production framework or high-performance training stack.
