@@ -106,9 +106,10 @@ made.)
 ### Not done in this pass
 
 **Matched FIM follow-up** (an MF-053-style normal-vs-FIM comparison rerun on this real gate) was not
-performed — it requires a second real training run under a different data mixture and was out of
-scope for this pass. This is the one remaining empirical gap before `freeze_protocol.py` could move
-this protocol from `draft` to `frozen`.
+performed in this original pass — it required a second real training run under a different data
+mixture. This was the one remaining empirical gap before `freeze_protocol.py` could move this
+protocol from `draft` to `frozen`. **Update (2026-08-26): now done — see the "MF-063 FIM follow-up"
+section below, which also freezes the protocol.**
 
 ## Prerequisite bug fix: `KVCache` device-index mismatch
 
@@ -120,3 +121,104 @@ compared it against the latter. Fixed in `src/minifrontier/cache.py` by resolvin
 allocation time. This blocked every documented `--device cuda` command in the project and was
 invisible to CPU-only CI (CPU has no index ambiguity). Regression-covered by the new
 `test_cuda_bfloat16_full_and_cached_logits_match_within_declared_tolerance` test.
+
+## MF-063 FIM follow-up (2026-08-26) — closes the last empirical gap before freezing
+
+This is the "not done in this pass" item above, now run for real on the same RTX 2070 SUPER. It is a
+**bounded engineering comparison**, not an effect-size claim (`scripts/compare_fim.py` itself labels
+its output `"status": "bounded_engineering_comparison"`, `"quality_claim": false`) — the corpus below
+is small enough that both arms partly memorize it, so the interesting result is that the pipeline is
+correct and the two arms are genuinely matched, not that either loss number says something about
+FIM's effect at production scale (that requires the real MF-053-scale-or-larger run this protocol
+still owes once MF-064/065 exist).
+
+### Code corpus and provenance
+
+Unlike FineWeb-Edu, this needed a *permissively licensed code* source (`PERMISSIVE_CODE_LICENSES` in
+`src/minifrontier/data.py`). Rather than reach for a new external dependency with its own licensing
+review, this run uses **this repository's own Apache-2.0 Python source** (`src/minifrontier/*.py`,
+`scripts/*.py`, `train/*.py` — 61 files) as the code manifest: `source` = this repo's real GitHub
+remote (`https://github.com/igal-abachi-dev/AI-LLM-Transformers-Edu-Model`), `revision` = the real
+commit SHA this run executed at (`4986326304f399c1aaf896e1856753ebeced36df`), `license` =
+`Apache-2.0` (see `LICENSE` — already the project's own license, so provenance is unambiguous and
+requires no separate legal review).
+
+`scripts/prepare_code.py` admitted 57/61 files (1 rejected as `generated`, 3 as `personal_data` —
+real hits from the admission screen, not synthetic test cases; the screen also checked the corpus
+against `eval/fixtures/code_fim_v1.jsonl` via freshly computed exact/simhash signatures
+(`data/mf063-fim-followup/evaluation-signatures.json`, built with the same `normalized_sha256`/
+`simhash64` functions `admit_documents` itself uses) — zero evaluation-fixture overlap found, as
+expected since the fixtures are small original synthetic functions distinct from this project's real
+source.
+
+### FIM mixing and packing
+
+`scripts/apply_fim.py --seed 42` produced two manifests from the same 57 approved documents: `--rate
+0.0` (0/57 transformed — a true unchanged baseline) and `--rate 0.15` (7/57 transformed, ≈12% at this
+sample size, consistent with the frozen default). Both were packed independently with
+`scripts/prepare_data.py` using the project's one frozen tokenizer (`data/tokenizer`,
+`sha256=6991f9356bc3ce5661292fe14b8980c0b2188ec84b6389c9b760dadd86aba402`) at `sequence_length=1024`:
+both arms packed to **exactly 153 train sequences / 156,672 non-padding tokens** — FIM rearranges
+text in place rather than adding or removing characters, so packing boundaries landed identically
+even though the actual token content differs (confirmed by differing `tokens_sha256` but identical
+`counts_sha256` in each `metadata.json`).
+
+### Training comparison
+
+`scripts/compare_fim.py --config configs/50m-edu.toml --seed 42 --batch-size 2 --updates 300 --device
+cuda` (real CUDA run, ~73 seconds wall time). Both arms are freshly initialized from the *same*
+starting weights (the script copies `baseline.state_dict()` into the FIM model before training) and
+consumed **identically 613,800 tokens** each (the script itself raises if they don't match — they
+matched by construction). `training_config.precision="auto"` resolved to real Tensor Core **FP16**
+with `GradScaler` on this hardware (`grad_scaler_state.scale=32768.0` in the output), per MF-075's
+hardware-aware `"auto"` policy — not emulated BF16.
+
+| Arm | Final loss | Final grad norm | Consumed tokens |
+| --- | ---: | ---: | ---: |
+| Baseline (no FIM) | **1.612** | 3.122 | 613,800 |
+| FIM (rate 0.15) | **1.668** | 3.192 | 613,800 |
+
+Raw record: `artifacts/mf063-fim-gate/comparison.json`.
+
+**Reading this honestly**: both losses are low because 153 sequences repeated over 300 updates
+(≈3.9 cycles) at batch_size=2 is heavy repetition of a tiny corpus — this is closer to memorization
+than generalization, expected and fine for a pipeline-correctness check. The FIM arm's slightly
+higher final loss and gradient norm is the real, visible **cost** `compare_fim.py`'s own docstring
+warns about: part of its identical token budget went to learning the `<|fim_prefix|>`/`<|fim_suffix|>`/
+`<|fim_middle|>` rearrangement protocol on 7 of the 57 documents, which is a real distributional
+shift the plain-continuation arm never has to absorb. This matches the expected qualitative
+direction (FIM costs some ordinary-continuation budget) without claiming a production-scale effect
+size — that claim needs the larger, longer run this protocol is now freezing itself to eventually
+require.
+
+### Protocol frozen
+
+With this evidence in hand, `scripts/freeze_protocol.py` produced a valid `status="frozen"` protocol:
+
+```
+scripts/freeze_protocol.py --status frozen \
+  --tokenizer-sha256 6991f9356bc3ce5661292fe14b8980c0b2188ec84b6389c9b760dadd86aba402 \
+  --data-mixture-id fineweb-edu-v1-pinned-87f09149 \
+  --target-tokens 3000000000 --batch-tokens 2048 --sequence-length 1024 \
+  --optimizer adamw --learning-rate 3e-4 --seeds 42 --evaluation-interval 500 \
+  --evidence reports/mf063-50m-gate-validation.json reports/mf063-50m-gate-lmeval.json \
+             artifacts/mf063-fim-gate/comparison.json artifacts/mf063-50m-gate/run.json \
+  --output artifacts/mf063-protocol/frozen.json
+```
+
+`target_tokens=3,000,000,000` is kept at the full frozen V1 target (not lowered to match this
+session's smaller planned MF-064/065 budget) — freezing declares the **recipe** the eventual 3B-token
+runs are meant to follow, backed by this measured small-scale evidence that the recipe is sound, not
+a claim that 3B tokens have already been trained. `undertrained_approved` correctly stays `false`
+here: `TrainingProtocol.__post_init__` (`src/minifrontier/release.py`) only requires that flag when
+`target_tokens < 3_000_000_000`, which does not apply to the frozen protocol itself. The user has
+separately decided MF-064/065 will actually run at a smaller, explicitly-undertrained token budget
+"for now" — that is a property of those runs' own evidence/labeling when they happen, not of this
+frozen recipe. Raw record: `artifacts/mf063-protocol/frozen.json`.
+
+### Reproducing this pass
+
+Working files live under `data/mf063-fim-followup/` (gitignored, like all of `data/`): a small
+one-off `build_manifest.py` (documents its own logic inline) builds the raw code manifest and
+evaluation-signatures JSON from this repo's own source at the commit above; everything downstream
+uses only the existing project CLIs.
