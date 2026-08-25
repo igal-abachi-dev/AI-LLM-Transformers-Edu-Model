@@ -108,7 +108,64 @@ All sizes use a single 16,384-token byte-level BPE tokenizer, 64-dimensional att
 
 The required hardware target is one NVIDIA GPU with 24 GB for comfortable 50M/150M work; larger presets require profiling and may need smaller microbatches or activation checkpointing. CPU mode supports setup, correctness tests, and small labs.
 
-8GB will work on 50M-150M , for 500M you need 24GB gpu
+8GB will work on 50M-150M , for 500M+ you need 24GB gpu
+
+Labs should construct tiny_edu(n_layers=4) whenever comparing architectures with tiny_modern so it will be comparable
+
+
+## Model architecture assessment
+
+MiniFrontier has a sound architecture and an unusually good educational neural core. 
+Edu is a clean LLaMA-style baseline; 
+Modern adds coherent, relevant changes without turning the repository into a framework.
+
+  The core implementation appears mathematically correct from static review and existing evidence:
+
+  - Correct pre-RMSNorm residual ordering.
+  - Correct bias-free SwiGLU.
+  - Split-half LLaMA RoPE with an independent Transformers parity test.
+  - Proper causal and offset masking.
+  - Manual FP32 attention as a readable reference.
+  - Fused full-context SDPA.
+  - Native compact GQA without repeating K/V on optimized paths.
+  - Correct shifted next-token loss and token-weighted gradient accumulation.
+  - Tied embeddings and depth-scaled residual initialization.
+  - Well-designed linear and ring KV caches with rollback and absolute-position handling.
+
+  I would describe it as “ready for hardening and real training,” not “proven release-ready.” The canonical 150M models are still untrained, 
+  
+
+
+   Model          Layers    Width    Q/KV heads      FFN    Attention              Parameters
+  ━━━━━━━━━━━━━  ━━━━━━━━  ━━━━━━━  ━━━━━━━━━━━━  ━━━━━━━  ━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━
+   tiny Edu            2       32           4/4       96    Full MHA                   28,832
+  ─────────────  ────────  ───────  ────────────  ───────  ────────────────────  ─────────────
+   tiny Modern         4       32           4/2       96    3 local + 1 global         51,552
+  ─────────────  ────────  ───────  ────────────  ───────  ────────────────────  ─────────────
+   50M Edu            14      512           8/8    1,408    Full MHA               53,361,152
+  ─────────────  ────────  ───────  ────────────  ───────  ────────────────────  ─────────────
+   50M Modern         14      512           8/2    1,408    Hybrid GQA             47,857,920
+  ─────────────  ────────  ───────  ────────────  ───────  ────────────────────  ─────────────
+   150M Edu           20      768         12/12    2,048    Full MHA              154,172,160
+  ─────────────  ────────  ───────  ────────────  ───────  ────────────────────  ─────────────
+   150M Modern        20      768          12/4    2,048    Hybrid GQA            138,446,080
+
+
+These proportions are sensible:
+
+  - Head dimension 64 in production presets is conventional and efficient.
+  - d_ff ≈ 2.67 × d_model is appropriate for a three-matrix SwiGLU and roughly preserves the parameter cost of a traditional 4× two-matrix MLP.
+  - A 16K vocabulary is a strong choice for models this small because it limits embedding and softmax cost.
+  - GQA ratios of 4:1 at 50M and 3:1 at 150M are reasonable.
+  - Tied embeddings are particularly valuable at this scale.
+  - RoPE everywhere by default is the safe choice; global NoPE should remain experimental.
+
+
+- [Future plan for 350M Modern model](future-plan.md)
+better for general chat and coding completions
+
+(1B-3B need to lease paid servers to train the model , not feasable on home pc single gpu,
+7B+ needs massive resources)
 
 ## V1 scope
 
