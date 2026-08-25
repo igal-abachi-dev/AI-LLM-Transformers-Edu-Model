@@ -69,6 +69,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--weight-decay", type=float, default=0.1)
     parser.add_argument("--gradient-clip", type=float, default=1.0)
     parser.add_argument("--checkpoint-interval", type=int, default=100)
+    parser.add_argument(
+        "--no-checkpoint",
+        action="store_true",
+        help=(
+            "Skip writing any checkpoint (interval or final); only run.json is written. "
+            "For bounded benchmark/throughput runs whose weights are throwaway -- avoids "
+            "writing hundreds of MB to GB of optimizer/model state that would just be "
+            "deleted after reading the report."
+        ),
+    )
     parser.add_argument("--activation-checkpointing", action="store_true")
     parser.add_argument("--compile", action="store_true")
     parser.add_argument("--compile-backend")
@@ -77,7 +87,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
-    if args.checkpoint_interval <= 0:
+    if not args.no_checkpoint and args.checkpoint_interval <= 0:
         raise ValueError("checkpoint_interval must be positive")
     model_config = ModelConfig.from_toml(args.config)
     train_config = TrainingConfig(
@@ -160,24 +170,25 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         optimizer=optimizer,
         schedule=schedule,
         state=state,
-        update_callback=checkpoint_callback,
+        update_callback=None if args.no_checkpoint else checkpoint_callback,
         forward_model=execution_model,
     )
     elapsed = time.perf_counter() - started
-    final_path = args.output / "final"
-    save_training_checkpoint(
-        final_path,
-        model,
-        optimizer=optimizer,
-        scheduler=schedule,
-        trainer_state={
-            "training_state": state.to_dict(),
-            "training_config": asdict(train_config),
-            "compile_report": asdict(compile_report),
-            "precision": asdict(policy),
-        },
-        data_cursor=provider.state_dict(),
-    )
+    if not args.no_checkpoint:
+        final_path = args.output / "final"
+        save_training_checkpoint(
+            final_path,
+            model,
+            optimizer=optimizer,
+            scheduler=schedule,
+            trainer_state={
+                "training_state": state.to_dict(),
+                "training_config": asdict(train_config),
+                "compile_report": asdict(compile_report),
+                "precision": asdict(policy),
+            },
+            data_cursor=provider.state_dict(),
+        )
     peak_allocated = torch.cuda.max_memory_allocated(device) if device.type == "cuda" else 0
     peak_reserved = torch.cuda.max_memory_reserved(device) if device.type == "cuda" else 0
     total_vram = (

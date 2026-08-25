@@ -62,6 +62,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--gradient-clip", type=float, default=1.0)
     parser.add_argument("--checkpoint-interval", type=int, default=100)
+    parser.add_argument(
+        "--no-checkpoint",
+        action="store_true",
+        help="Skip writing any checkpoint (interval or final); for bounded benchmark runs only.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 
@@ -97,7 +102,7 @@ def _batch_packs(packs: list[TrainingBatch], batch_size: int) -> list[TrainingBa
 
 def main() -> None:
     args = parse_args()
-    if args.checkpoint_interval <= 0:
+    if not args.no_checkpoint and args.checkpoint_interval <= 0:
         raise ValueError("checkpoint_interval must be positive")
     seed_everything(args.seed, deterministic=args.device == "cpu")
     config = ModelConfig(
@@ -188,21 +193,22 @@ def main() -> None:
         optimizer=optimizer,
         schedule=schedule,
         state=state,
-        update_callback=checkpoint_callback,
+        update_callback=None if args.no_checkpoint else checkpoint_callback,
     )
-    save_training_checkpoint(
-        args.output / "final",
-        model,
-        optimizer=optimizer,
-        scheduler=schedule,
-        trainer_state={
-            "stage": "assistant_only_sft",
-            "training_state": state.to_dict(),
-            "training_config": asdict(training),
-            "lineage": lineage,
-        },
-        data_cursor=provider.state_dict(),
-    )
+    if not args.no_checkpoint:
+        save_training_checkpoint(
+            args.output / "final",
+            model,
+            optimizer=optimizer,
+            scheduler=schedule,
+            trainer_state={
+                "stage": "assistant_only_sft",
+                "training_state": state.to_dict(),
+                "training_config": asdict(training),
+                "lineage": lineage,
+            },
+            data_cursor=provider.state_dict(),
+        )
     print(f"completed {state.completed_updates} assistant-only SFT updates")
 
 

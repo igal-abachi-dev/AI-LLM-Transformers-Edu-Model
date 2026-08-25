@@ -78,6 +78,32 @@ class TrainingProtocol:
         return cls(**values)
 
 
+def verify_release(directory: str | Path) -> dict[str, object]:
+    """Load-test one release directory: manifest integrity, no pickle state, finite logits.
+
+    The single-release counterpart to ``audit_release_pair`` -- used before an
+    irreversible action (like deleting the source training checkpoint) is allowed
+    to trust that a fresh export actually is a complete, loadable release rather
+    than, say, a partially-written directory.
+    """
+
+    root = Path(directory)
+    verify_release_manifest(root)
+    if any(root.rglob("training_state.pt")):
+        raise ValueError("published release must not contain pickle training state")
+    model, tokenizer = load_release(root)
+    prompt = torch.tensor([[tokenizer.bos_id, tokenizer.eos_id]])
+    with torch.no_grad():
+        logits = model(prompt).logits
+    if not torch.isfinite(logits).all():
+        raise ValueError("release produced non-finite logits on a load-test forward pass")
+    return {
+        "status": "load_tested",
+        "parameters": model.parameter_count(),
+        "logits_finite": True,
+    }
+
+
 def audit_release_pair(
     edu_directory: str | Path,
     modern_directory: str | Path,
