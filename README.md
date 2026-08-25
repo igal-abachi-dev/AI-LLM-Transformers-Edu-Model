@@ -1,6 +1,9 @@
 # AI-LLM-Transformers-Edu-Model
 AI LLM implementation for learning about transformers and ai models
-inspired by Muse-Glimmer / Llama4 / Qwen3/ GPT...
+inspired by Muse-Glimmer / Llama4 / Qwen3/ GPT oss...
+
+the idea is similar to: nanogpt/nanochat/llm.c , 
+but this is a 150-350M model that is designed to train and run on home consumer pc hardrware like single nvidia geforce rtx gpu , and not just H100/DGX and more advanced hw/server-farm
 
 # MiniFrontier
 
