@@ -528,17 +528,23 @@ This backlog freezes the build described in [`plan.md`](../plan.md): one raw-PyT
 
 ### MF-064 — Train MiniFrontier-150M-Edu
 
-- **Priority / state:** P0 / Planned
+- **Priority / state:** P0 / Done (reduced-budget pass; full 3B-token run deferred)
 - **Depends on:** MF-063
 - **Deliverable:** canonical Edu checkpoint, logs, and resumable training state.
 - **Acceptance:** approved token budget completes without unresolved instability; best/final checkpoints and run metadata are retained.
+- **Status note:** by explicit user decision (2026-08-26), this pass ran a real but deliberately reduced ~150M-token budget rather than the frozen protocol's 3B-token target — the full 3B-token run is deferred to later (this checkpoint is explicitly **undertrained** relative to that target, per MF-063's own acceptance criterion for a stopped-early run). Real data: a newly prepared `data/shards/mf064-150m-train` pool, 45,789,184 non-padding real FineWeb-Edu train tokens (pinned revision, documents 5,000+, past what the tokenizer and the MF-063 gate already consumed; 41,976/42,000 admitted, 2 exact + 22 near duplicates rejected), 436,224 validation tokens. `configs/150m-edu.toml`, FP16 (real Tensor Core, not emulated BF16 — see MF-075), batch_size=4, 36,620 updates, seed 42, on the RTX 2070 Super via `train/pretrain.py --device cuda`.
+  - **Real result** (`artifacts/mf064-150m-edu/run.json`): 149,849,040 tokens consumed, train loss 9.7→**3.525**, 10,843.1 tok/s, wall time 13,819.8s (3.84h), peak allocated VRAM 6.65GB / reserved 7.24GB (no thrashing, matching the MF-049/075 real-data benchmark for this exact config).
+  - **Validation** (`reports/mf064-150m-edu-validation.json`, same-seed untrained model as "before" baseline): cross-entropy 10.19→**3.79**, perplexity 26,545→**44.1**, bits/byte 3.43→**1.27** — a much larger real improvement than the MF-063 50M gate's 2.2M-token pass (which only reached CE 6.11 / PPL 450), consistent with ~68x more tokens and 3x more parameters.
+  - **Inference evidence**: exported via `scripts/export.py --keep-source` (source checkpoint retained for possible later continuation toward 3B) to `artifacts/mf064-150m-edu-release`; a real CPU greedy sample (`scripts/sample.py --temperature 0.0`) from the trained checkpoint: *"The history of science shows that the world's population is growing at an alarming rate. The world's population is growing at an alarming rate..."* — coherent, grammatical English, but repetitive under greedy decoding, honestly consistent with a real-but-undertrained 150M checkpoint rather than a fluency claim.
+  - Best/final checkpoints (`artifacts/mf064-150m-edu/checkpoint-*`, `final/`) are retained on disk for a possible later resume toward the frozen 3B target; this task's own scope (a real, evaluated, exported reduced-budget checkpoint) is complete.
 
 ### MF-065 — Train MiniFrontier-150M-Modern
 
-- **Priority / state:** P0 / Planned
+- **Priority / state:** P0 / In progress
 - **Depends on:** MF-063
 - **Deliverable:** canonical Modern checkpoint under the matched protocol.
 - **Acceptance:** tokenizer, data order/budget, batch tokens, context, and evaluation match Edu except documented architecture-specific settings.
+- **Status note:** same reduced-budget decision and data pool as [[MF-064]] (`data/shards/mf064-150m-train`, tokenizer, seed, ~150M target tokens). Architecture-specific deviation, real-hardware-measured and necessary rather than arbitrary: batch_size=2 (not Edu's 4) — a real calibration (`artifacts/calibration-150m-modern-fp16-b*`) found batch_size=4 for this hybrid/FlexAttention preset pushed peak reserved VRAM to 9.25GB, over this 8GB card's physical budget, causing Windows CUDA sysmem-fallback thrashing (819 tok/s); batch_size=2 measured 4,224 tok/s at a safe 5.63GB peak. Activation checkpointing was also tried (batch 4 and 6) and did not beat batch_size=2's throughput, unlike Edu — Modern's bottleneck here is unfused eager FlexAttention compute, not VRAM headroom. ~73,242 updates targeting ~150M consumed tokens. Also explicitly labeled **undertrained** relative to the frozen 3B-token target, matching [[MF-064]].
 
 ### MF-066 — Produce the canonical teaching comparison
 
