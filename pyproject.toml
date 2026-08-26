@@ -80,6 +80,7 @@ minifrontier-overfit = "minifrontier.overfit:main"
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = [
     "slow: bounded training tests excluded from the default fast suite",
     "reference: optional parity tests against an external implementation",

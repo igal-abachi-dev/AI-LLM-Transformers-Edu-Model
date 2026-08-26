@@ -357,8 +357,8 @@ token_embedding.weight`. Same table read in both directions: "ID → meaning" on
 idea that confuses everyone the first time:
 
 ```python
-shifted_logits = logits[:, :-1, :]   # my guesses, ignoring the last position
-targets        = tokens[:, 1:]        # the real answers, shifted left by one
+shifted_logits = logits[:, :-1, :]  # my guesses, ignoring the last position
+targets = tokens[:, 1:]  # the real answers, shifted left by one
 ```
 
 Every position guesses its *neighbour to the right*. So one sentence of 32 tokens gives you
@@ -433,9 +433,9 @@ group 0; heads 2 and 3 share KV group 1. In `config.py`, `queries_per_kv = 2`.
 In the code, `k_proj` and `v_proj` output 16 numbers instead of 32:
 
 ```python
-self.q_proj = nn.Linear(d_model, n_heads    * head_dim, bias=False)   # 32 → 32
-self.k_proj = nn.Linear(d_model, n_kv_heads * head_dim, bias=False)   # 32 → 16
-self.v_proj = nn.Linear(d_model, n_kv_heads * head_dim, bias=False)   # 32 → 16
+self.q_proj = nn.Linear(d_model, n_heads * head_dim, bias=False)  # 32 → 32
+self.k_proj = nn.Linear(d_model, n_kv_heads * head_dim, bias=False)  # 32 → 16
+self.v_proj = nn.Linear(d_model, n_kv_heads * head_dim, bias=False)  # 32 → 16
 ```
 
 Same trick at 150M scale: 12 Q heads, 4 KV heads → cache drops by 3×.

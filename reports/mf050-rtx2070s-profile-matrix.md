@@ -126,6 +126,7 @@ configuration — crossing more than two full 512-token ring wraps (1223/512 ≈
 ```python
 """One-off diagnostic (not committed): measure ring-cache append/rollback allocation
 traffic vs the linear/full-history cache, in isolation from a full model forward pass."""
+
 from __future__ import annotations
 import time
 import torch
@@ -134,13 +135,24 @@ from minifrontier.config import ModelConfig
 
 config = ModelConfig.from_toml("configs/150m-modern.toml")
 device = torch.device("cuda")
-batch_size, n_kv_heads, head_dim, window = 1, config.n_kv_heads, config.head_dim, config.local_window
+batch_size, n_kv_heads, head_dim, window = (
+    1,
+    config.n_kv_heads,
+    config.head_dim,
+    config.local_window,
+)
 n_steps = window * 2 + 200
+
 
 def run(*, ring: bool, capacity: int, steps: int, commit_each_step: bool) -> dict:
     cache = LayerKVCache.allocate(
-        batch_size=batch_size, n_kv_heads=n_kv_heads, capacity=capacity,
-        head_dim=head_dim, device=device, dtype=torch.bfloat16, ring=ring,
+        batch_size=batch_size,
+        n_kv_heads=n_kv_heads,
+        capacity=capacity,
+        head_dim=head_dim,
+        device=device,
+        dtype=torch.bfloat16,
+        ring=ring,
     )
     warm_k = torch.randn(batch_size, n_kv_heads, 1, head_dim, device=device, dtype=torch.bfloat16)
     warm_v = torch.randn(batch_size, n_kv_heads, 1, head_dim, device=device, dtype=torch.bfloat16)
@@ -161,16 +173,23 @@ def run(*, ring: bool, capacity: int, steps: int, commit_each_step: bool) -> dic
     elapsed = time.perf_counter() - started
     stats_after = torch.cuda.memory_stats(device)
     return {
-        "elapsed_seconds": elapsed, "seconds_per_append": elapsed / (steps - 1),
+        "elapsed_seconds": elapsed,
+        "seconds_per_append": elapsed / (steps - 1),
         "num_alloc_retries": stats_after["num_alloc_retries"] - stats_before["num_alloc_retries"],
-        "allocation_count_delta": stats_after["allocation.all.current"] - stats_before["allocation.all.current"],
+        "allocation_count_delta": stats_after["allocation.all.current"]
+        - stats_before["allocation.all.current"],
         "peak_active_bytes": torch.cuda.max_memory_allocated(device),
         "peak_reserved_bytes": torch.cuda.max_memory_reserved(device),
     }
 
-print(run(ring=False, capacity=n_steps, steps=n_steps, commit_each_step=True))   # linear baseline
-print(run(ring=True, capacity=window, steps=n_steps, commit_each_step=True))     # ring, committed each step
-print(run(ring=True, capacity=window, steps=n_steps, commit_each_step=False))    # ring, rollback never committed
+
+print(run(ring=False, capacity=n_steps, steps=n_steps, commit_each_step=True))  # linear baseline
+print(
+    run(ring=True, capacity=window, steps=n_steps, commit_each_step=True)
+)  # ring, committed each step
+print(
+    run(ring=True, capacity=window, steps=n_steps, commit_each_step=False)
+)  # ring, rollback never committed
 ```
 
 | Cache | Per-append time | vs. linear | Alloc-count delta | Peak active bytes |

@@ -24,6 +24,7 @@ EXCLUDED_DIRECTORIES = {
     ".venv",
     "__pycache__",
     "artifacts",
+    "data",
     "inference",
     "tmp",
 }
