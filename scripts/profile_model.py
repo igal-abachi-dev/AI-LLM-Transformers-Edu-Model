@@ -28,6 +28,7 @@ from pathlib import Path
 
 import torch
 
+from minifrontier.attention import set_flex_attention_compilation
 from minifrontier.cache import KVCache
 from minifrontier.compilation import maybe_compile
 from minifrontier.config import ModelConfig
@@ -99,6 +100,7 @@ def main() -> None:
             path="prefill",
             backend=args.compile_backend,
         )
+        set_flex_attention_compilation(args.compile_prefill)
         tokens = torch.randint(
             0,
             config.vocab_size,

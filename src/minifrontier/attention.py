@@ -30,6 +30,8 @@ one; run the fast ones.
 from __future__ import annotations
 
 import math
+import warnings
+from collections.abc import Callable
 from typing import Any
 
 import torch
@@ -56,6 +58,66 @@ def clear_block_mask_cache() -> None:
 
 def block_mask_cache_size() -> int:
     return len(_BLOCK_MASK_CACHE)
+
+
+# Wrapping the WHOLE model in `torch.compile` (see `compilation.py`) does not
+# make FlexAttention's kernel fuse: FlexAttention checks whether it is itself
+# being compiled, and a plain call from inside a compiled model still hits a
+# graph break at the block-mask cache lookup, so it silently runs its slow
+# eager fallback (the "flex_attention called without torch.compile()" warning)
+# regardless of the outer model's compile status. FlexAttention's own docs say
+# the fix is to compile the function directly -- so that is a second, narrower
+# switch, independent of the model-level `--compile` flag, off by default so
+# eager tests (the correctness baseline) are unaffected unless a caller opts in.
+_flex_attention_compilation_enabled = False
+_compiled_flex_attention: Callable[..., torch.Tensor] | None = None
+_flex_attention_compilation_failed = False
+
+
+def set_flex_attention_compilation(enabled: bool) -> None:
+    """Enable or disable compiling the FlexAttention kernel itself.
+
+    Callers that already request `--compile` for the whole model (training,
+    profiling) should also call this, since it addresses a real gap that
+    whole-model compilation does not: FlexAttention needs to be the thing
+    compiled, not merely called from within a compiled region.
+    """
+
+    global _flex_attention_compilation_enabled, _compiled_flex_attention
+    global _flex_attention_compilation_failed
+    _flex_attention_compilation_enabled = enabled
+    _compiled_flex_attention = None
+    _flex_attention_compilation_failed = False
+
+
+def flex_attention_compilation_enabled() -> bool:
+    return _flex_attention_compilation_enabled
+
+
+def _flex_attention_callable(query: torch.Tensor, **kwargs: Any) -> torch.Tensor:
+    """Run FlexAttention, using a compiled kernel when requested and healthy.
+
+    Compilation is attempted at most once per process: a failure disables it
+    permanently (falling back to the correctness-preserving eager kernel for
+    the rest of the run) rather than retrying and failing on every call.
+    """
+
+    global _compiled_flex_attention, _flex_attention_compilation_failed
+    if not _flex_attention_compilation_enabled or _flex_attention_compilation_failed:
+        return flex_attention(query, **kwargs)
+    try:
+        if _compiled_flex_attention is None:
+            _compiled_flex_attention = torch.compile(flex_attention)
+        return _compiled_flex_attention(query, **kwargs)
+    except Exception as error:
+        _flex_attention_compilation_failed = True
+        warnings.warn(
+            f"compiled FlexAttention failed, falling back to eager: "
+            f"{type(error).__name__}: {error}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return flex_attention(query, **kwargs)
 
 
 def _flex_block_mask(
@@ -369,10 +431,10 @@ class CausalSelfAttention(nn.Module):
             # provably empty, and Flex is the path that can skip them outright.
             if dropout_p:
                 raise ValueError("FlexAttention path requires dropout=0")
-            attended = flex_attention(
+            attended = _flex_attention_callable(
                 query,
-                key,
-                value,
+                key=key,
+                value=value,
                 block_mask=_flex_block_mask(
                     query_length=sequence,
                     key_length=key.shape[-2],

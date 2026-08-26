@@ -1,0 +1,23 @@
+# Custom task: scores the project owner's locally-downloaded GPQA-Diamond
+# parquet (gated dataset, accepted via their own Hugging Face account -- see
+# utils.py for why this differs from lm-eval's built-in gpqa_diamond_zeroshot).
+task: gpqa_diamond_local
+dataset_path: parquet
+dataset_kwargs:
+  data_files:
+    test: gpqa-diamond/test/gpqa_diamond.parquet
+test_split: test
+output_type: multiple_choice
+doc_to_text: "{{question}}\nAnswer:"
+doc_to_target: !function utils.doc_to_target
+doc_to_choice: ["(A)", "(B)", "(C)", "(D)"]
+num_fewshot: 0
+metric_list:
+  - metric: acc
+    aggregation: mean
+    higher_is_better: true
+  - metric: acc_norm
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

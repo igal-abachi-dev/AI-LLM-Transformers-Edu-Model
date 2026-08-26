@@ -283,3 +283,27 @@ gate: multi-stream/concurrent-request serving, any first-party variable-length s
 (optional per the decision above), and a batch-size sweep on the 150M-modern hybrid preset (the
 existing hybrid rows are batch=1 only) — the last of these would be reasonable follow-up work but is
 not required by MF-050's acceptance criteria, which is single-stream/fixed-batch scoped throughout.
+
+## Addendum (2026-08-26, MF-078): compiling FlexAttention directly does not help on this hardware
+
+The eager-`auto`-vs-manual finding above (6.4x slower) raised an obvious question: does
+`torch.compile(flex_attention)` — compiling the FlexAttention kernel itself, as its own runtime
+warning recommends, rather than just wrapping the outer model — fix it? Implemented and tested for
+real (`src/minifrontier/attention.py`'s `set_flex_attention_compilation`, `tasks/backlog.md` MF-078).
+
+**Real result: no.** Both CPU and this RTX 2070 Super (CUDA) fail identically with
+`InductorError: LoweringException: SubgraphLoweringException: Buffers cannot be created while
+lowering a pointwise subgraph` when actually compiling `flex_attention` — a real Inductor limitation
+lowering the `mask_mod` subgraph our `_flex_block_mask` builds, not a bug in this project's masking
+logic (the same `mask_mod` predicate is unit-tested against the manual reference and matches). The
+new fallback mechanism catches this correctly and produces output identical to eager (150m-modern
+batch=2 FP16: loss `7.716275`, matching the uncompiled baseline exactly at 60 updates), but
+throughput is *worse* than uncompiled while it's compiling for nothing: 2,307-2,351 tok/s vs. the
+4,224 tok/s uncompiled baseline.
+
+**Conclusion: 150m-modern's real training throughput on this hardware stays at ~4,224 tok/s**
+(batch=2, FP16, eager, real FineWeb-Edu data — see MF-064/065's backlog entries) — not because this
+wasn't investigated, but because it was tested and the fix doesn't work with this PyTorch/Inductor
+build. The infrastructure is real and safe (compiles only when explicitly requested via `--compile`,
+falls back cleanly on failure, never retries a known-broken path) and will start working automatically
+if a future PyTorch release fixes this specific lowering limitation.

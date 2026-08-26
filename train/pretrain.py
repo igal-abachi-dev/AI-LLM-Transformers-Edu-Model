@@ -29,6 +29,7 @@ from pathlib import Path
 
 import torch
 
+from minifrontier.attention import set_flex_attention_compilation
 from minifrontier.checkpoint import (
     load_training_checkpoint,
     save_training_checkpoint,
@@ -129,6 +130,10 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         backend=args.compile_backend,
         fail_on_error=args.compile_fail,
     )
+    # Whole-model compilation above does not fuse FlexAttention's kernel (see
+    # `attention.py`'s `set_flex_attention_compilation` docstring) -- this is the
+    # separate, narrower switch that actually addresses it for local layers.
+    set_flex_attention_compilation(args.compile)
 
     args.output.mkdir(parents=True, exist_ok=True)
 

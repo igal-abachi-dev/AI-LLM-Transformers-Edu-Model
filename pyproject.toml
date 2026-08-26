@@ -69,6 +69,8 @@ dev = [
 eval = [
     "chardet<6",
     "lm-eval>=0.4.12",
+    "langdetect>=1.0.9",
+    "immutabledict>=4.3.1",
 ]
 labs = [
     "matplotlib>=3.11.1",

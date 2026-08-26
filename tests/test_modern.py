@@ -9,6 +9,8 @@ from minifrontier.attention import (
     CausalSelfAttention,
     block_mask_cache_size,
     clear_block_mask_cache,
+    flex_attention_compilation_enabled,
+    set_flex_attention_compilation,
 )
 from minifrontier.cache import KVCache
 from minifrontier.config import ModelConfig
@@ -125,6 +127,82 @@ def test_flex_local_gqa_matches_manual_and_reuses_block_mask() -> None:
     with torch.no_grad():
         attention(inputs, cosine, sine, implementation="flex")
     assert block_mask_cache_size() == 1
+
+
+@pytest.mark.slow
+def test_compiled_flex_attention_matches_eager_flex() -> None:
+    """Compiling FlexAttention directly (not just the outer model) must not change the answer."""
+
+    torch.manual_seed(24)
+    clear_block_mask_cache()
+    config = ModelConfig.tiny_modern(n_layers=4, attention_impl="auto")
+    attention = CausalSelfAttention(config, layer_index=0).eval()
+    inputs = torch.randn(1, 6, config.d_model)
+    rope = RoPE(config.head_dim, config.max_seq_len)
+    cosine, sine = rope(torch.arange(6), dtype=inputs.dtype, device=inputs.device)
+    with torch.no_grad():
+        eager_flex = attention(inputs, cosine, sine, implementation="flex")
+
+    assert not flex_attention_compilation_enabled()
+    set_flex_attention_compilation(True)
+    try:
+        assert flex_attention_compilation_enabled()
+        with torch.no_grad():
+            compiled_flex = attention(inputs, cosine, sine, implementation="flex")
+        # A second call must reuse the same compiled callable rather than
+        # recompiling (the shape has not changed).
+        with torch.no_grad():
+            compiled_flex_again = attention(inputs, cosine, sine, implementation="flex")
+    finally:
+        set_flex_attention_compilation(False)
+
+    assert not flex_attention_compilation_enabled()
+    assert torch.allclose(eager_flex, compiled_flex, atol=3e-5)
+    assert torch.equal(compiled_flex, compiled_flex_again)
+
+
+def test_flex_attention_compilation_failure_falls_back_and_stays_disabled() -> None:
+    """A failed compiled call must degrade to eager and never retry the broken path.
+
+    This stands in the already-compiled callable directly (bypassing `torch.compile`
+    itself) rather than breaking `torch.compile` globally: FlexAttention's own eager
+    fallback also relies on `torch.compile` internally for its mask_mod handling, so
+    breaking `torch.compile` system-wide would take down the correctness-preserving
+    fallback path too and not exercise what this test actually cares about --that a
+    compiled *kernel* failure degrades safely and does not retry every call.
+    """
+
+    torch.manual_seed(25)
+    clear_block_mask_cache()
+    config = ModelConfig.tiny_modern(n_layers=4, attention_impl="auto")
+    attention = CausalSelfAttention(config, layer_index=0).eval()
+    inputs = torch.randn(1, 6, config.d_model)
+    rope = RoPE(config.head_dim, config.max_seq_len)
+    cosine, sine = rope(torch.arange(6), dtype=inputs.dtype, device=inputs.device)
+    with torch.no_grad():
+        eager_flex = attention(inputs, cosine, sine, implementation="flex")
+
+    calls = {"count": 0}
+
+    def broken_compiled(*_args, **_kwargs):
+        calls["count"] += 1
+        raise RuntimeError("simulated compiled-kernel failure")
+
+    set_flex_attention_compilation(True)
+    attention_module._compiled_flex_attention = broken_compiled
+    try:
+        with pytest.warns(RuntimeWarning, match="falling back to eager"), torch.no_grad():
+            first = attention(inputs, cosine, sine, implementation="flex")
+        assert calls["count"] == 1
+        # A second call must skip the already-failed compiled path entirely --
+        # no retry, no second warning.
+        with torch.no_grad():
+            second = attention(inputs, cosine, sine, implementation="flex")
+        assert calls["count"] == 1
+    finally:
+        set_flex_attention_compilation(False)
+    assert torch.equal(eager_flex, first)
+    assert torch.equal(eager_flex, second)
 
 
 @pytest.mark.parametrize("global_position_encoding", ["rope", "none"])
