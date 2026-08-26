@@ -1,0 +1,17 @@
+{
+  "after_training": {
+    "bits_per_byte": 1.3166479985745414,
+    "cross_entropy": 3.9138787023854804,
+    "perplexity": 50.09287099142386
+  },
+  "before_training_same_seed_untrained": {
+    "bits_per_byte": 3.423191941886242,
+    "cross_entropy": 10.175808606424306,
+    "perplexity": 26260.169602530746
+  },
+  "checkpoint": "artifacts\\mf065-150m-modern\\final",
+  "predicted_tokens": 435798,
+  "quality_claim": false,
+  "task": "MF-065-150m-modern-validation",
+  "validation_shard": "data\\shards\\mf064-150m-train\\validation"
+}
