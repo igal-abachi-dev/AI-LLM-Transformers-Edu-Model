@@ -67,6 +67,7 @@ The neural architecture and decoding machinery should remain small enough to rea
 
 
 ### What it is
+clean “from first principles to modern small LLM” project
 
 **MiniFrontier** (the core of the repo) is a clean, from-scratch PyTorch implementation of a decoder-only language model designed for learning. It targets a single consumer GPU and deliberately keeps the code small and readable enough to study in an afternoon.
 **It's a solid, high-quality educational repo** — especially if your goal is to deeply understand how modern decoder-only transformers (LLMs) work under the hood.
@@ -112,12 +113,29 @@ The required hardware target is one NVIDIA GPU with 24 GB for comfortable 50M/15
 
 Labs should construct tiny_edu(n_layers=4) whenever comparing architectures with tiny_modern so it will be comparable
 
-
 ## Model architecture assessment
 
 MiniFrontier has a sound architecture and an unusually good educational neural core. 
 Edu is a clean LLaMA-style baseline; 
 Modern adds coherent, relevant changes without turning the repository into a framework.
+
+From configs/350m-modern.toml:
+~350M parameters (28 layers, d_model=1024, 16 query heads / 4 KV heads → GQA, SwiGLU d_ff=2816, tied embeddings, 16k vocab)
+Context: 2048
+
+Coding completion / FIM: Promising. The project already has a deliberate, provenance-aware code + FIM path (15% rate, PSM-style, evaluation harnesses). A well-trained 350M Modern can become a useful local autocomplete / infill model for simple-to-medium tasks, especially if you keep feeding it good code data. It will not match 7B–14B specialized coding models.
+General chat: Possible after solid pretraining + SFT, but limited. Expect something closer to a lightweight local assistant (short context, weaker reasoning, narrower knowledge) rather than a daily driver that competes with current small open models (1–3B class) or anything larger. The README itself notes that 1B–3B already requires rented multi-GPU hardware.
+
+Practical ceiling on a single consumer GPU:
+
+350M is a reasonable sweet spot for training from scratch at home.
+Going much beyond that (or training for tens of billions of tokens) quickly becomes painful without cloud rentals.
+Inference of a finished 350M (quantized) will be fast and pleasant on the same hardware.
+
+
+As a future general-chat + coding model: Good foundation. A carefully trained 350M Modern can be a useful local tool (especially for code completion), but it will remain in the “small model / educational / specialized local” tier, not a replacement for larger open or closed models.
+If you want to push it toward usable chat/coding, prioritize: longer high-quality pretraining on a good mixture, stronger code/FIM weighting, solid SFT, and then quantization
+
 
   The core implementation appears mathematically correct from static review and existing evidence:
 
