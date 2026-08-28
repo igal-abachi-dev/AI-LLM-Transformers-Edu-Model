@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 450" width="880" height="450" role="img" aria-label="The transformer replaces sequential recurrence with all-pairs attention computed in one step">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}.bx{font-size:13px;fill:#16232E}.st{font-size:13px;font-weight:600;fill:#16232E}
+</style>
+<rect width="880" height="450" rx="4" fill="#F2F5F7"/><rect width="880" height="450" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="449" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="676" y="14" width="190" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="771" y="29" class="f tag" text-anchor="middle">Attention Is All You Need</text>
+<text x="32" y="42" class="g h1">2017: throw the recurrence away</text>
+<text x="32" y="63" class="g sub">"Attention Is All You Need". Every token looks at every other token, and the whole sentence is one matrix multiply.</text>
+<text x="40" y="98" class="g mut">RNN — SIX STEPS, ONE AFTER ANOTHER</text>
+<rect x="40" y="150" width="46" height="34" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/><line x1="88" y1="167" x2="98" y2="167" stroke="#C3D0D8" stroke-width="1.4"/><rect x="102" y="150" width="46" height="34" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/><line x1="150" y1="167" x2="160" y2="167" stroke="#C3D0D8" stroke-width="1.4"/><rect x="164" y="150" width="46" height="34" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/><line x1="212" y1="167" x2="222" y2="167" stroke="#C3D0D8" stroke-width="1.4"/><rect x="226" y="150" width="46" height="34" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/><line x1="274" y1="167" x2="284" y2="167" stroke="#C3D0D8" stroke-width="1.4"/><rect x="288" y="150" width="46" height="34" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/><line x1="336" y1="167" x2="346" y2="167" stroke="#C3D0D8" stroke-width="1.4"/><rect x="350" y="150" width="46" height="34" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="40" y="206" class="g mut">step 6 cannot start until step 5 has finished</text>
+<text x="474" y="98" class="g mut">TRANSFORMER — ONE STEP, ALL PAIRS</text>
+<path d="M497 150 Q 528 138 559 150" fill="none" stroke="#1F5F8B" stroke-width=".9" opacity=".4"/><path d="M497 150 Q 559 131 621 150" fill="none" stroke="#1F5F8B" stroke-width=".9" opacity=".4"/><path d="M497 150 Q 590 124 683 150" fill="none" stroke="#1F5F8B" stroke-width=".9" opacity=".4"/><path d="M497 150 Q 621 117 745 150" fill="none" stroke="#1F5F8B" stroke-width=".9" opacity=".4"/><path d="M497 150 Q 652 110 807 150" fill="none" stroke="#1F5F8B" stroke-width=".9" opacity=".4"/><path d="M559 150 Q 590 138 621 150" fill="none" stroke="#1F5F8B" stroke-width=".9" opacity=".4"/><path d="M559 150 Q 621 131 683 150" fill="none" stroke="#1F5F8B" stroke-width=".9" opacity=".4"/><path d="M559 150 Q 652 124 745 150" fill="none" stroke="#1F5F8B" stroke-width=".9" opacity=".4"/><path d="M559 150 Q 683 117 807 150" fill="none" stroke="#1F5F8B" stroke-width=".9" opacity=".4"/><path d="M621 150 Q 652 138 683 150" fill="none" stroke="#1F5F8B" stroke-width=".9" opacity=".4"/><path d="M621 150 Q 683 131 745 150" fill="none" stroke="#1F5F8B" stroke-width=".9" opacity=".4"/><path d="M621 150 Q 714 124 807 150" fill="none" stroke="#1F5F8B" stroke-width=".9" opacity=".4"/><path d="M683 150 Q 714 138 745 150" fill="none" stroke="#1F5F8B" stroke-width=".9" opacity=".4"/><path d="M683 150 Q 745 131 807 150" fill="none" stroke="#1F5F8B" stroke-width=".9" opacity=".4"/><path d="M745 150 Q 776 138 807 150" fill="none" stroke="#1F5F8B" stroke-width=".9" opacity=".4"/>
+<rect x="474" y="150" width="46" height="34" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><rect x="536" y="150" width="46" height="34" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><rect x="598" y="150" width="46" height="34" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><rect x="660" y="150" width="46" height="34" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><rect x="722" y="150" width="46" height="34" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><rect x="784" y="150" width="46" height="34" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="474" y="206" class="g mut">every arrow above is computed at the same moment</text>
+<line x1="452" y1="88" x2="452" y2="220" stroke="#C3D0D8"/>
+<rect x="40" y="236" width="386" height="118" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="56" y="258" class="g st">What was given up</text>
+<text x="56" y="280" class="g cap">Order. A pile of tokens with no arrows between them</text>
+<text x="56" y="298" class="g cap">has no idea which came first, so position has to be</text>
+<text x="56" y="316" class="g cap">put back deliberately — that is what RoPE is for, and</text>
+<text x="56" y="334" class="g cap">why it needed inventing at all.</text>
+<rect x="454" y="236" width="386" height="118" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="470" y="258" class="g st">What was won</text>
+<text x="470" y="280" class="g cap">Nothing waits for anything. The whole sentence becomes</text>
+<text x="470" y="298" class="g cap">one large matrix multiplication, which is precisely the</text>
+<text x="470" y="316" class="g cap">operation a GPU has thousands of cores for.</text>
+<text x="470" y="336" class="g mut">quality followed later; the first win was that it fit the hardware</text>
+<rect x="40" y="372" width="800" height="62" rx="4" fill="#F7EFDF" stroke="#C79A2E"/>
+<text x="58" y="394" class="g cap" font-weight="600">The cost that came with it, and never left.</text>
+<text x="58" y="414" class="g cap">All pairs means the work grows with the square of the sentence length. Everything in Part 3 — GQA, hybrid attention, ring caches —</text>
+<text x="58" y="428" class="g mut">is the field paying down this one bill.</text>
+</svg>

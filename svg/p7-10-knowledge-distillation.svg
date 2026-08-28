@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 420" width="880" height="420" role="img" aria-label="A student model is trained to match a teacher model's full probability distribution">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}.bx{font-size:13px;fill:#16232E}.st{font-size:13px;font-weight:600;fill:#16232E}
+</style>
+<rect width="880" height="420" rx="4" fill="#F2F5F7"/><rect width="880" height="420" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="419" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="711" y="14" width="155" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="788" y="29" class="f tag" text-anchor="middle">teacher and student</text>
+<text x="32" y="42" class="g h1">Distillation: learn from the teacher's uncertainty</text>
+<text x="32" y="63" class="g sub">The student copies not just the answer but the whole shape of the teacher's guess — and the shape carries more information.</text>
+<text x="40" y="98" class="g mut">WHAT THE PLAIN TEXT TELLS YOU</text>
+<rect x="40" y="110" width="330" height="162" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="56" y="132" class="g cap">"The capital of France is ___"</text>
+<text x="130" y="164" class="f" font-size="11" fill="#16232E" text-anchor="end">Paris</text><rect x="140" y="152" width="170" height="16" rx="2" fill="#B4532A"/><text x="318" y="164" class="f" font-size="10.5" fill="#5B6B78">100%</text>
+<text x="130" y="190" class="f" font-size="11" fill="#16232E" text-anchor="end">Lyon</text><rect x="140" y="178" width="2" height="16" rx="2" fill="#D3B0A2"/><text x="150" y="190" class="f" font-size="10.5" fill="#5B6B78">0%</text>
+<text x="130" y="216" class="f" font-size="11" fill="#16232E" text-anchor="end">Marseille</text><rect x="140" y="204" width="2" height="16" rx="2" fill="#D3B0A2"/><text x="150" y="216" class="f" font-size="10.5" fill="#5B6B78">0%</text>
+<text x="130" y="242" class="f" font-size="11" fill="#16232E" text-anchor="end">London</text><rect x="140" y="230" width="2" height="16" rx="2" fill="#D3B0A2"/><text x="150" y="242" class="f" font-size="10.5" fill="#5B6B78">0%</text>
+<text x="56" y="264" class="g mut">a one-hot label: right answer, nothing else</text>
+<text x="450" y="98" class="g mut">WHAT THE TEACHER MODEL TELLS YOU</text>
+<rect x="450" y="110" width="390" height="162" rx="4" fill="#DCEBE6" stroke="#2C7A62"/>
+<text x="466" y="132" class="g cap">the same prompt, run through the large model</text>
+<text x="540" y="164" class="f" font-size="11" fill="#16232E" text-anchor="end">Paris</text><rect x="550" y="152" width="227" height="16" rx="2" fill="#2C7A62"/><text x="785" y="164" class="f" font-size="10.5" fill="#5B6B78">71%</text>
+<text x="540" y="190" class="f" font-size="11" fill="#16232E" text-anchor="end">Lyon</text><rect x="550" y="178" width="28" height="16" rx="2" fill="#2C7A62"/><text x="586" y="190" class="f" font-size="10.5" fill="#5B6B78">9%</text>
+<text x="540" y="216" class="f" font-size="11" fill="#16232E" text-anchor="end">Marseille</text><rect x="550" y="204" width="16" height="16" rx="2" fill="#2C7A62"/><text x="574" y="216" class="f" font-size="10.5" fill="#5B6B78">5%</text>
+<text x="540" y="242" class="f" font-size="11" fill="#16232E" text-anchor="end">London</text><rect x="550" y="230" width="6" height="16" rx="2" fill="#2C7A62"/><text x="564" y="242" class="f" font-size="10.5" fill="#5B6B78">2%</text>
+<text x="466" y="264" class="g mut">Lyon and Marseille are French cities. London is a capital.</text>
+<rect x="40" y="284" width="800" height="60" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<rect x="60" y="306" width="150" height="28" rx="4" fill="#DCEBE6" stroke="#2C7A62"/>
+<text x="135" y="325" class="g cap" text-anchor="middle">teacher — large model</text>
+<line x1="218" y1="320" x2="268" y2="320" stroke="#5B6B78" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="243" y="301" class="g mut" text-anchor="middle">soft targets</text>
+<rect x="276" y="306" width="150" height="28" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="351" y="325" class="g cap" text-anchor="middle">student — small model</text>
+<text x="450" y="314" class="g cap">The student is scored on how close its whole distribution is to</text>
+<text x="450" y="332" class="g cap">the teacher's, not just on whether it picked the same top token.</text>
+<rect x="40" y="356" width="800" height="48" rx="4" fill="#F7EFDF" stroke="#C79A2E"/>
+<text x="58" y="378" class="g cap">A one-hot label carries at most a few bits. A full distribution over 100,000 tokens carries far more, and the student learns from</text>
+<text x="58" y="396" class="g cap">every one of them on every token — which is why a distilled small model beats the same model trained on the raw text alone.</text>
+</svg>

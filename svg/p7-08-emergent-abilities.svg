@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 400" width="880" height="400" role="img" aria-label="Task accuracy stays near chance until a scale threshold, then rises sharply">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}.bx{font-size:13px;fill:#16232E}.st{font-size:13px;font-weight:600;fill:#16232E}
+</style>
+<rect width="880" height="400" rx="4" fill="#F2F5F7"/><rect width="880" height="400" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="399" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="756" y="14" width="110" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="811" y="29" class="f tag" text-anchor="middle">emergence</text>
+<text x="32" y="42" class="g h1">Emergent abilities: flat, flat, flat, then not</text>
+<text x="32" y="63" class="g sub">Some tasks sit at chance level as models grow, then rise sharply once past a threshold.</text>
+<rect x="40" y="96" width="470" height="230" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<line x1="96" y1="116" x2="96" y2="280" stroke="#C3D0D8"/><line x1="96" y1="280" x2="492" y2="280" stroke="#C3D0D8"/>
+<text x="88" y="124" class="g mut" text-anchor="end">good</text><text x="88" y="280" class="g mut" text-anchor="end">chance</text>
+<text x="492" y="298" class="g mut" text-anchor="end">model scale (log) →</text>
+<polyline points="96.0,279.8 100.0,279.7 103.9,279.7 107.9,279.6 111.8,279.5 115.8,279.4 119.8,279.2 123.7,279.0 127.7,278.8 131.6,278.5 135.6,278.2 139.6,277.7 143.5,277.2 147.5,276.5 151.4,275.6 155.4,274.6 159.4,273.3 163.3,271.8 167.3,269.9 171.2,267.6 175.2,264.8 179.2,261.6 183.1,257.7 187.1,253.2 191.0,248.0 195.0,242.0 199.0,235.4 202.9,228.2 206.9,220.5 210.8,212.3 214.8,204.0 218.8,195.7 222.7,187.5 226.7,179.8 230.6,172.6 234.6,166.0 238.6,160.0 242.5,154.8 246.5,150.3 250.4,146.4 254.4,143.2 258.4,140.4 262.3,138.1 266.3,136.2 270.2,134.7 274.2,133.4 278.2,132.4 282.1,131.5 286.1,130.8 290.0,130.3 294.0,129.8 298.0,129.5 301.9,129.2 305.9,129.0 309.8,128.8 313.8,128.6 317.8,128.5 321.7,128.4 325.7,128.3 329.6,128.3 333.6,128.2 337.6,128.2 341.5,128.1 345.5,128.1 349.4,128.1 353.4,128.1 357.4,128.1 361.3,128.0 365.3,128.0 369.2,128.0 373.2,128.0 377.2,128.0 381.1,128.0 385.1,128.0 389.0,128.0 393.0,128.0 397.0,128.0 400.9,128.0 404.9,128.0 408.8,128.0 412.8,128.0 416.8,128.0 420.7,128.0 424.7,128.0 428.6,128.0 432.6,128.0 436.6,128.0 440.5,128.0 444.5,128.0 448.4,128.0 452.4,128.0 456.4,128.0 460.3,128.0 464.3,128.0 468.2,128.0 472.2,128.0 476.2,128.0 480.1,128.0 484.1,128.0 488.0,128.0 492.0,128.0" fill="none" stroke="#2C7A62" stroke-width="2.4"/>
+<polyline points="96.0,280.0 100.0,280.0 103.9,280.0 107.9,280.0 111.8,280.0 115.8,280.0 119.8,280.0 123.7,280.0 127.7,280.0 131.6,280.0 135.6,280.0 139.6,280.0 143.5,280.0 147.5,280.0 151.4,280.0 155.4,280.0 159.4,279.9 163.3,279.9 167.3,279.9 171.2,279.9 175.2,279.9 179.2,279.8 183.1,279.8 187.1,279.7 191.0,279.7 195.0,279.6 199.0,279.5 202.9,279.4 206.9,279.2 210.8,279.0 214.8,278.8 218.8,278.5 222.7,278.2 226.7,277.7 230.6,277.2 234.6,276.5 238.6,275.6 242.5,274.6 246.5,273.3 250.4,271.8 254.4,269.9 258.4,267.6 262.3,264.8 266.3,261.6 270.2,257.7 274.2,253.2 278.2,248.0 282.1,242.0 286.1,235.4 290.0,228.2 294.0,220.5 298.0,212.3 301.9,204.0 305.9,195.7 309.8,187.5 313.8,179.8 317.8,172.6 321.7,166.0 325.7,160.0 329.6,154.8 333.6,150.3 337.6,146.4 341.5,143.2 345.5,140.4 349.4,138.1 353.4,136.2 357.4,134.7 361.3,133.4 365.3,132.4 369.2,131.5 373.2,130.8 377.2,130.3 381.1,129.8 385.1,129.5 389.0,129.2 393.0,129.0 397.0,128.8 400.9,128.6 404.9,128.5 408.8,128.4 412.8,128.3 416.8,128.3 420.7,128.2 424.7,128.2 428.6,128.1 432.6,128.1 436.6,128.1 440.5,128.1 444.5,128.1 448.4,128.0 452.4,128.0 456.4,128.0 460.3,128.0 464.3,128.0 468.2,128.0 472.2,128.0 476.2,128.0 480.1,128.0 484.1,128.0 488.0,128.0 492.0,128.0" fill="none" stroke="#1F5F8B" stroke-width="2.4"/>
+<polyline points="96.0,280.0 100.0,280.0 103.9,280.0 107.9,280.0 111.8,280.0 115.8,280.0 119.8,280.0 123.7,280.0 127.7,280.0 131.6,280.0 135.6,280.0 139.6,280.0 143.5,280.0 147.5,280.0 151.4,280.0 155.4,280.0 159.4,280.0 163.3,280.0 167.3,280.0 171.2,280.0 175.2,280.0 179.2,280.0 183.1,280.0 187.1,280.0 191.0,280.0 195.0,280.0 199.0,280.0 202.9,280.0 206.9,280.0 210.8,280.0 214.8,280.0 218.8,280.0 222.7,280.0 226.7,280.0 230.6,280.0 234.6,280.0 238.6,280.0 242.5,280.0 246.5,279.9 250.4,279.9 254.4,279.9 258.4,279.9 262.3,279.9 266.3,279.8 270.2,279.8 274.2,279.7 278.2,279.7 282.1,279.6 286.1,279.5 290.0,279.4 294.0,279.2 298.0,279.0 301.9,278.8 305.9,278.5 309.8,278.2 313.8,277.7 317.8,277.2 321.7,276.5 325.7,275.6 329.6,274.6 333.6,273.3 337.6,271.8 341.5,269.9 345.5,267.6 349.4,264.8 353.4,261.6 357.4,257.7 361.3,253.2 365.3,248.0 369.2,242.0 373.2,235.4 377.2,228.2 381.1,220.5 385.1,212.3 389.0,204.0 393.0,195.7 397.0,187.5 400.9,179.8 404.9,172.6 408.8,166.0 412.8,160.0 416.8,154.8 420.7,150.3 424.7,146.4 428.6,143.2 432.6,140.4 436.6,138.1 440.5,136.2 444.5,134.7 448.4,133.4 452.4,132.4 456.4,131.5 460.3,130.8 464.3,130.3 468.2,129.8 472.2,129.5 476.2,129.2 480.1,129.0 484.1,128.8 488.0,128.6 492.0,128.5" fill="none" stroke="#B4532A" stroke-width="2.4"/>
+<rect x="112" y="216" width="14" height="4" rx="2" fill="#2C7A62"/><text x="134" y="221" class="g mut" fill="#16232E">translation</text>
+<rect x="112" y="236" width="14" height="4" rx="2" fill="#1F5F8B"/><text x="134" y="241" class="g mut" fill="#16232E">3-digit arithmetic</text>
+<rect x="112" y="256" width="14" height="4" rx="2" fill="#B4532A"/><text x="134" y="261" class="g mut" fill="#16232E">multi-step reasoning</text>
+<text x="56" y="316" class="g mut">the jump arrives at a different size for every task</text>
+<rect x="530" y="96" width="310" height="230" rx="4" fill="#F7EFDF" stroke="#C79A2E"/>
+<text x="546" y="118" class="g st">Read this one with care</text>
+<text x="546" y="142" class="g cap">"Emergent" describes the shape of a graph, not</text>
+<text x="546" y="160" class="g cap">a mechanism. Nothing switches on inside the model.</text>
+<text x="546" y="186" class="g cap">Later work showed part of the cliff is an artefact of</text>
+<text x="546" y="204" class="g cap">how the task is scored: mark a 5-digit sum all-or-</text>
+<text x="546" y="222" class="g cap">nothing and you get a cliff; give partial credit for</text>
+<text x="546" y="240" class="g cap">each correct digit and the same runs come out as a</text>
+<text x="546" y="258" class="g cap">smooth curve.</text>
+<text x="546" y="284" class="g cap">Some emergence survives that correction and some</text>
+<text x="546" y="302" class="g cap">does not. It is an open argument, not a settled fact.</text>
+<rect x="40" y="342" width="800" height="42" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="58" y="368" class="g cap">Useful habit: when someone says an ability emerged at scale X, ask what the scoring rule was before you believe the cliff.</text>
+</svg>

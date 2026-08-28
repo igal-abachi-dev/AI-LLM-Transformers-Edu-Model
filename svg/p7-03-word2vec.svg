@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 420" width="880" height="420" role="img" aria-label="Word2Vec places similar words near each other and supports vector arithmetic">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}.bx{font-size:13px;fill:#16232E}.st{font-size:13px;font-weight:600;fill:#16232E}
+</style>
+<rect width="880" height="420" rx="4" fill="#F2F5F7"/><rect width="880" height="420" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="419" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="736" y="14" width="130" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="801" y="29" class="f tag" text-anchor="middle">Word2Vec, 2013</text>
+<text x="32" y="42" class="g h1">Word2Vec: coordinates instead of slots</text>
+<text x="32" y="63" class="g sub">2013. Train a shallow network to predict a word from its neighbours, and useful geometry falls out.</text>
+<rect x="40" y="96" width="420" height="248" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="56" y="118" class="g st">The same words, now as points in space</text>
+<ellipse cx="158" cy="192" rx="72" ry="48" fill="#DCEBE6" opacity=".55"/><ellipse cx="344" cy="198" rx="66" ry="48" fill="#F5E3DA" opacity=".55"/><ellipse cx="196" cy="282" rx="80" ry="40" fill="#EEE9F4" opacity=".65"/>
+<circle cx="120" cy="180" r="4.5" fill="#2C7A62"/><text x="128" y="184" class="g mut" fill="#16232E">cat</text>
+<circle cx="162" cy="162" r="4.5" fill="#2C7A62"/><text x="170" y="166" class="g mut" fill="#16232E">kitten</text>
+<circle cx="146" cy="214" r="4.5" fill="#2C7A62"/><text x="154" y="218" class="g mut" fill="#16232E">dog</text>
+<circle cx="196" cy="200" r="4.5" fill="#2C7A62"/><text x="204" y="204" class="g mut" fill="#16232E">puppy</text>
+<circle cx="330" cy="168" r="4.5" fill="#B4532A"/><text x="338" y="172" class="g mut" fill="#16232E">oven</text>
+<circle cx="372" cy="200" r="4.5" fill="#B4532A"/><text x="380" y="204" class="g mut" fill="#16232E">toaster</text>
+<circle cx="330" cy="226" r="4.5" fill="#B4532A"/><text x="338" y="230" class="g mut" fill="#16232E">refrigerator</text>
+<circle cx="150" cy="300" r="4.5" fill="#5B4B8A"/><text x="158" y="304" class="g mut" fill="#16232E">king</text>
+<circle cx="240" cy="300" r="4.5" fill="#5B4B8A"/><text x="248" y="304" class="g mut" fill="#16232E">queen</text>
+<circle cx="150" cy="262" r="4.5" fill="#5B4B8A"/><text x="158" y="266" class="g mut" fill="#16232E">man</text>
+<circle cx="240" cy="262" r="4.5" fill="#5B4B8A"/><text x="248" y="266" class="g mut" fill="#16232E">woman</text>
+<text x="56" y="332" class="g mut">300 numbers per word instead of 50,000 slots</text>
+<rect x="480" y="96" width="360" height="150" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="496" y="118" class="g st">The geometry carries meaning</text>
+<circle cx="540" cy="200" r="4.5" fill="#5B4B8A"/><text x="512" y="216" class="g mut">man</text>
+<circle cx="540" cy="150" r="4.5" fill="#5B4B8A"/><text x="512" y="146" class="g mut">king</text>
+<circle cx="700" cy="200" r="4.5" fill="#5B4B8A"/><text x="676" y="216" class="g mut">woman</text>
+<circle cx="700" cy="150" r="4.5" fill="#5B4B8A"/><text x="676" y="146" class="g mut">queen</text>
+<line x1="540" y1="196" x2="540" y2="158" stroke="#C79A2E" stroke-width="2" marker-end="url(#a)"/>
+<line x1="700" y1="196" x2="700" y2="158" stroke="#C79A2E" stroke-width="2" marker-end="url(#a)"/>
+<text x="560" y="180" class="g mut">the same step, twice</text>
+<text x="496" y="236" class="f" font-size="12" fill="#16232E">king - man + woman = queen</text>
+<rect x="480" y="258" width="360" height="86" rx="4" fill="#EEE9F4" stroke="#B9AED6"/>
+<text x="496" y="280" class="g cap" font-weight="600">What actually happened</text>
+<text x="496" y="300" class="g cap">The direction from man to king is roughly the same</text>
+<text x="496" y="318" class="g cap">direction as woman to queen, because those pairs</text>
+<text x="496" y="336" class="g cap">kept appearing in matching contexts.</text>
+<rect x="40" y="358" width="800" height="42" rx="4" fill="#F7EFDF" stroke="#C79A2E"/>
+<text x="58" y="384" class="g cap">This is the same table as token_embedding in the model: an ID goes in, a row of numbers comes out. Training decides what the rows say.</text>
+</svg>

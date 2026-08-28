@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 400" width="880" height="400" role="img" aria-label="RNNs process words sequentially and forget the start of long sentences">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}.bx{font-size:13px;fill:#16232E}.st{font-size:13px;font-weight:600;fill:#16232E}
+</style>
+<rect width="880" height="400" rx="4" fill="#F2F5F7"/><rect width="880" height="400" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="399" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="726" y="14" width="140" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="796" y="29" class="f tag" text-anchor="middle">RNN / LSTM era</text>
+<text x="32" y="42" class="g h1">RNNs read one word at a time</text>
+<text x="32" y="63" class="g sub">A running memory is passed along the sentence. It works, and two problems come with it.</text>
+<text x="102" y="116" class="g mut" text-anchor="middle">step 1</text>
+<rect x="60" y="128" width="84" height="52" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="102" y="150" class="f" font-size="12" text-anchor="middle" fill="#16232E">The</text>
+<text x="102" y="168" class="g mut" text-anchor="middle">h0</text>
+<line x1="146" y1="154" x2="184" y2="154" stroke="#5B6B78" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="230" y="116" class="g mut" text-anchor="middle">step 2</text>
+<rect x="188" y="128" width="84" height="52" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="230" y="150" class="f" font-size="12" text-anchor="middle" fill="#16232E">cat</text>
+<text x="230" y="168" class="g mut" text-anchor="middle">h1</text>
+<line x1="274" y1="154" x2="312" y2="154" stroke="#5B6B78" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="358" y="116" class="g mut" text-anchor="middle">step 3</text>
+<rect x="316" y="128" width="84" height="52" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="358" y="150" class="f" font-size="12" text-anchor="middle" fill="#16232E">that</text>
+<text x="358" y="168" class="g mut" text-anchor="middle">h2</text>
+<line x1="402" y1="154" x2="440" y2="154" stroke="#5B6B78" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="486" y="116" class="g mut" text-anchor="middle">step 4</text>
+<rect x="444" y="128" width="84" height="52" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="486" y="150" class="f" font-size="12" text-anchor="middle" fill="#16232E">we</text>
+<text x="486" y="168" class="g mut" text-anchor="middle">h3</text>
+<line x1="530" y1="154" x2="568" y2="154" stroke="#5B6B78" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="614" y="116" class="g mut" text-anchor="middle">step 5</text>
+<rect x="572" y="128" width="84" height="52" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="614" y="150" class="f" font-size="12" text-anchor="middle" fill="#16232E">saw</text>
+<text x="614" y="168" class="g mut" text-anchor="middle">h4</text>
+<line x1="658" y1="154" x2="696" y2="154" stroke="#5B6B78" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="742" y="116" class="g mut" text-anchor="middle">step 6</text>
+<rect x="700" y="128" width="84" height="52" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="742" y="150" class="f" font-size="12" text-anchor="middle" fill="#16232E">purred</text>
+<text x="742" y="168" class="g mut" text-anchor="middle">h5</text>
+<text x="40" y="212" class="g mut">how much of "The" survives:</text>
+<rect x="60" y="222" width="84" height="14" rx="3" fill="#B4532A" opacity="0.88"/>
+<rect x="188" y="222" width="84" height="14" rx="3" fill="#B4532A" opacity="0.76"/>
+<rect x="316" y="222" width="84" height="14" rx="3" fill="#B4532A" opacity="0.61"/>
+<rect x="444" y="222" width="84" height="14" rx="3" fill="#B4532A" opacity="0.44"/>
+<rect x="572" y="222" width="84" height="14" rx="3" fill="#B4532A" opacity="0.26"/>
+<rect x="700" y="222" width="84" height="14" rx="3" fill="#B4532A" opacity="0.06"/>
+<text x="60" y="256" class="g mut">strong</text><text x="724" y="256" class="g mut">nearly gone</text>
+<rect x="40" y="280" width="386" height="100" rx="4" fill="#FFFFFF" stroke="#B4532A"/>
+<text x="56" y="302" class="g st">Problem 1: it forgets the start</text>
+<text x="56" y="324" class="g cap">Each hop multiplies the signal by something smaller</text>
+<text x="56" y="342" class="g cap">than one. After twenty words the beginning of the</text>
+<text x="56" y="360" class="g cap">sentence has faded out. This is vanishing gradients.</text>
+<rect x="454" y="280" width="386" height="100" rx="4" fill="#FFFFFF" stroke="#B4532A"/>
+<text x="470" y="302" class="g st">Problem 2: it cannot be parallelised</text>
+<text x="470" y="324" class="g cap">Step 4 needs h3, which needs h2, which needs h1.</text>
+<text x="470" y="342" class="g cap">A GPU has thousands of cores and this uses one at a</text>
+<text x="470" y="360" class="g cap">time. The hardware sits idle while the sentence walks.</text>
+</svg>

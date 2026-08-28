@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 400" width="880" height="400" role="img" aria-label="Words that appear in the same contexts must mean similar things">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}.bx{font-size:13px;fill:#16232E}.st{font-size:13px;font-weight:600;fill:#16232E}
+</style>
+<rect width="880" height="400" rx="4" fill="#F2F5F7"/><rect width="880" height="400" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="399" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="746" y="14" width="120" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="806" y="29" class="f tag" text-anchor="middle">Firth, 1957</text>
+<text x="32" y="42" class="g h1">You shall know a word by the company it keeps</text>
+<text x="32" y="63" class="g sub">Firth, 1957. The idea that makes everything after it possible: meaning can be read off context.</text>
+<rect x="40" y="106" width="440" height="34" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="56" y="128" class="f" font-size="12.5" fill="#16232E">the ____ purred on the windowsill</text>
+<text x="24" y="128" class="g mut" text-anchor="middle">1</text>
+<rect x="40" y="150" width="440" height="34" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="56" y="172" class="f" font-size="12.5" fill="#16232E">she fed the ____ a saucer of milk</text>
+<text x="24" y="172" class="g mut" text-anchor="middle">2</text>
+<rect x="40" y="194" width="440" height="34" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="56" y="216" class="f" font-size="12.5" fill="#16232E">the ____ chased a ball of wool</text>
+<text x="24" y="216" class="g mut" text-anchor="middle">3</text>
+<rect x="40" y="238" width="440" height="34" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="56" y="260" class="f" font-size="12.5" fill="#16232E">the ____ hummed and kept the milk cold</text>
+<text x="24" y="260" class="g mut" text-anchor="middle">4</text>
+<rect x="512" y="96" width="328" height="186" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="528" y="118" class="g st">Which words fit which blank</text>
+<g class="g mut" text-anchor="middle"><text x="700" y="142">1</text><text x="740" y="142">2</text><text x="780" y="142">3</text><text x="820" y="142">4</text></g>
+<text x="528" y="172" class="f" font-size="12" fill="#16232E">"cat"</text>
+<circle cx="700" cy="168" r="9" fill="#2C7A62"/><circle cx="740" cy="168" r="9" fill="#2C7A62"/><circle cx="780" cy="168" r="9" fill="#2C7A62"/><circle cx="820" cy="168" r="9" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="528" y="204" class="f" font-size="12" fill="#16232E">"kitten"</text>
+<circle cx="700" cy="200" r="9" fill="#2C7A62"/><circle cx="740" cy="200" r="9" fill="#2C7A62"/><circle cx="780" cy="200" r="9" fill="#2C7A62"/><circle cx="820" cy="200" r="9" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="528" y="236" class="f" font-size="12" fill="#16232E">"refrigerator"</text>
+<circle cx="700" cy="232" r="9" fill="#FFFFFF" stroke="#C3D0D8"/><circle cx="740" cy="232" r="9" fill="#FFFFFF" stroke="#C3D0D8"/><circle cx="780" cy="232" r="9" fill="#FFFFFF" stroke="#C3D0D8"/><circle cx="820" cy="232" r="9" fill="#B4532A"/>
+<text x="528" y="270" class="g mut">cat and kitten share three contexts out of four</text>
+<rect x="40" y="300" width="800" height="80" rx="4" fill="#F7EFDF" stroke="#C79A2E"/>
+<text x="58" y="322" class="g cap" font-weight="600">Nobody has defined anything yet.</text>
+<text x="58" y="342" class="g cap">No dictionary, no rules, no labels. Two words earn a place near each other purely because the same neighbours keep turning up</text>
+<text x="58" y="362" class="g cap">around them. That is the entire principle every embedding — and every LLM after them — is built on.</text>
+</svg>

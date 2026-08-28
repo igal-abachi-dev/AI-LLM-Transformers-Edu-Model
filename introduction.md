@@ -706,10 +706,15 @@ To understand how we went from foundational computer science principles to moder
     
     *   _The Problem:_ Words had no mathematical relationship to each other. In this system, "cat" was just as distant from "kitten" as it was from "refrigerator."
         
+![One-hot vectors put every word equally far from every other](svg/p7-01-one-hot.svg)
+
 *   **Distributional Semantics:** The breakthrough principle came from linguist John Rupert Firth (1957): _"You shall know a word by the company it keeps."_
     
+![Words that share contexts must share meaning](svg/p7-02-distributional-semantics.svg)
+
 *   **Embeddings (Word2Vec):** In 2013, researchers began training shallow neural networks to predict words based on their neighbors. This created vectors (dense arrays of numbers, like coordinates in space). For the first time, "cat" and "dog" lived near each other in a mathematical landscape, allowing for vector arithmetic (e.g., King - Man + Woman = Queen).
     
+![Word2Vec turns words into coordinates](svg/p7-03-word2vec.svg)
 
 **2\. The Architecture Evolution: Processing Sequences**Language has order and context. How do you feed a sequence of words into a network?
 
@@ -717,17 +722,23 @@ To understand how we went from foundational computer science principles to moder
     
     *   _The Problem:_ They suffered from "forgetting" early parts of long sentences (vanishing gradients) and were incredibly slow because they could not process text in parallel.
         
+![RNNs read sequentially and forget the start](svg/p7-04-rnn.svg)
+
 *   **The Transformer Breakthrough (2017):** The landmark paper _"Attention Is All You Need"_ discarded recurrence entirely. It introduced **Self-Attention**. Instead of reading left-to-right, a Transformer looks at every word in a sentence simultaneously and calculates how much weight or "attention" each word should pay to every other word. This allowed for massive parallel processing on modern GPUs.
     
+![The transformer computes all pairs in one step](svg/p7-05-transformer.svg)
 
 **3\. Scaling Up: The Birth of LLMs**With the Transformer architecture, AI entered the scaling era.
 
 *   **Next-Token Prediction:** LLMs are essentially highly advanced auto-completers. They are trained on massive datasets to predict the very next "token" (a word or piece of a word) given all the tokens that came before it.
     
+![Next-token prediction as the single objective](svg/p7-06-next-token-prediction.svg)
+
 *   **The Scaling Laws (2020):** Researchers discovered that as you increase the number of parameters (the internal configuration settings of the model), the dataset size, and the compute power, the model’s performance improves predictably. This sparked a race to build massive models (e.g., GPT-3 at 175 billion parameters).
     
 *   **Emergent Abilities:** At massive scales, these models stopped just copying text and began showing "emergent" behaviors—like reasoning, coding, and translation—that they weren't explicitly programmed to do.
     
+![Task accuracy jumps past a scale threshold](svg/p7-08-emergent-abilities.svg)
 
 **4\. The Pivot to Small LLMs (SLMs)**While 175B+ parameter models are powerful, they are incredibly expensive to run, slow, and cannot fit on everyday hardware like smartphones or laptops. The industry pivoted to ask: _How small can we make these models while keeping them smart?_Modern SLMs (usually between 1 billion and 8 billion parameters, like Llama 3 8B, Phi-3, or Gemma) achieved high capability through several key innovations:
 
@@ -735,8 +746,12 @@ To understand how we went from foundational computer science principles to moder
     
 *   **Knowledge Distillation:** This is a teacher-student framework. A massive LLM (the teacher) runs through a dataset, and the SLM (the student) is trained not just on the raw text, but to mimic the precise probability distributions and reasoning steps of the larger model.
     
+![Distillation copies the teacher's whole distribution](svg/p7-10-knowledge-distillation.svg)
+
 *   **Quantization:** A first-principle physics and computer science trick. Models are normally trained using high-precision numbers (16-bit floating points). Quantization compresses these numbers down to 8-bit or even 4-bit integers. This reduces the memory footprint by 75% or more, allowing a highly capable model to run directly on a consumer smartphone chip without a massive drop in accuracy.
     
+![Quantization stores each weight in fewer bits](svg/p7-11-quantization.svg)
+
 *   **Architectural Refinements:** Technologies like Grouped-Query Attention (GQA) reduce memory usage during inference, making the models significantly faster and less power-hungry.
     
 

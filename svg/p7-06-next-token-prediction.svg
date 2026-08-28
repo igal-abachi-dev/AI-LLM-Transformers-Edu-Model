@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 420" width="880" height="420" role="img" aria-label="Next token prediction is the single objective behind grammar, facts and code ability">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}.bx{font-size:13px;fill:#16232E}.st{font-size:13px;font-weight:600;fill:#16232E}
+</style>
+<rect width="880" height="420" rx="4" fill="#F2F5F7"/><rect width="880" height="420" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="419" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="701" y="14" width="165" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="783" y="29" class="f tag" text-anchor="middle">the training objective</text>
+<text x="32" y="42" class="g h1">One objective, and it turns out to be enough</text>
+<text x="32" y="63" class="g sub">Predict the next token. Every ability the model has is a side effect of getting better at that one game.</text>
+<text x="40" y="98" class="g mut">ONE SENTENCE, CUT AT EVERY POINT, IS MANY EXERCISES</text>
+<rect x="40" y="110" width="330" height="24" rx="3" fill="#FFFFFF" stroke="#C3D0D8"/><text x="52" y="127" class="f" font-size="11.5" fill="#16232E">The</text><text x="382" y="127" class="g mut">→</text><rect x="402" y="110" width="92" height="24" rx="3" fill="#F5E3DA" stroke="#B4532A"/><text x="414" y="127" class="f" font-size="11.5" fill="#B4532A">capital</text>
+<rect x="40" y="140" width="330" height="24" rx="3" fill="#FFFFFF" stroke="#C3D0D8"/><text x="52" y="157" class="f" font-size="11.5" fill="#16232E">The capital</text><text x="382" y="157" class="g mut">→</text><rect x="402" y="140" width="92" height="24" rx="3" fill="#F5E3DA" stroke="#B4532A"/><text x="414" y="157" class="f" font-size="11.5" fill="#B4532A">of</text>
+<rect x="40" y="170" width="330" height="24" rx="3" fill="#FFFFFF" stroke="#C3D0D8"/><text x="52" y="187" class="f" font-size="11.5" fill="#16232E">The capital of</text><text x="382" y="187" class="g mut">→</text><rect x="402" y="170" width="92" height="24" rx="3" fill="#F5E3DA" stroke="#B4532A"/><text x="414" y="187" class="f" font-size="11.5" fill="#B4532A">France</text>
+<rect x="40" y="200" width="330" height="24" rx="3" fill="#FFFFFF" stroke="#C3D0D8"/><text x="52" y="217" class="f" font-size="11.5" fill="#16232E">The capital of France</text><text x="382" y="217" class="g mut">→</text><rect x="402" y="200" width="92" height="24" rx="3" fill="#F5E3DA" stroke="#B4532A"/><text x="414" y="217" class="f" font-size="11.5" fill="#B4532A">is</text>
+<rect x="40" y="230" width="330" height="24" rx="3" fill="#FFFFFF" stroke="#C3D0D8"/><text x="52" y="247" class="f" font-size="11.5" fill="#16232E">The capital of France is</text><text x="382" y="247" class="g mut">→</text><rect x="402" y="230" width="92" height="24" rx="3" fill="#F5E3DA" stroke="#B4532A"/><text x="414" y="247" class="f" font-size="11.5" fill="#B4532A">Paris</text>
+<text x="40" y="284" class="g mut">no labels, no annotation, no human in the loop — the answer key is the text itself</text>
+<rect x="524" y="96" width="316" height="176" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="540" y="118" class="g st">To win this game you must learn</text>
+<rect x="540" y="132" width="284" height="38" rx="3" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="552" y="148" class="f" font-size="11">She gave the book to ___</text><text x="552" y="163" class="g mut">grammar — "her", not "she"</text>
+<rect x="540" y="176" width="284" height="38" rx="3" fill="#DCEBE6" stroke="#2C7A62"/>
+<text x="552" y="192" class="f" font-size="11">The capital of France is ___</text><text x="552" y="207" class="g mut">facts — nothing else fits</text>
+<rect x="540" y="220" width="284" height="38" rx="3" fill="#EEE9F4" stroke="#B9AED6"/>
+<text x="552" y="236" class="f" font-size="11">def add(a, b): return a + ___</text><text x="552" y="251" class="g mut">code semantics — "b", from the signature</text>
+<rect x="40" y="308" width="800" height="90" rx="4" fill="#F7EFDF" stroke="#C79A2E"/>
+<text x="58" y="330" class="g cap" font-weight="600">Why this is more than autocomplete, and also exactly autocomplete.</text>
+<text x="58" y="352" class="g cap">Nobody set out to teach grammar, geography or Python. But across all of human text, the cheapest way to lower the surprise score</text>
+<text x="58" y="370" class="g cap">turns out to be learning them. Prediction is the goal; understanding-shaped machinery is what grows in order to hit it.</text>
+<text x="58" y="390" class="g mut">Whether that counts as understanding is a real argument with smart people on both sides. The mechanism is not in dispute.</text>
+</svg>
