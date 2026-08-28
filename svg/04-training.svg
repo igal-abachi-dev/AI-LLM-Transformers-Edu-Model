@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 400" width="880" height="400" role="img" aria-label="Training is a fill in the blank game measured by a surprise score">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.st{font-size:13px;font-weight:600;fill:#16232E}.cap{font-size:11.5px;fill:#16232E}
+</style>
+<rect width="880" height="400" rx="4" fill="#F2F5F7"/><rect width="880" height="400" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="399" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="700" y="14" width="166" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="783" y="29" class="f tag" text-anchor="middle">loss.py · training.py</text>
+<text x="32" y="42" class="g h1">Where the "knowing" comes from</text>
+<text x="32" y="63" class="g sub">Nobody taught it that Paris is the capital of France. "Paris" simply became the least surprising guess.</text>
+<g>
+<rect x="40" y="88" width="182" height="196" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="56" y="112" class="g st">1 · Hide the rest</text>
+<text x="56" y="140" class="f" font-size="11.5" fill="#16232E">The capital of</text>
+<text x="56" y="158" class="f" font-size="11.5" fill="#16232E">France is</text>
+<rect x="56" y="170" width="60" height="20" rx="3" fill="#16232E"/>
+<text x="56" y="220" class="g cap">Take real text. Cut it at</text><text x="56" y="236" class="g cap">some point. Everything</text><text x="56" y="252" class="g cap">after it is the answer key.</text>
+<rect x="246" y="88" width="182" height="196" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="262" y="112" class="g st">2 · Guess</text>
+<text x="262" y="139" class="f" font-size="11.5">Lyon</text><rect x="316" y="128" width="30" height="13" rx="2" fill="#8FAEC4"/><text x="352" y="139" class="f" font-size="11" fill="#5B6B78">9%</text>
+<text x="262" y="163" class="f" font-size="11.5">Paris</text><rect x="316" y="152" width="52" height="13" rx="2" fill="#1F5F8B"/><text x="374" y="163" class="f" font-size="11" fill="#5B6B78">31%</text>
+<text x="262" y="187" class="f" font-size="11.5">a</text><rect x="316" y="176" width="24" height="13" rx="2" fill="#8FAEC4"/><text x="346" y="187" class="f" font-size="11" fill="#5B6B78">7%</text>
+<text x="262" y="220" class="g cap">An untrained model spreads</text><text x="262" y="236" class="g cap">its bet almost evenly across</text><text x="262" y="252" class="g cap">all 16,384 tokens.</text>
+<rect x="452" y="88" width="182" height="196" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="468" y="112" class="g st">3 · Measure surprise</text>
+<path d="M482 186 A 60 60 0 0 1 602 186" fill="none" stroke="#DDE5EA" stroke-width="14" stroke-linecap="round"/>
+<path d="M482 186 A 60 60 0 0 1 528 130" fill="none" stroke="#2C7A62" stroke-width="14" stroke-linecap="round"/>
+<line x1="542" y1="186" x2="580" y2="146" stroke="#B4532A" stroke-width="3" stroke-linecap="round"/>
+<circle cx="542" cy="186" r="5" fill="#16232E"/>
+<text x="482" y="204" class="g mut">calm</text><text x="602" y="204" class="g mut" text-anchor="end">shocked</text>
+<text x="468" y="230" class="g cap">cross_entropy: the right</text><text x="468" y="246" class="g cap">answer at 90% = tiny loss.</text><text x="468" y="262" class="g cap">At 2% = huge. This number</text><text x="468" y="278" class="g cap">is the whole signal.</text>
+<rect x="658" y="88" width="182" height="196" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="674" y="112" class="g st">4 · Nudge the weights</text>
+<g fill="#E6EEF4" stroke="#1F5F8B">
+<rect x="674" y="128" width="20" height="20" rx="2"/><rect x="700" y="128" width="20" height="20" rx="2"/><rect x="726" y="128" width="20" height="20" rx="2"/><rect x="752" y="128" width="20" height="20" rx="2"/><rect x="778" y="128" width="20" height="20" rx="2"/><rect x="804" y="128" width="20" height="20" rx="2"/>
+<rect x="674" y="154" width="20" height="20" rx="2"/><rect x="700" y="154" width="20" height="20" rx="2"/><rect x="726" y="154" width="20" height="20" rx="2"/><rect x="752" y="154" width="20" height="20" rx="2"/><rect x="778" y="154" width="20" height="20" rx="2"/><rect x="804" y="154" width="20" height="20" rx="2"/>
+<rect x="674" y="180" width="20" height="20" rx="2"/><rect x="700" y="180" width="20" height="20" rx="2"/><rect x="726" y="180" width="20" height="20" rx="2"/><rect x="752" y="180" width="20" height="20" rx="2"/><rect x="778" y="180" width="20" height="20" rx="2"/><rect x="804" y="180" width="20" height="20" rx="2"/>
+</g>
+<text x="674" y="228" class="g cap">Every weight moves a hair</text><text x="674" y="244" class="g cap">in the direction that would</text><text x="674" y="260" class="g cap">have made the truth less</text><text x="674" y="276" class="g cap">surprising.</text>
+</g>
+<g stroke="#5B6B78" stroke-width="1.4" marker-end="url(#a)" fill="none">
+<line x1="224" y1="186" x2="242" y2="186"/><line x1="430" y1="186" x2="448" y2="186"/><line x1="636" y1="186" x2="654" y2="186"/>
+<path d="M749 286 L749 312 L131 312 L131 288"/>
+</g>
+<text x="440" y="332" class="g cap" text-anchor="middle" font-weight="600">repeat billions of times, on billions of sentences</text>
+<rect x="40" y="346" width="800" height="40" rx="4" fill="#F7EFDF" stroke="#C79A2E"/>
+<text x="58" y="371" class="g cap">There is no database inside and nothing is ever looked up. A hallucination is not a failed lookup — it is this machine doing its job.</text>
+</svg>

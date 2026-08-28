@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 480" width="880" height="480" role="img" aria-label="Hybrid attention: three near sighted local layers and one global layer, with information spreading like a rumour">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}
+</style>
+<rect width="880" height="480" rx="4" fill="#F2F5F7"/><rect width="880" height="480" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="479" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="686" y="14" width="180" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="776" y="29" class="f tag" text-anchor="middle">labs/04_full_vs_hybrid.py</text>
+<text x="32" y="42" class="g h1">Three near-sighted layers, then one that shouts across the room</text>
+<text x="32" y="63" class="g sub">Most of language is local. To finish "the cat sat on the ___" you need six words, not paragraph three.</text>
+<text x="40" y="96" class="g mut">HOW FAR EACH LAYER CAN SEE — tiny_modern, 4 layers, window 8</text>
+<g>
+<rect x="40" y="108" width="560" height="40" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<rect x="392" y="112" width="204" height="32" rx="3" fill="#DCEBE6"/>
+<text x="52" y="133" class="f" font-size="11.5" fill="#2C7A62">Layer 0 · LOCAL</text><text x="588" y="133" class="g mut" text-anchor="end">last 8 tokens</text>
+<rect x="40" y="156" width="560" height="40" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<rect x="392" y="160" width="204" height="32" rx="3" fill="#DCEBE6"/>
+<text x="52" y="181" class="f" font-size="11.5" fill="#2C7A62">Layer 1 · LOCAL</text><text x="588" y="181" class="g mut" text-anchor="end">last 8 tokens</text>
+<rect x="40" y="204" width="560" height="40" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<rect x="392" y="208" width="204" height="32" rx="3" fill="#DCEBE6"/>
+<text x="52" y="229" class="f" font-size="11.5" fill="#2C7A62">Layer 2 · LOCAL</text><text x="588" y="229" class="g mut" text-anchor="end">last 8 tokens</text>
+<rect x="40" y="252" width="560" height="40" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<rect x="44" y="256" width="552" height="32" rx="3" fill="#C9DCEA"/>
+<text x="56" y="277" class="f" font-size="11.5" fill="#1F5F8B">Layer 3 · GLOBAL</text><text x="584" y="277" class="g mut" text-anchor="end">everything</text>
+</g>
+<text x="40" y="312" class="f" font-size="11.5" fill="#16232E">(layer_index + 1) % 4 != 0  →  local</text>
+<text x="320" y="312" class="g mut">at 150M the global layers are 3, 7, 11, 15, 19 — the last layer is always global</text>
+<rect x="624" y="108" width="216" height="184" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="640" y="130" class="g cap" font-weight="600">Why nothing is lost</text>
+<g>
+<circle cx="660" cy="160" r="7" fill="#2C7A62"/><circle cx="690" cy="160" r="7" fill="#DCEBE6" stroke="#2C7A62"/><circle cx="720" cy="160" r="7" fill="#F2F5F7" stroke="#C3D0D8"/><circle cx="750" cy="160" r="7" fill="#F2F5F7" stroke="#C3D0D8"/><circle cx="780" cy="160" r="7" fill="#F2F5F7" stroke="#C3D0D8"/><circle cx="810" cy="160" r="7" fill="#F2F5F7" stroke="#C3D0D8"/>
+<circle cx="660" cy="190" r="7" fill="#2C7A62"/><circle cx="690" cy="190" r="7" fill="#2C7A62"/><circle cx="720" cy="190" r="7" fill="#DCEBE6" stroke="#2C7A62"/><circle cx="750" cy="190" r="7" fill="#F2F5F7" stroke="#C3D0D8"/><circle cx="780" cy="190" r="7" fill="#F2F5F7" stroke="#C3D0D8"/><circle cx="810" cy="190" r="7" fill="#F2F5F7" stroke="#C3D0D8"/>
+<circle cx="660" cy="220" r="7" fill="#2C7A62"/><circle cx="690" cy="220" r="7" fill="#2C7A62"/><circle cx="720" cy="220" r="7" fill="#2C7A62"/><circle cx="750" cy="220" r="7" fill="#DCEBE6" stroke="#2C7A62"/><circle cx="780" cy="220" r="7" fill="#F2F5F7" stroke="#C3D0D8"/><circle cx="810" cy="220" r="7" fill="#F2F5F7" stroke="#C3D0D8"/>
+</g>
+<text x="640" y="252" class="g cap">Layer 1 mixes tokens that</text>
+<text x="640" y="268" class="g cap">layer 0 already mixed. News</text>
+<text x="640" y="284" class="g cap">travels one desk at a time.</text>
+<rect x="40" y="330" width="386" height="76" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="56" y="352" class="g cap" font-weight="600">The real numbers, at 2,048 tokens / 512 window</text>
+<text x="56" y="372" class="g cap">full attention allows <tspan class="f" fill="#1F5F8B">2,098,176</tspan> token-pairs</text>
+<text x="56" y="392" class="g cap">local attention allows <tspan class="f" fill="#2C7A62">917,760</tspan> — about 44% of them</text>
+<rect x="454" y="330" width="386" height="76" rx="4" fill="#F7EFDF" stroke="#C79A2E"/>
+<text x="470" y="352" class="g cap" font-weight="600">The cache saving is bigger than the compute saving</text>
+<text x="470" y="372" class="g cap">A local layer only ever needs to <tspan font-style="italic">remember</tspan> 512 tokens.</text>
+<text x="470" y="390" class="g cap">At 150M: ~126 MB of cache down to ~18 MB — roughly 7× less.</text>
+<rect x="40" y="422" width="800" height="42" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="58" y="440" class="g cap"><tspan font-weight="600">A wrinkle that looks like a bug:</tspan> local layers use FlexAttention, which skips blocks of a banded mask; global layers use SDPA.</text>
+<text x="58" y="457" class="g cap">During single-token generation local layers fall back to SDPA — with one query, block-skipping costs more than it saves.</text>
+</svg>

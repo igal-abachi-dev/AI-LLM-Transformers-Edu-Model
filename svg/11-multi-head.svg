@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 400" width="880" height="400" role="img" aria-label="Multi head attention splits the card into four heads that run in parallel">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}
+</style>
+<rect width="880" height="400" rx="4" fill="#F2F5F7"/><rect width="880" height="400" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="399" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="738" y="14" width="128" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="802" y="29" class="f tag" text-anchor="middle">attention.py</text>
+<text x="32" y="42" class="g h1">Four listeners, not one</text>
+<text x="32" y="63" class="g sub">A word may need to track grammar and subject and tone at once. So the classroom runs four times in parallel.</text>
+<rect x="200" y="92" width="480" height="34" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<g stroke="#C3D0D8"><path d="M320 92V126M440 92V126M560 92V126" /></g>
+<text x="440" y="114" class="f" font-size="12" text-anchor="middle" fill="#16232E">one token's card — 32 numbers</text>
+<text x="690" y="114" class="g mut">split into 4 × 8</text>
+<g stroke="#5B6B78" stroke-width="1.3" marker-end="url(#a)" fill="none">
+<path d="M260 128 L140 158"/><path d="M380 128 L340 158"/><path d="M500 128 L540 158"/><path d="M620 128 L740 158"/>
+</g>
+<g>
+<rect x="52" y="164" width="176" height="102" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="140" y="186" class="g cap" text-anchor="middle" font-weight="600">head 0</text>
+<text x="140" y="206" class="f" font-size="10.5" text-anchor="middle" fill="#5B6B78">its own q/k/v weights</text>
+<text x="140" y="232" class="g mut" text-anchor="middle">may learn:</text><text x="140" y="248" class="g cap" text-anchor="middle">"find the verb"</text>
+<rect x="252" y="164" width="176" height="102" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="340" y="186" class="g cap" text-anchor="middle" font-weight="600">head 1</text>
+<text x="340" y="206" class="f" font-size="10.5" text-anchor="middle" fill="#5B6B78">its own q/k/v weights</text>
+<text x="340" y="232" class="g mut" text-anchor="middle">may learn:</text><text x="340" y="248" class="g cap" text-anchor="middle">"find the subject"</text>
+<rect x="452" y="164" width="176" height="102" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="540" y="186" class="g cap" text-anchor="middle" font-weight="600">head 2</text>
+<text x="540" y="206" class="f" font-size="10.5" text-anchor="middle" fill="#5B6B78">its own q/k/v weights</text>
+<text x="540" y="232" class="g mut" text-anchor="middle">may learn:</text><text x="540" y="248" class="g cap" text-anchor="middle">"match the bracket"</text>
+<rect x="652" y="164" width="176" height="102" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="740" y="186" class="g cap" text-anchor="middle" font-weight="600">head 3</text>
+<text x="740" y="206" class="f" font-size="10.5" text-anchor="middle" fill="#5B6B78">its own q/k/v weights</text>
+<text x="740" y="232" class="g mut" text-anchor="middle">may learn:</text><text x="740" y="248" class="g cap" text-anchor="middle">"track the tone"</text>
+</g>
+<g stroke="#5B6B78" stroke-width="1.3" marker-end="url(#a)" fill="none">
+<path d="M140 268 L260 296"/><path d="M340 268 L380 296"/><path d="M540 268 L500 296"/><path d="M740 268 L620 296"/>
+</g>
+<rect x="200" y="300" width="480" height="34" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="440" y="322" class="f" font-size="12" text-anchor="middle" fill="#16232E">glued back into 32 numbers, then mixed by out_proj</text>
+<text x="440" y="366" class="g cap" text-anchor="middle">Nobody assigns these jobs. Each head gets its own weights, and training decides what each one becomes useful for.</text>
+</svg>

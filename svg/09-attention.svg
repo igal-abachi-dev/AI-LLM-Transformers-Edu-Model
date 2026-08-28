@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 460" width="880" height="460" role="img" aria-label="Attention as a classroom: query cards, key name tags and value envelopes">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}
+</style>
+<rect width="880" height="460" rx="4" fill="#F2F5F7"/><rect width="880" height="460" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="459" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="738" y="14" width="128" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="802" y="29" class="f tag" text-anchor="middle">attention.py</text>
+<text x="32" y="42" class="g h1">Attention is a classroom</text>
+<text x="32" y="63" class="g sub">Every token writes a question, wears a name tag, and holds an envelope. Then everyone compares.</text>
+<rect x="36" y="94" width="168" height="150" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="120" y="118" class="f" font-size="15" text-anchor="middle" fill="#16232E">"it"</text>
+<text x="120" y="140" class="g mut" text-anchor="middle">the token doing the asking</text>
+<rect x="52" y="154" width="136" height="72" rx="3" fill="#FFFFFF" stroke="#1F5F8B"/>
+<text x="64" y="174" class="f" font-size="11.5" fill="#1F5F8B">Query — q_proj</text>
+<text x="64" y="196" class="g cap">"what I'm looking for:</text><text x="64" y="212" class="g cap">a recent noun"</text>
+<line x1="208" y1="168" x2="238" y2="168" stroke="#5B6B78" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="240" y="90" class="g mut">EVERY OTHER TOKEN OFFERS TWO THINGS</text>
+<g>
+<rect x="240" y="100" width="272" height="58" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="254" y="122" class="f" font-size="13">"dog"</text>
+<rect x="316" y="106" width="90" height="20" rx="3" fill="#F5E3DA" stroke="#B4532A"/><text x="361" y="120" class="f" font-size="10.5" text-anchor="middle" fill="#B4532A">Key: animal noun</text>
+<rect x="414" y="106" width="86" height="20" rx="3" fill="#DCEBE6" stroke="#2C7A62"/><text x="457" y="120" class="f" font-size="10.5" text-anchor="middle" fill="#2C7A62">Value: envelope</text>
+<text x="254" y="146" class="g mut">high match against the query</text>
+<rect x="240" y="168" width="272" height="58" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="254" y="190" class="f" font-size="13">"barked"</text>
+<rect x="316" y="174" width="90" height="20" rx="3" fill="#F5E3DA" stroke="#B4532A"/><text x="361" y="188" class="f" font-size="10.5" text-anchor="middle" fill="#B4532A">Key: past verb</text>
+<rect x="414" y="174" width="86" height="20" rx="3" fill="#DCEBE6" stroke="#2C7A62"/><text x="457" y="188" class="f" font-size="10.5" text-anchor="middle" fill="#2C7A62">Value: envelope</text>
+<text x="254" y="214" class="g mut">some match</text>
+<rect x="240" y="236" width="272" height="58" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="254" y="258" class="f" font-size="13">"the"</text>
+<rect x="316" y="242" width="90" height="20" rx="3" fill="#F5E3DA" stroke="#B4532A"/><text x="361" y="256" class="f" font-size="10.5" text-anchor="middle" fill="#B4532A">Key: article</text>
+<rect x="414" y="242" width="86" height="20" rx="3" fill="#DCEBE6" stroke="#2C7A62"/><text x="457" y="256" class="f" font-size="10.5" text-anchor="middle" fill="#2C7A62">Value: envelope</text>
+<text x="254" y="282" class="g mut">barely matches</text>
+</g>
+<text x="530" y="90" class="g mut">SCORES → PERCENTAGES</text>
+<g>
+<rect x="530" y="118" width="126" height="18" rx="3" fill="#1F5F8B"/><text x="664" y="132" class="f" font-size="12" fill="#16232E">60%</text>
+<rect x="530" y="186" width="63" height="18" rx="3" fill="#4E86AE"/><text x="601" y="200" class="f" font-size="12" fill="#16232E">30%</text>
+<rect x="530" y="254" width="21" height="18" rx="3" fill="#8FAEC4"/><text x="559" y="268" class="f" font-size="12" fill="#5B6B78">10%</text>
+</g>
+<line x1="700" y1="196" x2="726" y2="196" stroke="#5B6B78" stroke-width="1.4" marker-end="url(#a)"/>
+<rect x="732" y="128" width="112" height="136" rx="4" fill="#DCEBE6" stroke="#2C7A62"/>
+<text x="788" y="152" class="g cap" text-anchor="middle" font-weight="600">the blend</text>
+<text x="788" y="172" class="g mut" text-anchor="middle">60% dog's envelope</text>
+<text x="788" y="188" class="g mut" text-anchor="middle">+ 30% barked's</text>
+<text x="788" y="204" class="g mut" text-anchor="middle">+ 10% the's</text>
+<text x="788" y="230" class="g cap" text-anchor="middle">this is the sticky</text><text x="788" y="246" class="g cap" text-anchor="middle">note added to "it"</text>
+<rect x="36" y="310" width="392" height="118" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="52" y="332" class="g cap" font-weight="600">Attention really is just a weighted average</text>
+<text x="52" y="356" class="f" font-size="12" fill="#1F5F8B">softmax(Q · Kᵀ / √head_dim + mask) · V</text>
+<text x="52" y="382" class="g cap">Q, K and V are three plain matrix multiplications with no bias.</text>
+<text x="52" y="398" class="g cap">The complexity in production code is entirely about making this</text>
+<text x="52" y="414" class="g cap">average fast and memory-cheap — never about the idea.</text>
+<rect x="444" y="310" width="400" height="118" rx="4" fill="#F7EFDF" stroke="#C79A2E"/>
+<text x="460" y="332" class="g cap" font-weight="600">Why divide by √head_dim?</text>
+<text x="460" y="356" class="g cap">Without it the scores grow large, softmax collapses to "100% for</text>
+<text x="460" y="372" class="g cap">one word, 0% for everything else", gradients vanish and learning</text>
+<text x="460" y="388" class="g cap">stalls. It is a volume control on the comparison — the same</text>
+<text x="460" y="404" class="g cap">problem QK-Norm attacks again, harder, at scale.</text>
+</svg>

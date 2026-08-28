@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 400" width="880" height="400" role="img" aria-label="Chat bubbles are flattened into one stream of tokens with role markers">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11.5px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:12px;fill:#16232E}
+</style>
+<rect width="880" height="400" rx="4" fill="#F2F5F7"/><rect width="880" height="400" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="399" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="700" y="14" width="166" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="783" y="29" class="f tag" text-anchor="middle">chat_template.jinja</text>
+<text x="32" y="42" class="g h1">The chat window is a friendly lie</text>
+<text x="32" y="63" class="g sub">You see bubbles. The model sees one flat stream. Roles are just marker tokens inside it.</text>
+<text x="40" y="98" class="g mut">WHAT YOU SEE</text>
+<rect x="40" y="112" width="300" height="46" rx="10" fill="#EEE9F4" stroke="#B9AED6"/>
+<text x="56" y="132" class="g mut">system</text><text x="56" y="149" class="g cap">You are helpful.</text>
+<rect x="40" y="172" width="300" height="46" rx="10" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="56" y="192" class="g mut">user</text><text x="56" y="209" class="g cap">What is 2+2?</text>
+<rect x="40" y="232" width="300" height="46" rx="10" fill="#FFFFFF" stroke="#C3D0D8" stroke-dasharray="4 3"/>
+<text x="56" y="252" class="g mut">assistant</text><text x="56" y="269" class="g cap" fill="#5B6B78">(not written yet)</text>
+<line x1="360" y1="195" x2="392" y2="195" stroke="#5B6B78" stroke-width="1.4" marker-end="url(#a)"/>
+<text x="376" y="182" class="g mut" text-anchor="middle">flatten</text>
+<text x="412" y="98" class="g mut">WHAT THE MODEL SEES</text>
+<rect x="412" y="112" width="428" height="166" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<g class="f" font-size="12.5">
+<text x="428" y="138" fill="#5B4B8A">&lt;|bos|&gt;&lt;|system|&gt;<tspan fill="#16232E">You are helpful.</tspan>&lt;|eos|&gt;</text>
+<text x="428" y="168" fill="#5B4B8A">&lt;|user|&gt;<tspan fill="#16232E">What is 2+2?</tspan>&lt;|eos|&gt;</text>
+<text x="428" y="198" fill="#5B4B8A">&lt;|assistant|&gt;<tspan fill="#B4532A">▌</tspan></text>
+</g>
+<text x="452" y="222" class="g mut">the model is asked exactly one question here:</text>
+<text x="452" y="240" class="g cap" font-weight="600">"what token comes next?"</text>
+<text x="452" y="262" class="g mut">it writes until it guesses &lt;|eos|&gt;, then stops.</text>
+<rect x="40" y="300" width="800" height="72" rx="4" fill="#F7EFDF" stroke="#C79A2E"/>
+<text x="58" y="324" class="g cap" font-weight="600">There is no "assistant mode". There are no bubbles.</text>
+<text x="58" y="346" class="g cap">The roles are ordinary tokens in a stream — which is exactly why prompt injection is possible at all: if untrusted</text>
+<text x="58" y="364" class="g cap">text sneaks convincing-looking markers into the stream, the model may read them as real.</text>
+</svg>

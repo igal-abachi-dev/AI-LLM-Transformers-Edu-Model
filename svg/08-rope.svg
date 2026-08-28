@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 360" width="880" height="360" role="img" aria-label="RoPE rotates each token's numbers by an angle that depends on its position">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}
+</style>
+<rect width="880" height="360" rx="4" fill="#F2F5F7"/><rect width="880" height="360" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="359" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="756" y="14" width="110" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="811" y="29" class="f tag" text-anchor="middle">rope.py</text>
+<text x="32" y="42" class="g h1">Position is a twist (RoPE)</text>
+<text x="32" y="63" class="g sub">Attention sees an unordered pile. Without this, "dog bites man" and "man bites dog" look identical.</text>
+<g>
+<circle cx="120" cy="180" r="46" fill="#FFFFFF" stroke="#C3D0D8"/>
+<line x1="120" y1="180" x2="160" y2="180" stroke="#1F5F8B" stroke-width="3" marker-end="url(#a)"/>
+<text x="120" y="248" class="g cap" text-anchor="middle">token 0</text><text x="120" y="264" class="g mut" text-anchor="middle">no rotation</text>
+<circle cx="266" cy="180" r="46" fill="#FFFFFF" stroke="#C3D0D8"/>
+<line x1="266" y1="180" x2="302" y2="163" stroke="#1F5F8B" stroke-width="3" marker-end="url(#a)"/>
+<path d="M296 180 A 30 30 0 0 0 292 166" fill="none" stroke="#B4532A" stroke-width="1.4"/>
+<text x="266" y="248" class="g cap" text-anchor="middle">token 1</text><text x="266" y="264" class="g mut" text-anchor="middle">a little</text>
+<circle cx="412" cy="180" r="46" fill="#FFFFFF" stroke="#C3D0D8"/>
+<line x1="412" y1="180" x2="437" y2="149" stroke="#1F5F8B" stroke-width="3" marker-end="url(#a)"/>
+<path d="M442 180 A 30 30 0 0 0 431 158" fill="none" stroke="#B4532A" stroke-width="1.4"/>
+<text x="412" y="248" class="g cap" text-anchor="middle">token 2</text><text x="412" y="264" class="g mut" text-anchor="middle">more</text>
+<circle cx="558" cy="180" r="46" fill="#FFFFFF" stroke="#C3D0D8"/>
+<line x1="558" y1="180" x2="572" y2="142" stroke="#1F5F8B" stroke-width="3" marker-end="url(#a)"/>
+<path d="M588 180 A 30 30 0 0 0 573 154" fill="none" stroke="#B4532A" stroke-width="1.4"/>
+<text x="558" y="248" class="g cap" text-anchor="middle">token 3</text><text x="558" y="264" class="g mut" text-anchor="middle">more again</text>
+</g>
+<text x="320" y="112" class="g cap" text-anchor="middle">the 8 numbers of a head become 4 little arrows, each rotated by the token's slot</text>
+<rect x="628" y="98" width="212" height="180" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="644" y="120" class="g cap" font-weight="600">What survives the comparison</text>
+<circle cx="734" cy="176" r="40" fill="#F2F5F7" stroke="#DDE5EA"/>
+<line x1="734" y1="176" x2="770" y2="159" stroke="#1F5F8B" stroke-width="2.6"/>
+<line x1="734" y1="176" x2="748" y2="139" stroke="#B4532A" stroke-width="2.6"/>
+<path d="M764 168 A 32 32 0 0 0 745 146" fill="none" stroke="#5B6B78" stroke-width="1.4"/>
+<text x="644" y="236" class="g cap">When two tokens compare, the</text>
+<text x="644" y="252" class="g cap">maths leaves only the <tspan font-weight="600">gap</tspan></text>
+<text x="644" y="268" class="g cap">between them — the distance.</text>
+<rect x="40" y="288" width="800" height="56" rx="4" fill="#F7EFDF" stroke="#C79A2E"/>
+<text x="58" y="310" class="g cap"><tspan font-weight="600">Two details that are easy to get wrong:</tspan> the rotation is applied to <tspan class="f" fill="#B4532A">Q</tspan> and <tspan class="f" fill="#B4532A">K</tspan> only, never to <tspan class="f" fill="#2C7A62">V</tspan> — position is about <tspan font-style="italic">where to look</tspan>,</text>
+<text x="58" y="330" class="g cap">not <tspan font-style="italic">what to fetch</tspan>. And the cos/sin tables are computed once per forward pass in model.py, then reused by every layer.</text>
+</svg>

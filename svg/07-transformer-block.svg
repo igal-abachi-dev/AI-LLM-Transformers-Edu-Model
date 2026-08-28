@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 400" width="880" height="400" role="img" aria-label="Inside one transformer block: pre-norm, attention, add, pre-norm, feed forward, add">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+<marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#C79A2E"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}.bx{font-size:13px;fill:#16232E}
+</style>
+<rect width="880" height="400" rx="4" fill="#F2F5F7"/><rect width="880" height="400" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="399" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="690" y="14" width="176" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="778" y="29" class="f tag" text-anchor="middle">model.py · layers.py</text>
+<text x="32" y="42" class="g h1">One block = normalise, do something, add it back. Twice.</text>
+<text x="32" y="63" class="g sub">Thirty lines of code. The two golden arcs are the residual connections — the belt going past the work.</text>
+<path d="M112 200 C 112 118, 300 118, 348 118" fill="none" stroke="#C79A2E" stroke-width="1.6"/>
+<path d="M348 118 C 400 118, 402 176, 402 192" fill="none" stroke="#C79A2E" stroke-width="1.6" marker-end="url(#b)"/>
+<path d="M432 200 C 432 118, 620 118, 668 118" fill="none" stroke="#C79A2E" stroke-width="1.6"/>
+<path d="M668 118 C 720 118, 722 176, 722 192" fill="none" stroke="#C79A2E" stroke-width="1.6" marker-end="url(#b)"/>
+<text x="257" y="108" class="g mut" text-anchor="middle">the card travels past, untouched</text>
+<text x="577" y="108" class="g mut" text-anchor="middle">and again</text>
+<g text-anchor="middle">
+<rect x="40" y="196" width="72" height="52" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/><text x="76" y="227" class="g bx">in</text>
+<rect x="132" y="196" width="94" height="52" rx="4" fill="#FFFFFF" stroke="#1F5F8B"/><text x="179" y="218" class="f" font-size="12">RMSNorm</text><text x="179" y="236" class="g mut">volume knob</text>
+<rect x="246" y="196" width="112" height="52" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="302" y="218" class="f" font-size="12">attention</text><text x="302" y="236" class="g mut">gathering</text>
+<circle cx="402" cy="222" r="14" fill="#FFFFFF" stroke="#C79A2E" stroke-width="1.6"/><text x="402" y="228" class="g" font-size="16" font-weight="700" fill="#C79A2E">+</text>
+<rect x="442" y="196" width="94" height="52" rx="4" fill="#FFFFFF" stroke="#2C7A62"/><text x="489" y="218" class="f" font-size="12">RMSNorm</text><text x="489" y="236" class="g mut">volume knob</text>
+<rect x="556" y="196" width="112" height="52" rx="4" fill="#DCEBE6" stroke="#2C7A62"/><text x="612" y="218" class="f" font-size="12">SwiGLU</text><text x="612" y="236" class="g mut">thinking</text>
+<circle cx="722" cy="222" r="14" fill="#FFFFFF" stroke="#C79A2E" stroke-width="1.6"/><text x="722" y="228" class="g" font-size="16" font-weight="700" fill="#C79A2E">+</text>
+<rect x="768" y="196" width="72" height="52" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/><text x="804" y="227" class="g bx">out</text>
+</g>
+<g stroke="#5B6B78" stroke-width="1.4" marker-end="url(#a)" fill="none">
+<line x1="114" y1="222" x2="128" y2="222"/><line x1="228" y1="222" x2="242" y2="222"/><line x1="360" y1="222" x2="384" y2="222"/>
+<line x1="420" y1="222" x2="438" y2="222"/><line x1="538" y1="222" x2="552" y2="222"/><line x1="670" y1="222" x2="704" y2="222"/><line x1="740" y1="222" x2="764" y2="222"/>
+</g>
+<rect x="40" y="276" width="392" height="98" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="56" y="298" class="g cap" font-weight="600">Why normalise <tspan font-style="italic">before</tspan> the work?</text>
+<text x="56" y="318" class="g cap">RMSNorm rescales the card's 32 numbers to a standard size,</text>
+<text x="56" y="334" class="g cap">then applies a learned per-slot weight. Without it, values grow</text>
+<text x="56" y="350" class="g cap">layer after layer until training explodes. The 2017 paper put the</text>
+<text x="56" y="366" class="g cap">norm after; every modern model puts it before. It trains better.</text>
+<rect x="448" y="276" width="392" height="98" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="464" y="298" class="g cap" font-weight="600">Two different jobs, in a fixed order</text>
+<text x="464" y="320" class="f" font-size="11.5" fill="#1F5F8B">attention</text><text x="536" y="320" class="g cap">— looks at other tokens. "Who should</text>
+<text x="464" y="336" class="g cap">I be listening to in this sentence?"</text>
+<text x="464" y="358" class="f" font-size="11.5" fill="#2C7A62">SwiGLU</text><text x="524" y="358" class="g cap">— looks at nothing but itself. "Given what</text>
+<text x="464" y="374" class="g cap">I just gathered, what do I conclude?"</text>
+</svg>

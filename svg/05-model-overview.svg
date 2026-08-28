@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 580" width="880" height="580" role="img" aria-label="End to end model: tokens, embedding, transformer blocks, final norm, lm head, logits">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.bx{font-size:14px;fill:#16232E}.cap{font-size:11.5px;fill:#16232E}
+</style>
+<rect width="880" height="580" rx="4" fill="#F2F5F7"/><rect width="880" height="580" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="579" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="756" y="14" width="110" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="811" y="29" class="f tag" text-anchor="middle">model.py</text>
+<text x="32" y="42" class="g h1">The whole machine, top to bottom</text>
+<text x="32" y="63" class="g sub">tiny_edu numbers shown. The 150M model is the same classes with bigger values — that is the design idea of the repo.</text>
+<g text-anchor="middle">
+<rect x="250" y="90" width="380" height="44" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="440" y="112" class="f bx">tokens</text><text x="440" y="127" class="g mut">[B, S] — integers</text>
+<rect x="250" y="158" width="380" height="44" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="440" y="180" class="f bx">token_embedding</text><text x="440" y="195" class="g mut">64 rows × 32 numbers — one "meaning card" per token</text>
+<rect x="250" y="226" width="380" height="150" rx="4" fill="#FFFFFF" stroke="#1F5F8B" stroke-width="1.6"/>
+<text x="440" y="250" class="f bx">TransformerBlock × n_layers</text>
+<rect x="272" y="264" width="336" height="44" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="440" y="284" class="g cap" font-weight="600">RMSNorm → attention → add back</text><text x="440" y="300" class="g mut">gathering: which other tokens matter here?</text>
+<rect x="272" y="318" width="336" height="44" rx="4" fill="#DCEBE6" stroke="#2C7A62"/>
+<text x="440" y="338" class="g cap" font-weight="600">RMSNorm → SwiGLU → add back</text><text x="440" y="354" class="g mut">thinking: each token alone, what do I conclude?</text>
+<rect x="250" y="400" width="380" height="40" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="440" y="425" class="f bx">final_norm</text>
+<rect x="250" y="464" width="380" height="44" rx="4" fill="#F7EFDF" stroke="#C79A2E"/>
+<text x="440" y="486" class="f bx">lm_head</text><text x="440" y="501" class="g mut">32 → 64 — one score per possible next token</text>
+<rect x="250" y="532" width="380" height="34" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="440" y="554" class="f" font-size="13" fill="#16232E">logits [B, S, 64]  →  softmax  →  pick</text>
+</g>
+<g stroke="#5B6B78" stroke-width="1.4" marker-end="url(#a)" fill="none">
+<line x1="440" y1="136" x2="440" y2="154"/><line x1="440" y1="204" x2="440" y2="222"/>
+<line x1="440" y1="378" x2="440" y2="396"/><line x1="440" y1="442" x2="440" y2="460"/>
+<line x1="440" y1="510" x2="440" y2="528"/>
+</g>
+<path d="M250 486 L176 486 L176 180 L246 180" fill="none" stroke="#C79A2E" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="164" y="400" class="g mut" text-anchor="middle" transform="rotate(-90 164 400)">tied weights — same table, read both ways</text>
+<rect x="654" y="252" width="196" height="98" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="668" y="274" class="f" font-size="12" fill="#B4532A">rope.py</text>
+<text x="668" y="294" class="g cap">The cos / sin rotation tables are</text><text x="668" y="310" class="g cap">built once per forward pass and</text><text x="668" y="326" class="g cap">handed to every layer — not</text><text x="668" y="342" class="g cap">recomputed per block.</text>
+<line x1="650" y1="300" x2="634" y2="300" stroke="#B4532A" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<rect x="30" y="90" width="196" height="164" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="44" y="112" class="g cap" font-weight="600">tiny_edu, in full</text>
+<text x="44" y="132" class="f" font-size="11.5" fill="#16232E">vocab 64 · seq 32 · layers 2</text>
+<text x="44" y="150" class="f" font-size="11.5" fill="#16232E">d_model 32 · heads 4 · d_ff 96</text>
+<text x="44" y="190" class="g cap" font-weight="600">28,832 weights</text>
+<text x="44" y="208" class="g mut">about the size of a small</text><text x="44" y="224" class="g mut">spreadsheet — runs in a test,</text><text x="44" y="240" class="g mut">on any laptop, in a second.</text>
+</svg>

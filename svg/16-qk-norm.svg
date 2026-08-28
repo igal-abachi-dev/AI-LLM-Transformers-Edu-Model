@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 380" width="880" height="380" role="img" aria-label="QK-Norm keeps attention scores from saturating softmax during large training runs">
+<defs><pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern></defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}
+</style>
+<rect width="880" height="380" rx="4" fill="#F2F5F7"/><rect width="880" height="380" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="379" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="722" y="14" width="144" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="794" y="29" class="f tag" text-anchor="middle">labs/03_qk_norm.py</text>
+<text x="32" y="42" class="g h1">QK-Norm — a volume limiter on the question and the name tag</text>
+<text x="32" y="63" class="g sub">One of the classic ways a big training run dies, thousands of GPU-hours in, and a two-line fix.</text>
+<rect x="40" y="88" width="386" height="212" rx="4" fill="#FFFFFF" stroke="#B4532A"/>
+<text x="56" y="112" class="g cap" font-weight="600" fill="#B4532A">Without it — softmax saturates</text>
+<text x="56" y="134" class="g mut">Q·K scores grow enormous as the model gets big:</text>
+<g class="f" font-size="11" fill="#16232E"><text x="56" y="156">18.4    -12.1    -9.7    -14.0</text></g>
+<text x="56" y="182" class="g mut">after softmax:</text>
+<g>
+<rect x="56" y="192" width="300" height="18" rx="2" fill="#B4532A"/><text x="364" y="206" class="f" font-size="11" fill="#16232E">100%</text>
+<rect x="56" y="216" width="2" height="18" rx="1" fill="#D3B0A2"/><text x="66" y="230" class="f" font-size="11" fill="#5B6B78">~0</text>
+<rect x="56" y="240" width="2" height="18" rx="1" fill="#D3B0A2"/><text x="66" y="254" class="f" font-size="11" fill="#5B6B78">~0</text>
+</g>
+<text x="56" y="278" class="g cap">Gradients vanish. The loss spikes to nonsense. Run over.</text>
+<rect x="454" y="88" width="386" height="212" rx="4" fill="#FFFFFF" stroke="#2C7A62"/>
+<text x="470" y="112" class="g cap" font-weight="600" fill="#2C7A62">With it — a real comparison again</text>
+<text x="470" y="134" class="g mut">RMSNorm on Q and on K, per head, over head_dim = 8:</text>
+<g class="f" font-size="11" fill="#16232E"><text x="470" y="156">2.1     -1.4     0.6     -0.9</text></g>
+<text x="470" y="182" class="g mut">after softmax:</text>
+<g>
+<rect x="470" y="192" width="188" height="18" rx="2" fill="#2C7A62"/><text x="666" y="206" class="f" font-size="11" fill="#16232E">62%</text>
+<rect x="470" y="216" width="60" height="18" rx="2" fill="#5F9C8A"/><text x="538" y="230" class="f" font-size="11" fill="#16232E">20%</text>
+<rect x="470" y="240" width="36" height="18" rx="2" fill="#8FC4B3"/><text x="514" y="254" class="f" font-size="11" fill="#16232E">12%</text>
+</g>
+<text x="470" y="278" class="g cap">Both cards get resized before comparing, so the score is about</text>
+<text x="470" y="294" class="g cap">direction — do these match? — not about who shouted louder.</text>
+<rect x="40" y="312" width="800" height="52" rx="4" fill="#F7EFDF" stroke="#C79A2E"/>
+<text x="58" y="334" class="g cap" font-weight="600">Order matters, and it is easy to get wrong on a whiteboard.</text>
+<text x="58" y="352" class="g cap">In this codebase QK-Norm runs <tspan font-style="italic">before</tspan> RoPE: <tspan class="f" fill="#1F5F8B">project → normalise → rotate</tspan>. Some papers do it the other way. Follow the code.</text>
+</svg>

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 320" width="880" height="320" role="img" aria-label="The shift by one trick: every position predicts its right hand neighbour">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 10 5 0 10z" fill="#C79A2E"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}
+</style>
+<rect width="880" height="320" rx="4" fill="#F2F5F7"/><rect width="880" height="320" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="319" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="766" y="14" width="100" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="816" y="29" class="f tag" text-anchor="middle">loss.py</text>
+<text x="32" y="42" class="g h1">Shift by one — the trick that makes training cheap</text>
+<text x="32" y="63" class="g sub">Every position guesses its neighbour to the right. One sentence is not one training example; it is S−1 of them at once.</text>
+<text x="40" y="106" class="g mut">MY GUESSES</text><text x="40" y="124" class="f" font-size="11" fill="#1F5F8B">logits[:, :-1, :]</text>
+<g class="f" font-size="13" text-anchor="middle" fill="#16232E">
+<rect x="190" y="94" width="100" height="38" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="240" y="118">The</text>
+<rect x="300" y="94" width="100" height="38" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="350" y="118">·cat</text>
+<rect x="410" y="94" width="100" height="38" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="460" y="118">·sat</text>
+<rect x="520" y="94" width="100" height="38" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="570" y="118">·on</text>
+<rect x="630" y="94" width="100" height="38" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="680" y="118">·the</text>
+<rect x="740" y="94" width="100" height="38" rx="4" fill="#F2F5F7" stroke="#C3D0D8" stroke-dasharray="4 3"/><text x="790" y="118" fill="#5B6B78">—</text>
+</g>
+<g stroke="#C79A2E" stroke-width="1.5" fill="none" marker-end="url(#a)">
+<path d="M240 136 L345 186"/><path d="M350 136 L455 186"/><path d="M460 136 L565 186"/><path d="M570 136 L675 186"/><path d="M680 136 L785 186"/>
+</g>
+<text x="40" y="206" class="g mut">THE REAL ANSWERS</text><text x="40" y="224" class="f" font-size="11" fill="#B4532A">tokens[:, 1:]</text>
+<g class="f" font-size="13" text-anchor="middle" fill="#16232E">
+<rect x="190" y="192" width="100" height="38" rx="4" fill="#F2F5F7" stroke="#C3D0D8" stroke-dasharray="4 3"/><text x="240" y="216" fill="#5B6B78">—</text>
+<rect x="300" y="192" width="100" height="38" rx="4" fill="#F5E3DA" stroke="#B4532A"/><text x="350" y="216">·cat</text>
+<rect x="410" y="192" width="100" height="38" rx="4" fill="#F5E3DA" stroke="#B4532A"/><text x="460" y="216">·sat</text>
+<rect x="520" y="192" width="100" height="38" rx="4" fill="#F5E3DA" stroke="#B4532A"/><text x="570" y="216">·on</text>
+<rect x="630" y="192" width="100" height="38" rx="4" fill="#F5E3DA" stroke="#B4532A"/><text x="680" y="216">·the</text>
+<rect x="740" y="192" width="100" height="38" rx="4" fill="#F5E3DA" stroke="#B4532A"/><text x="790" y="216">·mat</text>
+</g>
+<rect x="40" y="256" width="800" height="46" rx="4" fill="#F7EFDF" stroke="#C79A2E"/>
+<text x="58" y="276" class="g cap">The last guess has nothing to be scored against, and the first token has nobody guessing it — that is the whole reason for the two slices.</text>
+<text x="58" y="294" class="g cap">A 32-token sentence therefore yields 31 scored predictions in a single forward pass. cross_entropy averages the surprise over all of them.</text>
+</svg>

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 360" width="880" height="360" role="img" aria-label="The residual stream is a conveyor belt: each layer adds a sticky note and erases nothing">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}
+</style>
+<rect width="880" height="360" rx="4" fill="#F2F5F7"/><rect width="880" height="360" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="359" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="686" y="14" width="180" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="776" y="29" class="f tag" text-anchor="middle">the + in TransformerBlock</text>
+<text x="32" y="42" class="g h1">The conveyor belt (residual stream)</text>
+<text x="32" y="63" class="g sub">One belt per token, carrying one card. Every layer reads the card and adds sticky notes. Nothing is ever erased.</text>
+<rect x="40" y="222" width="800" height="10" rx="5" fill="#C3D0D8"/>
+<g stroke="#5B6B78" stroke-width="1.4" marker-end="url(#a)" fill="none">
+<line x1="150" y1="227" x2="196" y2="227"/><line x1="332" y1="227" x2="378" y2="227"/>
+<line x1="514" y1="227" x2="560" y2="227"/><line x1="696" y1="227" x2="742" y2="227"/>
+</g>
+<g text-anchor="middle">
+<rect x="222" y="110" width="90" height="52" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="267" y="132" class="g cap" font-weight="600">Layer 0</text><text x="267" y="149" class="g mut">attn + ffn</text>
+<rect x="404" y="110" width="90" height="52" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="449" y="132" class="g cap" font-weight="600">Layer 1</text><text x="449" y="149" class="g mut">attn + ffn</text>
+<rect x="586" y="110" width="90" height="52" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="631" y="132" class="g cap" font-weight="600">Layer 2</text><text x="631" y="149" class="g mut">attn + ffn</text>
+</g>
+<g stroke="#1F5F8B" stroke-width="1.4" fill="none" marker-end="url(#a)">
+<line x1="267" y1="164" x2="267" y2="200"/><line x1="449" y1="164" x2="449" y2="200"/><line x1="631" y1="164" x2="631" y2="200"/>
+</g>
+<g fill="#FFFFFF" stroke="#1F5F8B"><circle cx="267" cy="212" r="12"/><circle cx="449" cy="212" r="12"/><circle cx="631" cy="212" r="12"/></g>
+<g class="g" font-size="15" fill="#1F5F8B" text-anchor="middle" font-weight="700"><text x="267" y="217">+</text><text x="449" y="217">+</text><text x="631" y="217">+</text></g>
+<g>
+<rect x="58" y="244" width="86" height="66" rx="3" fill="#FFFFFF" stroke="#C3D0D8"/><text x="101" y="266" class="g mut" text-anchor="middle">"dog"</text><text x="101" y="284" class="f" font-size="10" fill="#5B6B78" text-anchor="middle">32 numbers</text>
+<rect x="240" y="244" width="86" height="66" rx="3" fill="#FFFFFF" stroke="#C3D0D8"/><text x="283" y="266" class="g mut" text-anchor="middle">"dog"</text><rect x="250" y="276" width="66" height="10" rx="2" fill="#9FC0D6"/>
+<rect x="422" y="244" width="86" height="66" rx="3" fill="#FFFFFF" stroke="#C3D0D8"/><text x="465" y="266" class="g mut" text-anchor="middle">"dog"</text><rect x="432" y="276" width="66" height="10" rx="2" fill="#9FC0D6"/><rect x="432" y="290" width="66" height="10" rx="2" fill="#8FC4B3"/>
+<rect x="604" y="244" width="86" height="66" rx="3" fill="#FFFFFF" stroke="#C3D0D8"/><text x="647" y="264" class="g mut" text-anchor="middle">"dog"</text><rect x="614" y="272" width="66" height="9" rx="2" fill="#9FC0D6"/><rect x="614" y="285" width="66" height="9" rx="2" fill="#8FC4B3"/><rect x="614" y="298" width="66" height="9" rx="2" fill="#DCC085"/>
+<rect x="754" y="244" width="86" height="66" rx="3" fill="#F7EFDF" stroke="#C79A2E"/><text x="797" y="272" class="g cap" text-anchor="middle" font-weight="600">read this</text><text x="797" y="290" class="g mut" text-anchor="middle">→ next-token</text><text x="797" y="304" class="g mut" text-anchor="middle">guess</text>
+</g>
+<text x="440" y="336" class="g cap" text-anchor="middle">If a layer has nothing useful to say it adds roughly nothing, and everything below it sails through untouched. That is why deep models train at all.</text>
+</svg>

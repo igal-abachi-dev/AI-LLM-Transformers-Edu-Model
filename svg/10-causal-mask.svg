@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 420" width="880" height="420" role="img" aria-label="Causal mask and sliding window mask drawn as grids">
+<defs><pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern></defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}
+</style>
+<rect width="880" height="420" rx="4" fill="#F2F5F7"/><rect width="880" height="420" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="419" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="746" y="14" width="120" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="806" y="29" class="f tag" text-anchor="middle">masking.py</text>
+<text x="32" y="42" class="g h1">Who is allowed to look at whom</text>
+<text x="32" y="63" class="g sub">One boolean expression, drawn as a grid. Rows ask; columns answer. Filled = allowed.</text>
+<text x="88" y="98" class="g cap" font-weight="600">Full causal — no peeking at the future</text>
+<text x="88" y="116" class="f" font-size="11.5" fill="#1F5F8B">key_positions &lt;= query_positions</text>
+<g>
+<rect x="88" y="130" width="216" height="216" fill="#FFFFFF" stroke="#C3D0D8"/>
+<g fill="#1F5F8B">
+<rect x="88" y="130" width="36" height="36"/>
+<rect x="88" y="166" width="36" height="36"/><rect x="124" y="166" width="36" height="36"/>
+<rect x="88" y="202" width="36" height="36"/><rect x="124" y="202" width="36" height="36"/><rect x="160" y="202" width="36" height="36"/>
+<rect x="88" y="238" width="36" height="36"/><rect x="124" y="238" width="36" height="36"/><rect x="160" y="238" width="36" height="36"/><rect x="196" y="238" width="36" height="36"/>
+<rect x="88" y="274" width="36" height="36"/><rect x="124" y="274" width="36" height="36"/><rect x="160" y="274" width="36" height="36"/><rect x="196" y="274" width="36" height="36"/><rect x="232" y="274" width="36" height="36"/>
+<rect x="88" y="310" width="36" height="36"/><rect x="124" y="310" width="36" height="36"/><rect x="160" y="310" width="36" height="36"/><rect x="196" y="310" width="36" height="36"/><rect x="232" y="310" width="36" height="36"/><rect x="268" y="310" width="36" height="36"/>
+</g>
+<g stroke="#C3D0D8" fill="none">
+<path d="M124 130V346M160 130V346M196 130V346M232 130V346M268 130V346M88 166H304M88 202H304M88 238H304M88 274H304M88 310H304"/>
+</g>
+</g>
+<g class="f" font-size="10.5" fill="#5B6B78" text-anchor="middle">
+<text x="106" y="360">0</text><text x="142" y="360">1</text><text x="178" y="360">2</text><text x="214" y="360">3</text><text x="250" y="360">4</text><text x="286" y="360">5</text>
+</g>
+<g class="f" font-size="10.5" fill="#5B6B78" text-anchor="end">
+<text x="82" y="152">0</text><text x="82" y="188">1</text><text x="82" y="224">2</text><text x="82" y="260">3</text><text x="82" y="296">4</text><text x="82" y="332">5</text>
+</g>
+<text x="196" y="378" class="g mut" text-anchor="middle">key position →</text>
+<text x="56" y="238" class="g mut" text-anchor="middle" transform="rotate(-90 56 238)">query position →</text>
+<text x="382" y="98" class="g cap" font-weight="600">Sliding window — a near-sighted layer</text>
+<text x="382" y="116" class="f" font-size="11.5" fill="#2C7A62">…and within the last N tokens</text>
+<g>
+<rect x="382" y="130" width="216" height="216" fill="#FFFFFF" stroke="#C3D0D8"/>
+<g fill="#2C7A62">
+<rect x="382" y="130" width="36" height="36"/>
+<rect x="382" y="166" width="36" height="36"/><rect x="418" y="166" width="36" height="36"/>
+<rect x="382" y="202" width="36" height="36"/><rect x="418" y="202" width="36" height="36"/><rect x="454" y="202" width="36" height="36"/>
+<rect x="418" y="238" width="36" height="36"/><rect x="454" y="238" width="36" height="36"/><rect x="490" y="238" width="36" height="36"/>
+<rect x="454" y="274" width="36" height="36"/><rect x="490" y="274" width="36" height="36"/><rect x="526" y="274" width="36" height="36"/>
+<rect x="490" y="310" width="36" height="36"/><rect x="526" y="310" width="36" height="36"/><rect x="562" y="310" width="36" height="36"/>
+</g>
+<g stroke="#C3D0D8" fill="none">
+<path d="M418 130V346M454 130V346M490 130V346M526 130V346M562 130V346M382 166H598M382 202H598M382 238H598M382 274H598M382 310H598"/>
+</g>
+</g>
+<text x="490" y="378" class="g mut" text-anchor="middle">a band, not a triangle — old tokens fall out of reach</text>
+<rect x="624" y="130" width="216" height="216" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="640" y="154" class="g cap" font-weight="600">Why block the future at all?</text>
+<text x="640" y="176" class="g cap">The model's entire job is guessing</text>
+<text x="640" y="192" class="g cap">what comes next. If token 5 could see</text>
+<text x="640" y="208" class="g cap">token 6, the exercise would be free —</text>
+<text x="640" y="224" class="g cap">and it would learn nothing.</text>
+<text x="640" y="254" class="g cap" font-weight="600">Both grids are one line of code</text>
+<text x="640" y="276" class="g cap">Full and windowed masks differ only</text>
+<text x="640" y="292" class="g cap">by an extra comparison. The shapes</text>
+<text x="640" y="308" class="g cap">above are what that line means when</text>
+<text x="640" y="324" class="g cap">you draw it.</text>
+</svg>

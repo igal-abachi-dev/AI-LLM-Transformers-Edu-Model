@@ -35,6 +35,8 @@ Computers can't work with letters directly, and working with whole words is wast
 are millions of words, plus typos, plus code, plus Hebrew, plus emoji). So text gets chopped
 into pieces that sit in between: **tokens**.
 
+![Text is chopped into tokens, and tokens become ID numbers](svg/01-tokens.svg)
+
 A token is usually a common chunk of characters. `" the"` is one token. `" hello"` is one
 token. A weird word like `" Bereshit"` might be three or four tokens. A single emoji might
 be two.
@@ -72,6 +74,7 @@ Your conversation gets flattened into something like:
 ```
 <|bos|><|system|>You are helpful.<|eos|><|user|>What is 2+2?<|eos|><|assistant|>
 ```
+![Chat bubbles flattened into one stream of tokens](svg/02-chat-template.svg)
 
 ...and then the model is asked its one and only question: *what token comes next?* It has
 learned that after `<|assistant|>` comes assistant-flavoured text, so it starts writing an
@@ -84,6 +87,8 @@ sneak convincing-looking markers into the stream, the model may treat them as re
 ## 1.3 The guessing loop (autoregression)
 
 Here is the actual loop, from `src/minifrontier/generation.py`:
+
+![The autoregressive loop, and how a token is picked](svg/03-guessing-loop.svg)
 
 1. Feed all the tokens so far into the model.
 2. The model outputs a **score for every one of the 16,384 possible next tokens**. These
@@ -114,6 +119,8 @@ hundreds of billions. These numbers are the *entire* memory of the model.
 
 Those numbers got set during **training**, which is a fill-in-the-blank game played
 astronomically many times:
+
+![Training: hide, guess, measure surprise, nudge](svg/04-training.svg)
 
 1. Take a real sentence from real text.
 2. Hide everything after some point.
@@ -184,6 +191,8 @@ That's small enough to run on any laptop, in a test, in a second. And it is **ex
 same code** that runs the 150M-parameter version — same classes, same file, different
 numbers. That's the whole design idea of this repo.
 
+![The whole model, tokens in to logits out](svg/05-model-overview.svg)
+
 ## 2.1 Step one: tokens become "meaning cards" (embedding)
 
 ```
@@ -199,6 +208,8 @@ nonsense and, during training, drift so that similar tokens end up with similar 
 From here on, every token in the sentence is a list of 32 numbers, and those numbers get
 edited over and over as they travel up through the model. That travelling list is called the
 **residual stream**, and it's the single most useful mental image in this whole document:
+
+![The residual stream as a conveyor belt](svg/06-residual-stream.svg)
 
 > **Picture a conveyor belt, one per token, carrying a card. Each layer of the model reads
 > the cards, and adds sticky notes to them. Nothing is ever erased. At the top, we read the
@@ -216,6 +227,8 @@ Kid version: give each token's numbers a **twist**, and twist token #5 more than
 Take the 8 numbers of a head, treat them as 4 little arrows (pairs), and *rotate each arrow
 by an angle that depends on where the token sits in the sentence*. Token 0 gets no rotation,
 token 1 a little, token 7 more.
+
+![RoPE: position as a rotation](svg/08-rope.svg)
 
 The clever bit: when two tokens later compare themselves against each other, the maths works
 out so that what matters is the **difference** between their rotations — that is, *how far
@@ -239,6 +252,8 @@ return inputs + self.feed_forward(self.ffn_norm(inputs))
 ```
 
 Read that as: **normalize → do something → add the result back onto the conveyor belt.**
+
+![Inside one transformer block](svg/07-transformer-block.svg)
 
 Three ideas are packed into those two lines:
 
@@ -276,6 +291,8 @@ Picture a classroom where every child is one token. Each child does three things
 In code those are three plain matrix multiplications with no bias:
 `q_proj`, `k_proj`, `v_proj`.
 
+![Attention as a classroom of queries, keys and values](svg/09-attention.svg)
+
 Now every child compares their Query against **everyone's** name tag. High match = high
 score (`Q · Kᵀ`). The scores get turned into percentages with softmax — so each child ends
 up with something like "60% dog, 30% barked, 10% the". Then they collect a **blend of
@@ -290,6 +307,8 @@ token 5 can look at tokens 0–5 and *nothing after*. In `src/minifrontier/maski
 one line: `key_positions <= query_positions`. Draw it as a triangle — the lower-left
 triangle of a grid is allowed, the upper-right is blocked.
 
+![Causal and sliding-window masks as grids](svg/10-causal-mask.svg)
+
 **Divide by √head_dim.** Before softmax, the scores get shrunk by the square root of the
 head size. Without this, the scores get big, softmax turns into "100% for one word, 0% for
 everything else", and learning stalls. It's a volume control on the comparison.
@@ -299,6 +318,8 @@ subject *and* tone at once. So the 32 numbers get split into 4 groups of 8, and 
 classroom exercise runs **4 times in parallel with 4 different sets of Q/K/V weights**. One
 head may learn "find the verb", another "find the matching bracket". Their four answers get
 glued back together into 32 numbers, and one last matrix (`out_proj`) mixes them.
+
+![Four attention heads running in parallel](svg/11-multi-head.svg)
 
 In `tiny_edu` this is **MHA** — Multi-Head Attention — meaning 4 queries, 4 keys, 4 values.
 Everybody has their own everything. Remember this; it's the first thing `tiny_modern`
@@ -325,6 +346,8 @@ down(silu(gate(x)) * up(x))
 
 Each token, alone, gets expanded from 32 numbers to 96 (a bigger room to think in), then
 squeezed back down to 32.
+
+![SwiGLU: a wider room with a dimmer switch](svg/12-swiglu.svg)
 
 The `gate` part is a **dimmer switch**. Two copies of the widened token are made: `up` is
 the content, `gate` is passed through a smooth on/off curve (SiLU) and multiplied in, so it
@@ -364,6 +387,8 @@ targets = tokens[:, 1:]  # the real answers, shifted left by one
 Every position guesses its *neighbour to the right*. So one sentence of 32 tokens gives you
 31 training examples simultaneously, not one. That's why this is so efficient.
 
+![The shift-by-one trick in the loss](svg/13-loss-shift.svg)
+
 `cross_entropy` is the surprise-o-meter. Guessed the right token with 90% confidence → tiny
 loss. Guessed it with 2% confidence → big loss. Average across all positions, then
 backpropagate.
@@ -388,6 +413,8 @@ tokens through all layers — and you did the same thing for word 99, and 98...
 But notice: **the Keys and Values of old tokens never change.** Token 3's name tag and
 envelope are the same whether the sentence is 10 or 500 tokens long (they only depend on
 tokens 0–3, which are already fixed).
+
+![The KV cache, and what it costs](svg/14-kv-cache.svg)
 
 So: write them down once and keep them. That's the **KV cache**
 (`src/minifrontier/cache.py`). Now each new token needs only *its own* Q, K, V computed,
@@ -430,6 +457,8 @@ mostly no.
 **The fix.** Keep 4 Query heads. Use only **2** Key/Value heads. Heads 0 and 1 share KV
 group 0; heads 2 and 3 share KV group 1. In `config.py`, `queries_per_kv = 2`.
 
+![MHA versus GQA](svg/15-mha-vs-gqa.svg)
+
 In the code, `k_proj` and `v_proj` output 16 numbers instead of 32:
 
 ```python
@@ -459,6 +488,8 @@ ways a big training run dies.
 **The fix.** Put an `RMSNorm` on Q and on K — the same volume knob from section 2.3, but
 applied *per head*, on `head_dim = 8` numbers:
 
+![QK-Norm stops softmax saturating](svg/16-qk-norm.svg)
+
 ```python
 self.q_norm = RMSNorm(self.head_dim, eps=config.norm_eps) if config.qk_norm else None
 self.k_norm = RMSNorm(self.head_dim, eps=config.norm_eps) if config.qk_norm else None
@@ -486,6 +517,7 @@ reach — a variable declared 400 lines up, a name from the top of the document.
 **The fix.** Don't make every layer far-sighted. Make most of them near-sighted and cheap,
 and put a proper long-range layer in every so often.
 
+![Three local layers and one global layer](svg/17-hybrid-attention.svg)
 In `config.py`, one line does it:
 
 ```python
@@ -526,6 +558,8 @@ If a local layer only ever looks back 512 tokens, storing 100,000 is pointless. 
 layers get a **ring buffer**: a whiteboard with exactly 512 slots. Slot 513 overwrites slot
 1. `LayerKVCache` with `ring=True` does this with `index_copy_` and a modulo. Memory stops
 growing entirely for those layers, no matter how long the conversation gets.
+
+![The ring buffer cache for local layers](svg/18-ring-cache.svg)
 
 Global layers keep the normal ever-growing cache — they're the ones that actually need the
 history.

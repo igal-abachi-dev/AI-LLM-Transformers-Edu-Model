@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 340" width="880" height="340" role="img" aria-label="A ring buffer cache for local layers overwrites its oldest slot instead of growing">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#B4532A"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}
+</style>
+<rect width="880" height="340" rx="4" fill="#F2F5F7"/><rect width="880" height="340" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="339" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="686" y="14" width="180" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="776" y="29" class="f tag" text-anchor="middle">LayerKVCache(ring=True)</text>
+<text x="32" y="42" class="g h1">A whiteboard with exactly 512 slots</text>
+<text x="32" y="63" class="g sub">If a local layer never looks back more than 512 tokens, storing 100,000 of them is pointless.</text>
+<g transform="translate(160,196)">
+<circle r="82" fill="none" stroke="#C3D0D8" stroke-width="2"/>
+<g fill="#DCEBE6" stroke="#2C7A62">
+<circle cx="0" cy="-82" r="10"/><circle cx="41" cy="-71" r="10"/><circle cx="71" cy="-41" r="10"/><circle cx="82" cy="0" r="10"/>
+<circle cx="71" cy="41" r="10"/><circle cx="41" cy="71" r="10"/><circle cx="0" cy="82" r="10"/><circle cx="-41" cy="71" r="10"/>
+<circle cx="-71" cy="41" r="10"/><circle cx="-82" cy="0" r="10"/><circle cx="-71" cy="-41" r="10"/>
+</g>
+<circle cx="-41" cy="-71" r="10" fill="#C79A2E" stroke="#C79A2E"/>
+<path d="M-20 -110 A 60 60 0 0 1 -58 -92" fill="none" stroke="#B4532A" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="-40" y="-122" class="g mut" text-anchor="middle">write here next</text>
+<text x="0" y="-4" class="g cap" text-anchor="middle" font-weight="600">512 slots</text>
+<text x="0" y="14" class="g mut" text-anchor="middle">never more</text>
+</g>
+<text x="172" y="308" class="g cap" text-anchor="middle">Slot 513 overwrites slot 1 — memory stops growing.</text>
+<rect x="308" y="100" width="532" height="92" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="324" y="124" class="g cap" font-weight="600">Local layers — ring cache</text>
+<text x="324" y="146" class="g cap">Implemented with <tspan class="f">index_copy_</tspan> and a modulo. However long the conversation runs —</text>
+<text x="324" y="162" class="g cap">ten turns or ten thousand — these layers hold a fixed, known amount of memory.</text>
+<text x="324" y="182" class="g mut">The oldest entries are dropped because the mask could never have reached them anyway.</text>
+<rect x="308" y="204" width="532" height="92" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/>
+<text x="324" y="228" class="g cap" font-weight="600">Global layers — the normal, ever-growing cache</text>
+<text x="324" y="250" class="g cap">These are the layers that genuinely need history: the variable declared 400 lines</text>
+<text x="324" y="266" class="g cap">up, the name at the top of the file. They pay full price, and there are few of them.</text>
+<text x="324" y="286" class="g mut">One in four layers keeps the long memory. The other three cost a constant.</text>
+</svg>

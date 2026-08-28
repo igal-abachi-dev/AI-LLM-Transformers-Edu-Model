@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 420" width="880" height="420" role="img" aria-label="MHA gives every query head its own key and value; GQA shares key value groups between query heads">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}
+</style>
+<rect width="880" height="420" rx="4" fill="#F2F5F7"/><rect width="880" height="420" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="419" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="712" y="14" width="154" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="789" y="29" class="f tag" text-anchor="middle">config.py · attention.py</text>
+<text x="32" y="42" class="g h1">Four askers can share two note-takers (GQA)</text>
+<text x="32" y="63" class="g sub">Queries need to be diverse — that is the model asking different questions. Keys and values, mostly, do not.</text>
+<text x="40" y="96" class="g cap" font-weight="600">tiny_edu — MHA</text><text x="40" y="114" class="g mut">4 queries, 4 keys, 4 values. Everyone has their own everything.</text>
+<g>
+<g fill="#E6EEF4" stroke="#1F5F8B"><rect x="40" y="130" width="76" height="30" rx="3"/><rect x="130" y="130" width="76" height="30" rx="3"/><rect x="220" y="130" width="76" height="30" rx="3"/><rect x="310" y="130" width="76" height="30" rx="3"/></g>
+<g class="f" font-size="11" fill="#1F5F8B" text-anchor="middle"><text x="78" y="150">Q0</text><text x="168" y="150">Q1</text><text x="258" y="150">Q2</text><text x="348" y="150">Q3</text></g>
+<g stroke="#5B6B78" stroke-width="1.2" marker-end="url(#a)" fill="none"><path d="M78 162V190"/><path d="M168 162V190"/><path d="M258 162V190"/><path d="M348 162V190"/></g>
+<g fill="#F5E3DA" stroke="#B4532A"><rect x="40" y="194" width="76" height="30" rx="3"/><rect x="130" y="194" width="76" height="30" rx="3"/><rect x="220" y="194" width="76" height="30" rx="3"/><rect x="310" y="194" width="76" height="30" rx="3"/></g>
+<g class="f" font-size="11" fill="#B4532A" text-anchor="middle"><text x="78" y="214">K0 V0</text><text x="168" y="214">K1 V1</text><text x="258" y="214">K2 V2</text><text x="348" y="214">K3 V3</text></g>
+</g>
+<text x="40" y="248" class="g mut">cached per token, per layer: 4 keys + 4 values</text>
+<line x1="440" y1="88" x2="440" y2="330" stroke="#C3D0D8"/>
+<text x="494" y="96" class="g cap" font-weight="600">tiny_modern — GQA</text><text x="494" y="114" class="g mut">Still 4 queries. Only 2 KV groups. queries_per_kv = 2.</text>
+<g>
+<g fill="#E6EEF4" stroke="#1F5F8B"><rect x="494" y="130" width="76" height="30" rx="3"/><rect x="584" y="130" width="76" height="30" rx="3"/><rect x="674" y="130" width="76" height="30" rx="3"/><rect x="764" y="130" width="76" height="30" rx="3"/></g>
+<g class="f" font-size="11" fill="#1F5F8B" text-anchor="middle"><text x="532" y="150">Q0</text><text x="622" y="150">Q1</text><text x="712" y="150">Q2</text><text x="802" y="150">Q3</text></g>
+<g stroke="#5B6B78" stroke-width="1.2" marker-end="url(#a)" fill="none">
+<path d="M532 162 L556 190"/><path d="M622 162 L588 190"/><path d="M712 162 L736 190"/><path d="M802 162 L768 190"/></g>
+<g fill="#F5E3DA" stroke="#B4532A"><rect x="494" y="194" width="166" height="30" rx="3"/><rect x="674" y="194" width="166" height="30" rx="3"/></g>
+<g class="f" font-size="11" fill="#B4532A" text-anchor="middle"><text x="577" y="214">K0 V0 — shared</text><text x="757" y="214">K1 V1 — shared</text></g>
+</g>
+<text x="494" y="248" class="g mut">cached per token, per layer: 2 keys + 2 values — half as much</text>
+<rect x="40" y="268" width="386" height="62" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="56" y="290" class="g cap" font-weight="600">In the code, only k_proj and v_proj change</text>
+<text x="56" y="310" class="f" font-size="11" fill="#16232E">q_proj: 32 → 32     k_proj / v_proj: 32 → 16</text>
+<text x="56" y="324" class="g mut">nothing else about attention is different</text>
+<rect x="454" y="268" width="386" height="62" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="470" y="290" class="g cap" font-weight="600">One function that looks like a bug, and isn't</text>
+<text x="470" y="308" class="g cap">The teaching path copies 2 KV heads into 4 so the maths is</text>
+<text x="470" y="324" class="g cap">obvious. The fast path passes enable_gqa=True and copies nothing.</text>
+<rect x="40" y="348" width="800" height="52" rx="4" fill="#F7EFDF" stroke="#C79A2E"/>
+<text x="58" y="370" class="g cap">At 150M: 12 query heads, 4 KV heads — the cache drops by 3×. This is why GQA is in nearly every model card since Llama 2 70B.</text>
+<text x="58" y="388" class="g cap">It is the single biggest lever on what it costs to serve a model, and it changes nothing about the shape of the computation.</text>
+</svg>

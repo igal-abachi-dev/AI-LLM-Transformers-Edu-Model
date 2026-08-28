@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 340" width="880" height="340" role="img" aria-label="Text is chopped into tokens and each token becomes an ID number">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}
+.lab{font-size:14px;fill:#16232E}
+.mut{font-size:11.5px;fill:#5B6B78}
+.tag{font-size:11px;fill:#5B6B78}
+</style>
+<rect width="880" height="340" rx="4" fill="#F2F5F7"/><rect width="880" height="340" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="339" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="726" y="14" width="140" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="796" y="29" class="f tag" text-anchor="middle">tokenizer.py</text>
+<text x="32" y="42" class="g h1">Text is chopped into tokens. Tokens become numbers.</text>
+<text x="32" y="63" class="g sub">After this step the model never sees a letter again — only a list of integers. 16,384 slots in this repo.</text>
+<rect x="40" y="92" width="800" height="42" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="56" y="119" class="f lab">The cat sat on the mat.</text>
+<text x="824" y="118" class="g mut" text-anchor="end">raw text</text>
+<line x1="440" y1="136" x2="440" y2="156" stroke="#5B6B78" stroke-width="1.4" marker-end="url(#a)"/>
+<g class="f" font-size="14" fill="#16232E" text-anchor="middle">
+<rect x="40" y="162" width="96" height="44" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="88" y="190">The</text>
+<rect x="146" y="162" width="96" height="44" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="194" y="190">·cat</text>
+<rect x="252" y="162" width="96" height="44" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="300" y="190">·sat</text>
+<rect x="358" y="162" width="96" height="44" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="406" y="190">·on</text>
+<rect x="464" y="162" width="96" height="44" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="512" y="190">·the</text>
+<rect x="570" y="162" width="96" height="44" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="618" y="190">·mat</text>
+<rect x="676" y="162" width="96" height="44" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="724" y="190">.</text>
+</g>
+<g class="f" font-size="14" fill="#1F5F8B" text-anchor="middle" font-weight="600">
+<text x="88" y="232">1287</text><text x="194" y="232">3204</text><text x="300" y="232">891</text>
+<text x="406" y="232">412</text><text x="512" y="232">262</text><text x="618" y="232">5330</text><text x="724" y="232">13</text>
+</g>
+<text x="790" y="192" class="g mut">tokens</text><text x="790" y="232" class="g mut">IDs</text>
+<text x="40" y="252" class="g mut">· marks a leading space — "·cat" and "cat" are two different tokens. A rare word like "·Bereshit" may cost three or four.</text>
+<rect x="40" y="266" width="800" height="54" rx="4" fill="#EEE9F4" stroke="#B9AED6"/>
+<text x="56" y="288" class="g lab" font-size="13">11 of the 16,384 slots are markers that never appear in normal writing:</text>
+<text x="56" y="309" class="f" font-size="12.5" fill="#5B4B8A">&lt;|pad|&gt;=0  &lt;|bos|&gt;=1  &lt;|eos|&gt;=2  &lt;|system|&gt;  &lt;|user|&gt;  &lt;|assistant|&gt;  &lt;|fim_prefix|&gt;  &lt;|tool_call|&gt;  …</text>
+</svg>

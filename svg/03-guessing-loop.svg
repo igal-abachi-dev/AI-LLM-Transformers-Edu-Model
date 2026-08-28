@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 440" width="880" height="440" role="img" aria-label="The autoregressive loop and how temperature top-k and top-p pick a token">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11.5px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:12.5px;fill:#16232E}.bx{font-size:13px;fill:#16232E}
+</style>
+<rect width="880" height="440" rx="4" fill="#F2F5F7"/><rect width="880" height="440" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="439" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="726" y="14" width="140" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="796" y="29" class="f tag" text-anchor="middle">generation.py</text>
+<text x="32" y="42" class="g h1">One guess, over and over</text>
+<text x="32" y="63" class="g sub">A 500-word answer is roughly 700 of these loops. Each one re-reads everything written so far.</text>
+<g text-anchor="middle">
+<rect x="40" y="88" width="130" height="54" rx="4" fill="#FFFFFF" stroke="#1F5F8B"/><text x="105" y="112" class="g bx">tokens so far</text><text x="105" y="130" class="g mut">the whole chat</text>
+<rect x="194" y="88" width="130" height="54" rx="4" fill="#E6EEF4" stroke="#1F5F8B"/><text x="259" y="112" class="g bx">the model</text><text x="259" y="130" class="g mut">weights only</text>
+<rect x="348" y="88" width="130" height="54" rx="4" fill="#FFFFFF" stroke="#1F5F8B"/><text x="413" y="112" class="g bx">logits</text><text x="413" y="130" class="g mut">16,384 scores</text>
+<rect x="502" y="88" width="130" height="54" rx="4" fill="#FFFFFF" stroke="#1F5F8B"/><text x="567" y="112" class="g bx">softmax</text><text x="567" y="130" class="g mut">scores → percent</text>
+<rect x="656" y="88" width="130" height="54" rx="4" fill="#F7EFDF" stroke="#C79A2E"/><text x="721" y="112" class="g bx">pick one</text><text x="721" y="130" class="g mut">decoding rules</text>
+</g>
+<g stroke="#5B6B78" stroke-width="1.4" marker-end="url(#a)" fill="none">
+<line x1="172" y1="115" x2="190" y2="115"/><line x1="326" y1="115" x2="344" y2="115"/>
+<line x1="480" y1="115" x2="498" y2="115"/><line x1="634" y1="115" x2="652" y2="115"/>
+<path d="M721 144 L721 172 L105 172 L105 150"/>
+</g>
+<text x="413" y="190" class="g cap" text-anchor="middle" font-weight="600">append the picked token to the end — then run the whole thing again</text>
+<line x1="32" y1="206" x2="848" y2="206" stroke="#C3D0D8"/>
+<text x="40" y="230" class="g mut">STEP 4 IN CLOSE-UP — the scoreboard after "What is 2+2?"</text>
+<g class="f" font-size="12.5" fill="#16232E" text-anchor="end">
+<text x="150" y="262">" 4"</text><text x="150" y="296">" four"</text><text x="150" y="330">" the"</text><text x="150" y="364">" 7"</text>
+</g>
+<g>
+<rect x="160" y="248" width="428" height="20" rx="3" fill="#1F5F8B"/><text x="596" y="263" class="f" font-size="12" fill="#16232E">91%</text>
+<rect x="160" y="282" width="28" height="20" rx="3" fill="#4E86AE"/><text x="196" y="297" class="f" font-size="12" fill="#16232E">6%</text>
+<rect x="160" y="316" width="4" height="20" rx="2" fill="#8FAEC4"/><text x="172" y="331" class="f" font-size="12" fill="#5B6B78">0.2%</text>
+<rect x="160" y="350" width="3" height="20" rx="1.5" fill="#8FAEC4"/><text x="172" y="365" class="f" font-size="12" fill="#5B6B78">0.1%</text>
+</g>
+<text x="40" y="396" class="g mut">…and 16,380 more, all with tiny slices. Decoding settings change nothing the model knows — only how riskily it picks.</text>
+<g>
+<rect x="648" y="240" width="192" height="42" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="660" y="257" class="f" font-size="12" fill="#B4532A">temperature</text><text x="660" y="273" class="g mut">0 = safest. higher = braver</text>
+<rect x="648" y="290" width="192" height="42" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="660" y="307" class="f" font-size="12" fill="#B4532A">top_k = 50</text><text x="660" y="323" class="g mut">only the 50 best are eligible</text>
+<rect x="648" y="340" width="192" height="42" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="660" y="357" class="f" font-size="12" fill="#B4532A">top_p = 0.9</text><text x="660" y="373" class="g mut">best ones adding up to 90%</text>
+</g>
+</svg>

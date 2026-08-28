@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 420" width="880" height="420" role="img" aria-label="Without a KV cache every token is recomputed; with a cache only the new token is">
+<defs>
+<pattern id="g" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#DDE5EA" stroke-width="1"/></pattern>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#5B6B78"/></marker>
+</defs>
+<style>
+.f{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.g{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.h1{font-size:19px;font-weight:700;fill:#16232E}
+.sub{font-size:12.5px;fill:#5B6B78}.mut{font-size:11px;fill:#5B6B78}.tag{font-size:11px;fill:#5B6B78}
+.cap{font-size:11.5px;fill:#16232E}
+</style>
+<rect width="880" height="420" rx="4" fill="#F2F5F7"/><rect width="880" height="420" fill="url(#g)"/>
+<rect x=".5" y=".5" width="879" height="419" rx="4" fill="none" stroke="#C3D0D8"/>
+<rect x="756" y="14" width="110" height="22" rx="3" fill="#E4EBF0" stroke="#C3D0D8"/>
+<text x="811" y="29" class="f tag" text-anchor="middle">cache.py</text>
+<text x="32" y="42" class="g h1">The notebook that makes chat fast (KV cache)</text>
+<text x="32" y="63" class="g sub">Old tokens' keys and values never change — they only depend on tokens that are already fixed. So write them down once.</text>
+<text x="40" y="98" class="g cap" font-weight="600" fill="#B4532A">Naive — re-read the whole book for every new word</text>
+<g>
+<text x="40" y="128" class="g mut">write token 1</text><rect x="150" y="116" width="40" height="16" rx="2" fill="#E4C8BC"/>
+<text x="40" y="152" class="g mut">write token 2</text><rect x="150" y="140" width="80" height="16" rx="2" fill="#E4C8BC"/>
+<text x="40" y="176" class="g mut">write token 3</text><rect x="150" y="164" width="120" height="16" rx="2" fill="#E4C8BC"/>
+<text x="40" y="200" class="g mut">write token 4</text><rect x="150" y="188" width="160" height="16" rx="2" fill="#E4C8BC"/><rect x="310" y="188" width="40" height="16" rx="2" fill="#B4532A"/>
+</g>
+<text x="360" y="200" class="g mut">only this sliver is new — the rest is work already done</text>
+<text x="40" y="240" class="g cap" font-weight="600" fill="#2C7A62">With the cache — read one new line, glance at your notes</text>
+<rect x="40" y="256" width="330" height="86" rx="4" fill="#DCEBE6" stroke="#2C7A62"/>
+<text x="56" y="278" class="f" font-size="11.5" fill="#2C7A62">stored K and V, per layer, per head</text>
+<g fill="#FFFFFF" stroke="#2C7A62">
+<rect x="56" y="290" width="38" height="18" rx="2"/><rect x="100" y="290" width="38" height="18" rx="2"/><rect x="144" y="290" width="38" height="18" rx="2"/><rect x="188" y="290" width="38" height="18" rx="2"/>
+</g>
+<g class="f" font-size="10" fill="#2C7A62" text-anchor="middle"><text x="75" y="303">t0</text><text x="119" y="303">t1</text><text x="163" y="303">t2</text><text x="207" y="303">t3</text></g>
+<rect x="232" y="290" width="38" height="18" rx="2" fill="#C79A2E" stroke="#C79A2E"/>
+<text x="251" y="303" class="f" font-size="10" fill="#FFFFFF" text-anchor="middle">t4</text>
+<text x="56" y="330" class="g mut">computes only its own Q, K, V — the rest is a lookup</text>
+<line x1="386" y1="298" x2="414" y2="298" stroke="#5B6B78" stroke-width="1.4" marker-end="url(#a)"/>
+<rect x="424" y="256" width="416" height="86" rx="4" fill="#F7EFDF" stroke="#C79A2E"/>
+<text x="440" y="278" class="g cap" font-weight="600">And here is the bill</text>
+<text x="440" y="300" class="g cap">The cache grows with every token, every layer, every head. At</text>
+<text x="440" y="316" class="g cap">2,048 tokens the 150M model needs ~126 MB <tspan font-style="italic">per conversation</tspan>.</text>
+<text x="440" y="332" class="g cap">Fifty users at once = 6 GB. Real 80-layer models hit hundreds.</text>
+<rect x="40" y="358" width="800" height="48" rx="4" fill="#FFFFFF" stroke="#C3D0D8"/>
+<text x="58" y="378" class="g cap">Remember this number. The cache — not the weights — is what limits how many people you can serve at once.</text>
+<text x="58" y="396" class="g cap">It is the reason every one of tiny_modern's four upgrades exists.</text>
+</svg>
