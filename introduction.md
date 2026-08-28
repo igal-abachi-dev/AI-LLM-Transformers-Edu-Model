@@ -25,6 +25,21 @@ input.
 If that sounds too simple to produce something that can debug your code — you're right to be
 suspicious. Hold that thought until the end of Part 1.
 
+
+## How the Process Actually Works
+
+1. Your text is broken into **tokens** (small chunks of characters or words).
+2. The model receives a sequence of token IDs (pure numbers).
+3. It outputs a score (**logit**) for every possible next token in its vocabulary.
+4. Those scores are turned into probabilities (via softmax, after temperature / top-k / top-p filtering).
+5. One token is sampled.
+6. The chosen token is appended to the context.
+7. The process repeats until an end-of-sequence token appears or a length limit is reached.
+
+There is no internal database, no separate “understanding” module, and no truth-checking mechanism. All of the model’s “knowledge” is compressed into millions or billions of numbers called **weights**. These weights were set during training by playing an enormous fill-in-the-blank game: hide the next token, measure how surprised the model is by the real answer, and nudge the weights so it will be less surprised next time.
+
+When the statistical patterns the model learned match reality well, the output looks like reasoning, factual knowledge, or working code. When they do not, the output looks like hallucination or, in extreme cases, incoherent “psychosis.”
+
 ---
 
 # Part 1 — What is a chatbot, really?
@@ -764,3 +779,46 @@ To understand how we went from foundational computer science principles to moder
 *   **LLMs:** Scale parameters and data to the extreme to trigger emergent reasoning.
     
 *   **SLMs:** Refine the data quality, extend training duration, and compress/quantize the math so that same reasoning power can run locally in your pocket.
+
+-------------------------
+
+## Why the hallucination / Confusing, Repetitive, Self-Referential Behavior Happens in LLMs
+
+What people sometimes call “AI psychosis” is not a rare bug. It is the model doing exactly its job under unfavorable conditions:
+
+- **Inherent hallucination**  
+  The model generates text that *pattern-matches* as plausible. It has no separate mechanism that verifies whether the text is true. When the conversation enters a region with weak or conflicting patterns, it continues producing fluent but incorrect or nonsensical continuations.
+
+- **Autoregressive feedback loop**  
+  Every token the model generates is immediately fed back as part of its own context. A few odd sentences quickly become the new “normal.” The model then keeps guessing on top of its own previous mistakes, producing repetitions, topic mixing , apologetic language, or self-referential statements and hallucinations.
+
+- **Sampling parameters**  
+  Higher temperature flattens the probability distribution, increasing the chance of less-likely (and therefore often stranger) tokens. Combined with a drifting context, this accelerates the descent into nonsense.
+
+
+The same core mechanism exists in every major modern LLM (Grok, Claude, GPT, Gemini,Muse, etc.). Larger models with more data and better training simply enter these failure modes less often and recover more gracefully.
+
+
+### 1. `src/minifrontier/generation.py` — the runtime loop
+
+- **`sample_next_token`**  
+  Takes the model’s logits, applies temperature scaling, optional top-k and top-p (nucleus) filtering, converts them to probabilities, and samples one token. This is where “how adventurously we guess” is decided.
+
+- **`generate`**  
+  The actual autoregressive loop:
+  1. Prefill the entire prompt once and populate the KV cache.
+  2. For each new step:
+     - Sample the next token.
+     - Append it to the output.
+     - Feed **only** the newly chosen token back into the model (using the cache).
+     - Receive fresh logits for the following position.
+  3. Repeat until the length limit or an EOS token.
+
+Every generated token becomes part of the context for the next prediction. This is precisely the mechanism that can turn a few bad guesses into a runaway loop of nonsense.
+
+### 2. `src/minifrontier/model.py` — producing the scores
+
+### 3. `src/minifrontier/loss.py` — how the model is trained to guess
+
+`next_token_loss` measures how surprised the model is by the true next token (cross-entropy after shifting the sequence). 
+Training repeatedly reduces this surprise across vast amounts of text. There is still no truth filter — only a statistical pressure to make the correct continuation less surprising.
