@@ -105,15 +105,33 @@ def save_training_checkpoint(
     trainer_state: Mapping[str, Any] | None = None,
     data_cursor: Mapping[str, Any] | None = None,
 ) -> None:
+    """Write every checkpoint file, then publish them all in one atomic rename.
+
+    A long training run gets killed sometimes -- a machine sleeps, a process
+    manager reaps it, power drops. If that happens mid-write with files going
+    straight into ``directory``, the result is a checkpoint that *looks* like
+    it exists but is actually missing ``config.json``/``trainer_state.json``:
+    silently unresumable, and the only way to find out is trying to resume from
+    it hours later. Instead, everything is written into a hidden staging
+    directory first; only the final ``replace`` (atomic on the same filesystem)
+    makes the checkpoint appear at its real path, and only once every file is
+    safely on disk. An interrupted save leaves either nothing at ``directory``
+    (a fresh checkpoint) or the previous, still-complete one (an overwrite) --
+    never a partial one.
+    """
+
     target = Path(directory)
-    target.mkdir(parents=True, exist_ok=True)
-    save_model(model, str(target / "model.safetensors"))
-    _write_flat_toml(model.config, target / "config.toml")
-    (target / "config.json").write_text(
+    staging = target.with_name(f".{target.name}.tmp")
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    save_model(model, str(staging / "model.safetensors"))
+    _write_flat_toml(model.config, staging / "config.toml")
+    (staging / "config.json").write_text(
         json.dumps(model.config.to_dict(), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    (target / "trainer_state.json").write_text(
+    (staging / "trainer_state.json").write_text(
         json.dumps(dict(trainer_state or {}), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
@@ -123,7 +141,10 @@ def save_training_checkpoint(
         "rng": capture_rng_state(),
         "data_cursor": dict(data_cursor or {}),
     }
-    torch.save(local_state, target / "training_state.pt")
+    torch.save(local_state, staging / "training_state.pt")
+    if target.exists():
+        shutil.rmtree(target)
+    staging.replace(target)
 
 
 def load_training_checkpoint(

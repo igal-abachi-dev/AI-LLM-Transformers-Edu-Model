@@ -69,6 +69,50 @@ def test_checkpoint_exact_resume_and_trust_boundary(tmp_path) -> None:
     assert resumed.lm_head.weight is resumed.token_embedding.weight
 
 
+def test_interrupted_checkpoint_save_never_corrupts_target(tmp_path, monkeypatch) -> None:
+    """A save killed partway through must never leave a partial checkpoint at `directory`."""
+
+    import minifrontier.checkpoint as checkpoint_module
+
+    config = ModelConfig.tiny_edu()
+    model = MiniFrontier(config)
+    checkpoint = tmp_path / "checkpoint"
+    real_torch_save = checkpoint_module.torch.save
+
+    # Case 1: interrupting the very first save at this path must leave nothing
+    # behind that looks like a checkpoint (no directory, or only the hidden
+    # staging one) -- never a `directory` with some files but not others.
+    def broken_torch_save(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("simulated kill mid-write")
+
+    monkeypatch.setattr(checkpoint_module.torch, "save", broken_torch_save)
+    with pytest.raises(RuntimeError, match="simulated kill mid-write"):
+        save_training_checkpoint(checkpoint, model, trainer_state={"step": 0})
+    assert not checkpoint.exists()
+
+    # Case 2: a real, complete checkpoint already exists; interrupting an
+    # OVERWRITE of it must leave the original, still fully loadable.
+    monkeypatch.setattr(checkpoint_module.torch, "save", real_torch_save)
+    save_training_checkpoint(checkpoint, model, trainer_state={"step": 1})
+    original_files = sorted(path.name for path in checkpoint.iterdir())
+
+    monkeypatch.setattr(checkpoint_module.torch, "save", broken_torch_save)
+    with pytest.raises(RuntimeError, match="simulated kill mid-write"):
+        save_training_checkpoint(checkpoint, model, trainer_state={"step": 2})
+    assert sorted(path.name for path in checkpoint.iterdir()) == original_files
+    trainer_state = json.loads((checkpoint / "trainer_state.json").read_text(encoding="utf-8"))
+    assert trainer_state == {"step": 1}
+
+    # A stale staging directory from the failed attempt may still be on disk
+    # (cleaned up lazily by the next save, not immediately) -- but a THIRD,
+    # successful save must still work correctly despite it being there.
+    monkeypatch.setattr(checkpoint_module.torch, "save", real_torch_save)
+    save_training_checkpoint(checkpoint, model, trainer_state={"step": 3})
+    trainer_state = json.loads((checkpoint / "trainer_state.json").read_text(encoding="utf-8"))
+    assert trainer_state == {"step": 3}
+    assert not any(path.name.startswith(".checkpoint") for path in tmp_path.iterdir())
+
+
 def test_release_folder_loads_independently(tmp_path, mini_tokenizer) -> None:
     torch.manual_seed(16)
     config = ModelConfig.tiny_edu(vocab_size=max(512, mini_tokenizer.vocab_size))
