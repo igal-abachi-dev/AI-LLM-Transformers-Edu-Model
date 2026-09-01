@@ -310,6 +310,49 @@ https://huggingface.co/api/datasets/HuggingFaceFW/fineweb-edu
 dataset
 
 
+
+to chat/test it you can run this:
+sample.py is exactly right for that — that's the plain prompt-completion tool. A couple of notes:
+
+Use sample.py for this checkpoint, not chat.py. 
+chat.py exists (template-aware, multi-turn, interactive REPL) but it's designed for an SFT'd/instruction-tuned model — 
+it wraps your input in the chat template. Your mf065-150m-modern-1b-release is a base model (no SFT ever ran on it), 
+so it was never trained to follow that template; feeding it through chat.py would likely just produce confused output. 
+sample.py with a plain prompt (like you already used) is the right tool for a base model — no new script needed, this is exactly what it's for.
+
+Your own prompt:
+```bat
+./.venv/Scripts/python.exe scripts/sample.py --model artifacts/mf065-150m-modern-1b-release --prompt "<your prompt here>" --device cuda --precision float16 --temperature 0.7 --top-k 40 --max-new-tokens 100
+```
+
+A few tweaks from your example worth knowing:
+- Drop --seed 42 --temperature 0.0 unless you specifically want deterministic greedy output — temperature 0 is why the earlier samples looked repetitive ("the world was created in the first place..." looping). 
+
+or prompt like "The history of science shows that"
+
+Try --temperature 0.7 --top-k 40 (or --top-p 0.9) for more natural variety.
+
+- if GPU is busy with training/eperiment . Running sample.py concurrently would contend for the same 8GB — either wait a bit, 
+or add --device cpu for a quick test now (slower, but a 150M model on CPU for a short completion is still fine, just not instant).
+
+
+Given the model was trained on FineWeb-Edu (educational web text — explanatory articles across science, history, math, health, etc.), the best prompts are short, factual sentence-starters in that same register — not questions or instructions, since this is a base completion model, not a chat model. Here's a set of 10 that span the dataset's actual content mix:
+
+1. "The history of science shows that" (baseline — already tested, good for before/after comparison)
+2. "Photosynthesis is the process by which plants" — biology/textbook
+3. "The French Revolution began in" — history/factual
+4. "In mathematics, a prime number is defined as" — math/definition
+5. "Climate change is caused primarily by" — science/current topics
+6. "The human digestive system consists of" — biology/health
+7. "a <name> War ended in the year" — history/dates
+8. "The water cycle describes how" — earth science
+9. "To bake a loaf of bread, you first need to" — practical/how-to
+10. "The theory of atoms was first proposed by" — science history
+
+ Set expectations honestly: this checkpoint is at ~6.7 tokens/param (1B tokens ÷ 150M params),
+ well short of Chinchilla-optimal (~20 tokens/param, ~3B tokens) — expect grammatically coherent 
+ but factually shaky/generic completions, especially past the first sentence or two.
+
 ## Implemented CPU checks
 
 The current code supports the Edu/Modern path, resumable training, code/FIM, Muon, and assistant
