@@ -7,6 +7,7 @@ from minifrontier.checkpoint import (
     export_release,
     load_release,
     load_training_checkpoint,
+    prune_old_checkpoints,
     save_training_checkpoint,
 )
 from minifrontier.config import ModelConfig
@@ -111,6 +112,40 @@ def test_interrupted_checkpoint_save_never_corrupts_target(tmp_path, monkeypatch
     trainer_state = json.loads((checkpoint / "trainer_state.json").read_text(encoding="utf-8"))
     assert trainer_state == {"step": 3}
     assert not any(path.name.startswith(".checkpoint") for path in tmp_path.iterdir())
+
+
+def test_prune_old_checkpoints_keeps_only_most_recent_and_never_touches_final(tmp_path) -> None:
+    config = ModelConfig.tiny_edu()
+    model = MiniFrontier(config)
+    output = tmp_path / "run"
+    for updates in (100, 200, 300, 400, 500):
+        save_training_checkpoint(
+            output / f"checkpoint-{updates:08d}", model, trainer_state={"step": updates}
+        )
+    save_training_checkpoint(output / "final", model, trainer_state={"step": 500})
+    # An unrelated directory that happens to share a prefix must be left alone.
+    (output / "checkpoint-notanumber").mkdir()
+
+    deleted = prune_old_checkpoints(output, keep_last_n=2)
+
+    assert {path.name for path in deleted} == {
+        "checkpoint-00000100",
+        "checkpoint-00000200",
+        "checkpoint-00000300",
+    }
+    remaining = {path.name for path in output.iterdir()}
+    assert remaining == {
+        "checkpoint-00000400",
+        "checkpoint-00000500",
+        "final",
+        "checkpoint-notanumber",
+    }
+
+    # Idempotent: pruning again with nothing left to delete is a no-op, not an error.
+    assert prune_old_checkpoints(output, keep_last_n=2) == []
+
+    with pytest.raises(ValueError, match="positive"):
+        prune_old_checkpoints(output, keep_last_n=0)
 
 
 def test_release_folder_loads_independently(tmp_path, mini_tokenizer) -> None:

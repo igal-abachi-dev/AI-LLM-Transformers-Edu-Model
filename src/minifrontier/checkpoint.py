@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
@@ -145,6 +146,36 @@ def save_training_checkpoint(
     if target.exists():
         shutil.rmtree(target)
     staging.replace(target)
+
+
+_PERIODIC_CHECKPOINT_NAME = re.compile(r"checkpoint-(\d+)")
+
+
+def prune_old_checkpoints(output_dir: str | Path, *, keep_last_n: int) -> list[Path]:
+    """Delete all but the `keep_last_n` most recent periodic checkpoints.
+
+    Only matches this project's own `checkpoint-<update-count>` naming
+    (written by the periodic-checkpoint path in `train/pretrain.py`/`train/sft.py`)
+    -- never touches `final/`, `run.json`, or anything else in `output_dir`. A
+    multi-day run can checkpoint every few hours; without pruning, that is tens
+    of gigabytes of superseded intermediate state left behind after the fact.
+    """
+
+    if keep_last_n <= 0:
+        raise ValueError("keep_last_n must be positive")
+    root = Path(output_dir)
+    candidates = []
+    for path in root.iterdir():
+        match = _PERIODIC_CHECKPOINT_NAME.fullmatch(path.name)
+        if path.is_dir() and match:
+            candidates.append((int(match.group(1)), path))
+    candidates.sort(key=lambda item: item[0])
+    to_delete = (
+        [path for _, path in candidates[:-keep_last_n]] if keep_last_n < len(candidates) else []
+    )
+    for path in to_delete:
+        shutil.rmtree(path)
+    return to_delete
 
 
 def load_training_checkpoint(

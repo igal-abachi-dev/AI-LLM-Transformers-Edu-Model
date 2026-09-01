@@ -26,7 +26,11 @@ from pathlib import Path
 
 import torch
 
-from minifrontier.checkpoint import load_training_checkpoint, save_training_checkpoint
+from minifrontier.checkpoint import (
+    load_training_checkpoint,
+    prune_old_checkpoints,
+    save_training_checkpoint,
+)
 from minifrontier.config import ModelConfig
 from minifrontier.model import MiniFrontier
 from minifrontier.reproducibility import seed_everything
@@ -68,6 +72,14 @@ def parse_args() -> argparse.Namespace:
         help="Skip writing any checkpoint (interval or final); for bounded benchmark runs only.",
     )
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--keep-last-n-checkpoints",
+        type=int,
+        help=(
+            "After each periodic checkpoint, delete older ones beyond this many most "
+            "recent -- never touches `final/`. Omit to keep every periodic checkpoint."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -104,6 +116,8 @@ def main() -> None:
     args = parse_args()
     if not args.no_checkpoint and args.checkpoint_interval <= 0:
         raise ValueError("checkpoint_interval must be positive")
+    if args.keep_last_n_checkpoints is not None and args.keep_last_n_checkpoints <= 0:
+        raise ValueError("keep_last_n_checkpoints must be positive")
     seed_everything(args.seed, deterministic=args.device == "cpu")
     config = ModelConfig(
         **json.loads((args.base_checkpoint / "config.json").read_text(encoding="utf-8"))
@@ -184,6 +198,8 @@ def main() -> None:
             },
             data_cursor=provider.state_dict(),
         )
+        if args.keep_last_n_checkpoints is not None:
+            prune_old_checkpoints(args.output, keep_last_n=args.keep_last_n_checkpoints)
 
     optimizer, schedule, state, _ = train_updates(
         model,

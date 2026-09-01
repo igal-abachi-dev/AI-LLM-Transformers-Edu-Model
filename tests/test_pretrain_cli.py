@@ -97,6 +97,7 @@ def _args(
         compile=False,
         compile_backend=None,
         compile_fail=False,
+        keep_last_n_checkpoints=None,
     )
     values.update(overrides)
     return argparse.Namespace(**values)

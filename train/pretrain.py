@@ -32,6 +32,7 @@ import torch
 from minifrontier.attention import set_flex_attention_compilation
 from minifrontier.checkpoint import (
     load_training_checkpoint,
+    prune_old_checkpoints,
     save_training_checkpoint,
 )
 from minifrontier.compilation import maybe_compile
@@ -84,12 +85,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--compile", action="store_true")
     parser.add_argument("--compile-backend")
     parser.add_argument("--compile-fail", action="store_true")
+    parser.add_argument(
+        "--keep-last-n-checkpoints",
+        type=int,
+        help=(
+            "After each periodic checkpoint, delete older ones beyond this many most "
+            "recent -- never touches `final/`. Omit to keep every periodic checkpoint "
+            "(the default), which a long run can turn into tens of GB of superseded state."
+        ),
+    )
     return parser.parse_args()
 
 
 def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
     if not args.no_checkpoint and args.checkpoint_interval <= 0:
         raise ValueError("checkpoint_interval must be positive")
+    if args.keep_last_n_checkpoints is not None and args.keep_last_n_checkpoints <= 0:
+        raise ValueError("keep_last_n_checkpoints must be positive")
     model_config = ModelConfig.from_toml(args.config)
     train_config = TrainingConfig(
         max_updates=args.updates,
@@ -157,6 +169,8 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
             },
             data_cursor=provider.state_dict(),
         )
+        if args.keep_last_n_checkpoints is not None:
+            prune_old_checkpoints(args.output, keep_last_n=args.keep_last_n_checkpoints)
 
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)

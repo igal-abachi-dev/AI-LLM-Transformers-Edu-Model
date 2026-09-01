@@ -113,6 +113,22 @@ The required hardware target is one NVIDIA GPU with 24 GB for comfortable 50M/15
 
 Labs should construct tiny_edu(n_layers=4) whenever comparing architectures with tiny_modern so it will be comparable
 
+
+also,
+Real validation results — and this directly answers the overfitting question the external feedback raised:
+ 488,280/488,280 updates, 999.0M tokens, final train loss 3.43
+┌───────────────┬────────┬───────────────────┬───────────────────────────────────┐
+│               │ Before │ After (1B tokens) │ vs. earlier 150M-token checkpoint │
+├───────────────┼────────┼───────────────────┼───────────────────────────────────┤
+│ Cross-entropy │ 10.17  │ 3.49              │ 3.91 → 3.49                       │
+├───────────────┼────────┼───────────────────┼───────────────────────────────────┤
+│ Perplexity    │ 26,194 │ 32.8              │ 50.1 → 32.8 (34% better)          │
+├───────────────┼────────┼───────────────────┼───────────────────────────────────┤
+│ Bits/byte     │ 3.45   │ 1.18              │ 1.32 → 1.18                       │
+└───────────────┴────────┴───────────────────┴───────────────────────────────────┘
+
+Validation loss dropped right alongside training loss — no overfitting signal. The extra ~850M tokens produced a real, substantial generalization improvement, not just memorization of recent batches.
+
 ## Model architecture assessment
 
 MiniFrontier has a sound architecture and an unusually good educational neural core. 
