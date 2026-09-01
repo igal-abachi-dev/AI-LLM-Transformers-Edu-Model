@@ -336,7 +336,7 @@ Try --temperature 0.7 --top-k 40 (or --top-p 0.9) for more natural variety.
 or add --device cpu for a quick test now (slower, but a 150M model on CPU for a short completion is still fine, just not instant).
 
 
-Given the model was trained on FineWeb-Edu (educational web text — explanatory articles across science, history, math, health, etc.), the best prompts are short, factual sentence-starters in that same register — not questions or instructions, since this is a base completion model, not a chat model. Here's a set of 10 that span the dataset's actual content mix:
+Given the model was trained on FineWeb-Edu (educational web text — explanatory articles across science, history, math, health, etc.), the best prompts are short, factual sentence-starters in that same register — not questions or instructions, since this is a base completion model, not a chat model(needs SFT'd/instruction-tuned model). Here's a set of 10 that span the dataset's actual content mix:
 
 1. "The history of science shows that" (baseline — already tested, good for before/after comparison)
 2. "Photosynthesis is the process by which plants" — biology/textbook
