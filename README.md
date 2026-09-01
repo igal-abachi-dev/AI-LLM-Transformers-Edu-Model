@@ -340,6 +340,9 @@ Given the model was trained on FineWeb-Edu (educational web text — explanatory
 
 1. "The history of science shows that" (baseline — already tested, good for before/after comparison)
 2. "Photosynthesis is the process by which plants" — biology/textbook
+respond like:
+"Photosynthesis is the process by which plants use a chemical process to generate light and light. Since the process involves the use of light, the plant is able to produce light and light in a similar manner as the plant itself. The process of plants producing light has been a significant part of modern agriculture."
+
 3. "The French Revolution began in" — history/factual
 4. "In mathematics, a prime number is defined as" — math/definition
 5. "Climate change is caused primarily by" — science/current topics
