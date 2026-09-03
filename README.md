@@ -280,6 +280,8 @@ Or, when Python and `pip` are already available:
 python -m pip install --user --upgrade uv
 ```
 
+also you can install triton-windows, for possible 16% speedup
+
 Open a new terminal if the installer changed `PATH`, then verify the prerequisites:
 
 ```powershell
