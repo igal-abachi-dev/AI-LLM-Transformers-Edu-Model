@@ -48,10 +48,15 @@ class ModelOutput:
     ``logits`` are raw, unnormalized scores over the vocabulary -- one score per
     token per position. They are not probabilities until a softmax is applied.
     ``loss`` is only filled in when ``labels`` were supplied, i.e. during training.
+    ``hidden_states`` is only filled in when ``return_hidden_states=True`` was
+    passed to ``forward`` -- the same ``[B, S, d_model]`` tensor ``lm_head`` reads,
+    exposed for Multi-Token Prediction's extra heads (see ``mtp.py``). Ordinary
+    callers never need it and pay nothing for it: this field stays ``None``.
     """
 
     logits: torch.Tensor
     loss: torch.Tensor | None = None
+    hidden_states: torch.Tensor | None = None
 
 
 class TransformerBlock(nn.Module):
@@ -172,6 +177,7 @@ class MiniFrontier(nn.Module):
         position_start: int | None = None,
         logits_to_keep: int | None = None,
         activation_checkpointing: bool = False,
+        return_hidden_states: bool = False,
     ) -> ModelOutput:
         """Run the stack once and return per-position scores over the vocabulary.
 
@@ -190,6 +196,10 @@ class MiniFrontier(nn.Module):
           matmul over a 16k vocabulary is expensive enough to be worth skipping.
         * ``activation_checkpointing`` -- trade compute for memory during training
           by recomputing each block's internals in the backward pass.
+        * ``return_hidden_states`` -- also return the full, unsliced ``[B, S,
+          d_model]`` tensor fed to ``lm_head``. Off by default and free when
+          unused; Multi-Token Prediction's extra heads (``mtp.py``) are the only
+          current caller.
 
         Everything below the docstring up to ``start_pos`` is argument validation:
         catching a mistake here produces a sentence, not a stack trace from inside
@@ -332,6 +342,11 @@ class MiniFrontier(nn.Module):
                     )
             # Out of the last block; one final volume adjustment before scoring.
             normalized = self.final_norm(hidden)
+            # Captured before any `logits_to_keep` slicing, so a caller that asks
+            # for it always gets every position -- `logits_to_keep` and `labels`
+            # are already mutually exclusive (checked above), and hidden states
+            # are only ever requested alongside `labels` during training.
+            hidden_states = normalized if return_hidden_states else None
             if logits_to_keep is not None:
                 # Generation only ever reads the final position, so skip the
                 # scoreboard matmul for the ones that would be discarded.
@@ -346,7 +361,7 @@ class MiniFrontier(nn.Module):
                 # The pass succeeded, so these tokens are permanent history now and
                 # the rollback copies can be released.
                 cache.commit()
-            return ModelOutput(logits=logits, loss=loss)
+            return ModelOutput(logits=logits, loss=loss, hidden_states=hidden_states)
         except Exception:
             # A half-written cache is worse than no cache: it would silently
             # corrupt every later token. Roll back to where this call began so the

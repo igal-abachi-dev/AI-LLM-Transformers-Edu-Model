@@ -70,6 +70,23 @@ def test_depth_scaled_residual_initialization() -> None:
     )
 
 
+def test_hidden_states_are_none_by_default_and_populated_when_requested() -> None:
+    torch.manual_seed(9)
+    config = ModelConfig.tiny_edu()
+    model = MiniFrontier(config)
+    tokens = torch.randint(0, config.vocab_size, (2, 7))
+
+    default_output = model(tokens, labels=tokens)
+    assert default_output.hidden_states is None
+
+    with_hidden = model(tokens, labels=tokens, return_hidden_states=True)
+    assert with_hidden.hidden_states is not None
+    assert with_hidden.hidden_states.shape == (2, 7, config.d_model)
+    # Requesting hidden states must not change the logits/loss actually returned.
+    assert torch.allclose(with_hidden.logits, default_output.logits)
+    assert torch.allclose(with_hidden.loss, default_output.loss)
+
+
 def test_model_rejects_long_or_non_integer_tokens() -> None:
     model = MiniFrontier(ModelConfig.tiny_edu(max_seq_len=8))
     with pytest.raises(ValueError, match="sequence length"):

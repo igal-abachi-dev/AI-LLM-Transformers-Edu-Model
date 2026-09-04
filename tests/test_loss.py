@@ -30,3 +30,36 @@ def test_all_masked_loss_is_safe_differentiable_zero() -> None:
     loss.backward()
     assert logits.grad is not None
     assert logits.grad.count_nonzero() == 0
+
+
+def test_offset_two_shifts_two_steps_ahead() -> None:
+    tokens = torch.tensor([[1, 2, 3, 4]])
+    logits = torch.randn(1, 4, 6)
+    loss = next_token_loss(logits, tokens, offset=2)
+    # Position 0's score is graded against token[2], position 1's against
+    # token[3]. Positions 2 and 3 have nothing two steps ahead of them, so they
+    # drop out of both the logits and the targets.
+    expected = F.cross_entropy(logits[:, :2].reshape(-1, 6), tokens[:, 2:].reshape(-1))
+    assert torch.allclose(loss, expected)
+
+
+def test_offset_below_one_is_rejected() -> None:
+    tokens = torch.tensor([[1, 2, 3]])
+    logits = torch.randn(1, 3, 5)
+    try:
+        next_token_loss(logits, tokens, offset=0)
+    except ValueError as error:
+        assert "offset" in str(error)
+    else:
+        raise AssertionError("expected a ValueError for offset < 1")
+
+
+def test_offset_leaving_no_targets_is_rejected() -> None:
+    tokens = torch.tensor([[1, 2, 3]])
+    logits = torch.randn(1, 3, 5)
+    try:
+        next_token_loss(logits, tokens, offset=3)
+    except ValueError as error:
+        assert "offset" in str(error)
+    else:
+        raise AssertionError("expected a ValueError when offset leaves no valid targets")

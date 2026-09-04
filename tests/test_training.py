@@ -10,6 +10,7 @@ from minifrontier.checkpoint import load_training_checkpoint, save_training_chec
 from minifrontier.compilation import maybe_compile
 from minifrontier.config import ModelConfig
 from minifrontier.model import MiniFrontier
+from minifrontier.mtp import MTPHeads
 from minifrontier.precision import resolve_precision
 from minifrontier.training import (
     ListBatchProvider,
@@ -76,6 +77,73 @@ def test_adamw_groups_exclude_norm_scales() -> None:
     assert any(name.endswith("attention_norm.weight") for name in names["no_decay"])
     assert optimizer.param_groups[0]["weight_decay"] == pytest.approx(0.1)
     assert optimizer.param_groups[1]["weight_decay"] == 0.0
+
+
+def test_training_config_rejects_inconsistent_mtp_fields() -> None:
+    with pytest.raises(ValueError, match="mtp_extra_heads"):
+        TrainingConfig(max_updates=2, warmup_updates=0, mtp_extra_heads=-1)
+    with pytest.raises(ValueError, match="mtp_loss_weight"):
+        TrainingConfig(max_updates=2, warmup_updates=0, mtp_loss_weight=-0.1)
+    with pytest.raises(ValueError, match="mtp_loss_weight"):
+        TrainingConfig(max_updates=2, warmup_updates=0, mtp_extra_heads=1, mtp_loss_weight=0.0)
+    with pytest.raises(ValueError, match="mtp_loss_weight"):
+        TrainingConfig(max_updates=2, warmup_updates=0, mtp_extra_heads=0, mtp_loss_weight=0.5)
+    # A consistent combination is accepted without raising.
+    TrainingConfig(max_updates=2, warmup_updates=0, mtp_extra_heads=1, mtp_loss_weight=0.5)
+
+
+def test_train_updates_requires_mtp_heads_iff_mtp_extra_heads_positive() -> None:
+    config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
+    model = MiniFrontier(config)
+    tokens = torch.randint(0, config.vocab_size, (2, 8))
+    provider = ListBatchProvider([TrainingBatch(tokens)])
+
+    mtp_config = TrainingConfig(
+        max_updates=1, warmup_updates=0, mtp_extra_heads=1, mtp_loss_weight=0.5
+    )
+    with pytest.raises(ValueError, match="mtp_heads"):
+        train_updates(model, provider, mtp_config)
+
+    plain_config = TrainingConfig(max_updates=1, warmup_updates=0)
+    mtp_heads = MTPHeads(d_model=config.d_model, vocab_size=config.vocab_size, n_extra_heads=1)
+    with pytest.raises(ValueError, match="mtp_heads"):
+        train_updates(model, provider, plain_config, mtp_heads=mtp_heads)
+
+
+def test_train_updates_with_mtp_heads_trains_both_model_and_heads() -> None:
+    torch.manual_seed(40)
+    config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
+    model = MiniFrontier(config)
+    mtp_heads = MTPHeads(d_model=config.d_model, vocab_size=config.vocab_size, n_extra_heads=1)
+    initial_model_weight = model.blocks[0].feed_forward.down_proj.weight.clone()
+    initial_head_weight = mtp_heads.heads[0].weight.clone()
+    tokens = torch.randint(0, config.vocab_size, (2, 8))
+    training_config = TrainingConfig(
+        max_updates=1,
+        learning_rate=1e-2,
+        min_learning_rate=1e-2,
+        warmup_updates=0,
+        weight_decay=0.0,
+        gradient_clip=1e9,
+        precision="float32",
+        mtp_extra_heads=1,
+        mtp_loss_weight=0.5,
+    )
+    # `train_updates` never builds an optimizer over `mtp_heads` itself -- their
+    # parameters are the caller's responsibility, exactly like the docstring says.
+    optimizer = torch.optim.AdamW(
+        list(model.parameters()) + list(mtp_heads.parameters()),
+        lr=training_config.learning_rate,
+    )
+    train_updates(
+        model,
+        ListBatchProvider([TrainingBatch(tokens)]),
+        training_config,
+        optimizer=optimizer,
+        mtp_heads=mtp_heads,
+    )
+    assert not torch.equal(model.blocks[0].feed_forward.down_proj.weight, initial_model_weight)
+    assert not torch.equal(mtp_heads.heads[0].weight, initial_head_weight)
 
 
 def test_cpu_batch_validation_rejects_bad_ids_and_all_masked() -> None:

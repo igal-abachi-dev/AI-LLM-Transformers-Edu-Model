@@ -32,19 +32,24 @@ def next_token_loss(
     *,
     loss_mask: torch.Tensor | None = None,
     ignore_index: int = -100,
+    offset: int = 1,
 ) -> torch.Tensor:
-    """Predict token ``t+1`` from logits at ``t`` and average valid positions.
+    """Predict token ``t+offset`` from logits at ``t`` and average valid positions.
 
     Returns a single number: the mean surprise per scored token, in nats. This is
-    the value ``.backward()`` is called on during training.
+    the value ``.backward()`` is called on during training. ``offset`` defaults to
+    the ordinary next-token case (``t+1``); a larger value is what Multi-Token
+    Prediction's extra heads use to grade a further-ahead guess (see ``mtp.py``).
     """
 
     if logits.ndim != 3 or tokens.ndim != 2:
         raise ValueError("logits must be [batch, sequence, vocab] and tokens [batch, sequence]")
     if logits.shape[:2] != tokens.shape:
         raise ValueError("logits and tokens must share batch and sequence dimensions")
-    if tokens.shape[1] < 2:
-        raise ValueError("next-token loss requires at least two tokens")
+    if offset < 1:
+        raise ValueError("offset must be at least 1")
+    if tokens.shape[1] < offset + 1:
+        raise ValueError("next-token loss requires at least offset + 1 tokens")
     if loss_mask is not None and loss_mask.shape != tokens.shape:
         raise ValueError("loss_mask must have the same shape as tokens")
 
@@ -53,6 +58,7 @@ def next_token_loss(
         tokens,
         loss_mask=loss_mask,
         ignore_index=ignore_index,
+        offset=offset,
     )
     return loss_sum / count.clamp_min(1)
 
@@ -63,6 +69,7 @@ def next_token_loss_stats(
     *,
     loss_mask: torch.Tensor | None = None,
     ignore_index: int = -100,
+    offset: int = 1,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Return summed next-token loss and valid-target count for exact accumulation.
 
@@ -77,20 +84,23 @@ def next_token_loss_stats(
         raise ValueError("logits must be [batch, sequence, vocab] and tokens [batch, sequence]")
     if logits.shape[:2] != tokens.shape:
         raise ValueError("logits and tokens must share batch and sequence dimensions")
-    if tokens.shape[1] < 2:
-        raise ValueError("next-token loss requires at least two tokens")
+    if offset < 1:
+        raise ValueError("offset must be at least 1")
+    if tokens.shape[1] < offset + 1:
+        raise ValueError("next-token loss requires at least offset + 1 tokens")
     if loss_mask is not None and loss_mask.shape != tokens.shape:
         raise ValueError("loss_mask must have the same shape as tokens")
 
     # The shift, which trips up everyone the first time. Position t's scores are
-    # graded against the token at t+1, so we drop the last position (nothing
-    # follows it) and the first token is never a target (nothing precedes it).
-    # Both become [B, S-1].
-    shifted_logits = logits[:, :-1, :].contiguous()
-    targets = tokens[:, 1:].contiguous()
-    # cross_entropy wants a flat list of predictions, so [B, S-1, V] -> [B*(S-1), V]
-    # and [B, S-1] -> [B*(S-1)]. reduction="none" keeps one loss per token instead
-    # of averaging straight away, which is what lets us mask afterwards.
+    # graded against the token at t+offset, so we drop the last `offset` positions
+    # (nothing that far ahead follows them) and the first `offset` tokens are never
+    # a target (nothing that far back precedes them). Both become [B, S-offset].
+    shifted_logits = logits[:, :-offset, :].contiguous()
+    targets = tokens[:, offset:].contiguous()
+    # cross_entropy wants a flat list of predictions, so [B, S-offset, V] ->
+    # [B*(S-offset), V] and [B, S-offset] -> [B*(S-offset)]. reduction="none" keeps
+    # one loss per token instead of averaging straight away, which is what lets us
+    # mask afterwards.
     per_token = F.cross_entropy(
         shifted_logits.view(-1, shifted_logits.shape[-1]),
         targets.view(-1),
@@ -101,7 +111,7 @@ def next_token_loss_stats(
     # targets so the two stay aligned after the shift.
     valid = targets.ne(ignore_index)
     if loss_mask is not None:
-        valid &= loss_mask[:, 1:].bool()
+        valid &= loss_mask[:, offset:].bool()
     count = valid.sum()
     # Multiplying by the boolean mask zeroes the skipped positions; they then
     # contribute nothing to either the sum or the count.

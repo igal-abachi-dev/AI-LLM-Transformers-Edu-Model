@@ -80,6 +80,14 @@ class TrainingConfig:
     activation_checkpointing: bool = False
     # Force one attention kernel for the whole run; None means follow the config.
     attention_impl: AttentionImplementation | None = None
+    # Multi-Token Prediction, an off-by-default experiment (see mtp.py): how many
+    # extra heads predict further ahead (t+2, t+3, ...) alongside the main t+1
+    # head. 0 disables MTP entirely -- the default, and the only value used by
+    # any released model so far.
+    mtp_extra_heads: int = 0
+    # How much the summed MTP auxiliary loss counts against the primary
+    # next-token loss. Only meaningful when mtp_extra_heads > 0.
+    mtp_loss_weight: float = 0.0
 
     def __post_init__(self) -> None:
         if self.max_updates <= 0:
@@ -98,6 +106,14 @@ class TrainingConfig:
             raise ValueError("gradient_accumulation_steps must be positive")
         if self.validation_interval < 0:
             raise ValueError("validation_interval cannot be negative")
+        if self.mtp_extra_heads < 0:
+            raise ValueError("mtp_extra_heads cannot be negative")
+        if self.mtp_loss_weight < 0:
+            raise ValueError("mtp_loss_weight cannot be negative")
+        if self.mtp_extra_heads > 0 and self.mtp_loss_weight <= 0:
+            raise ValueError("mtp_loss_weight must be positive when mtp_extra_heads > 0")
+        if self.mtp_extra_heads == 0 and self.mtp_loss_weight != 0.0:
+            raise ValueError("mtp_loss_weight has no effect when mtp_extra_heads is 0")
 
 
 @dataclass(slots=True)
@@ -459,6 +475,7 @@ def train_updates(
     | None = None,
     forward_model: torch.nn.Module | None = None,
     stop_after_updates: int | None = None,
+    mtp_heads: torch.nn.Module | None = None,
 ) -> tuple[
     torch.optim.Optimizer | CombinedOptimizer, WarmupCosineSchedule, TrainingState, PrecisionPolicy
 ]:
@@ -473,8 +490,18 @@ def train_updates(
 
     ``stop_after_updates`` is an absolute update count used for bounded runs and
     deterministic interruption tests. It does not alter the serialized schedule.
+
+    ``mtp_heads`` is an optional ``mtp.MTPHeads`` instance for the Multi-Token
+    Prediction experiment (see ``mtp.py``). It must be provided if and only if
+    ``config.mtp_extra_heads > 0``; this function never constructs one itself,
+    and its parameters are the caller's responsibility to include in
+    ``optimizer``. ``state.last_loss`` always reports the primary next-token
+    loss alone, never mixed with the MTP auxiliary term, so it stays directly
+    comparable to a non-MTP run's logged loss.
     """
 
+    if (config.mtp_extra_heads > 0) != (mtp_heads is not None):
+        raise ValueError("mtp_heads must be provided if and only if config.mtp_extra_heads > 0")
     torch_device = torch.device(device)
     policy = resolve_precision(config.precision, torch_device)
     optimizer = optimizer or build_adamw(model, config)[0]
@@ -517,19 +544,32 @@ def train_updates(
             # Under BF16 autocast the matmuls run in half precision while the
             # sensitive reductions stay FP32. On CPU this context does nothing.
             with policy.autocast_context():
-                logits = execution_model(
+                output = execution_model(
                     tokens_device,
                     attention_impl=config.attention_impl,
                     activation_checkpointing=config.activation_checkpointing,
-                ).logits
+                    return_hidden_states=mtp_heads is not None,
+                )
                 loss_sum, _ = next_token_loss_stats(
-                    logits,
+                    output.logits,
                     labels_device,
                     loss_mask=mask_device,
                 )
+                # Everything backpropagated may include the weighted MTP
+                # auxiliary term, but `loss_sum` itself (used for `last_loss`
+                # below) stays the primary next-token loss alone -- keeping the
+                # logged/reported loss directly comparable to a non-MTP run's.
+                total_loss_sum = loss_sum
+                if mtp_heads is not None:
+                    mtp_loss_sum, _ = mtp_heads.loss_sum_and_count(
+                        output.hidden_states,
+                        labels_device,
+                        loss_mask=mask_device,
+                    )
+                    total_loss_sum = total_loss_sum + config.mtp_loss_weight * mtp_loss_sum
                 # Pre-divided so the gradients from all microbatches sum to exactly
                 # the gradient of the full batch's mean loss.
-                scaled_loss = loss_sum / target_count
+                scaled_loss = total_loss_sum / target_count
             # Compute this microbatch's gradients and ADD them to what is already
             # stored on each parameter. No optimizer step happens yet. Under FP16,
             # `scaler.scale` multiplies the loss up before backward so small
