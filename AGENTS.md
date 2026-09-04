@@ -27,9 +27,10 @@ If documents conflict, follow the earlier item. Record a proposed architecture c
   full-attention path; FlexAttention is the planned optimized local-attention path.
 - KV cache, checkpoint/resume, evaluation, licensed code data, FIM, and small assistant-only SFT are required.
 - AdamW is the baseline. First-party PyTorch Muon plus AdamW parameter partitioning is an experiment.
+- Multi-Token Prediction (MTP) is a bounded, off-by-default, training-only experiment (2026-09-04 decision, `docs/IMPLEMENTATION_DECISIONS.md`): a simplified auxiliary-head variant configured entirely through `TrainingConfig`. It must never add a field to `ModelConfig`, change `MiniFrontier`'s `state_dict()`, or otherwise affect the frozen architecture, checkpoint format, or already-released model compatibility.
 - 350M and 500M are optional post-V1 scale checks.
 
-Do not add DeltaNet, MLA, MoE, MTP, RL/GRPO, agents/tools, vision, distributed training, external serving frameworks, custom CUDA/Triton kernels, or production long-context features in V1.
+Do not add DeltaNet, MLA, MoE, RL/GRPO, agents/tools, vision, distributed training, external serving frameworks, custom CUDA/Triton kernels, or production long-context features in V1.
 
 ## Task workflow
 

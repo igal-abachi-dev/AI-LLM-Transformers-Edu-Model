@@ -1,20 +1,27 @@
 # MF-070 pre-work: Muon follow-up — LR ceiling, speed optimizations, wall-clock-matched AdamW
 
 Environment: same as `reports/mf070-pre-muon-vs-adamw.md` (Windows 11, Python 3.12.10,
-PyTorch 2.13.0+cu130, NVIDIA GeForce RTX 2070 SUPER, Turing, CC 7.5, 8 GB VRAM). Date:
-2026-09-03. Real data: `data/shards/mf064-150m-train` (train split for training, `validation`
-split for the post-hoc quality check). Model: `configs/150m-modern.toml` (138,446,080
-parameters), unmodified. Real command output only; raw per-arm records:
-`artifacts/mf070-muon-followup/*-result.json` (training) and `*-validation.json` (quality).
-Single seed 42 throughout, matching this project's established exploratory-comparison
-discipline.
+PyTorch 2.13.0+cu130, NVIDIA GeForce RTX 2070 SUPER, Turing, CC 7.5, 8 GB VRAM). Dates:
+2026-09-03 (six-arm round) and 2026-09-04 (decisive hybrid arm, see finding 6). Real data:
+`data/shards/mf064-150m-train` (train split for training, `validation` split for the
+post-hoc quality check). Model: `configs/150m-modern.toml` (138,446,080 parameters),
+unmodified. Real command output only; raw per-arm records were captured in
+`artifacts/mf070-muon-followup/*-result.json`/`*-validation.json` and
+`artifacts/mf070-muon-hybrid-decision/*-result.json`/`*-validation.json` (both directories
+deleted after their numbers were recorded here, per this project's established
+storage-hygiene practice). Single seed 42 throughout, matching this project's established
+exploratory-comparison discipline.
 
 This is the direct follow-up to `reports/mf070-pre-muon-vs-adamw.md`, which closed with five
 explicit open questions: Muon's LR ceiling was unconfirmed (3e-3 was the top of the tested
 range), `ns_steps` reduction was untested, `torch.compile` on the optimizer step was
 untested, a hardcoded-bfloat16 precision issue in `torch.optim.Muon`'s internals had just
 been discovered, and quality-per-*wall-clock-time* (as opposed to quality-per-*token*) was
-explicitly flagged as unanswered. This report closes all five in one pass.
+explicitly flagged as unanswered. The six-arm round below closes all five in one pass.
+A sixth, decisive arm (finding 6) was added the next day after the user asked whether
+combining the two real speed wins (FP32 Newton-Schulz + `ns_steps=3`) at Muon's best known LR
+could close the wall-clock-matched gap against AdamW — first answered by extrapolation, then
+settled by a real, direct test at the user's request.
 
 ## Results
 
@@ -94,6 +101,29 @@ at ~4,409 tok/s, 2,320s wall.
    this hardware, not Muon.** This does not contradict finding 1's earlier
    quality-per-*token* result; it answers a different, more decision-relevant question for
    MF-070's actual 350M run, which will be wall-clock-budget-limited on this single 8 GB card.
+6. **A real, direct test of the best-case Muon "hybrid" (FP32 Newton-Schulz + `ns_steps=3` +
+   lr=1e-2, no compile) confirms AdamW still wins — decisively, not marginally.** After finding
+   5, the user asked whether combining the two real speed wins (finding 2's `ns_steps=3` and
+   finding 4's FP32 Newton-Schulz) at Muon's best known LR (finding 1's 1e-2) might close the
+   gap. A first-pass answer used extrapolation: fitting `time_per_step = T_fixed + ns_steps *
+   cost_per_iteration` from the three real per-step-time measurements above gave `T_fixed ~=
+   0.479s`, `cost_per_iteration(fp32) ~= 0.084s` (vs `~= 0.121s` for bf16 — a clean, direct
+   numeric confirmation of finding 4's BF16-emulation-overhead claim), predicting the hybrid at
+   `~2,801 tok/s`; applying AdamW's own real token-scaling slope (CE dropped 5.130 → 4.504,
+   i.e. ~0.736 nats per e-fold of tokens, from 10.23M → 23.94M tokens) to Muon's per-token
+   quality data suggested the hybrid at lr=1e-2 might reach **PPL ≈ 84**, edging out AdamW's
+   90.38. At the user's request, this was tested directly rather than left as extrapolation:
+   7,700 updates (~15.75M tokens), wall-clock-matched to AdamW's 5,602s. **Real result:
+   2,892.3 tok/s (close to the fitted 2,801 estimate), 5,447s wall (slightly *under* AdamW's
+   budget, so the comparison is not biased in AdamW's favor), val CE 4.563 / PPL 95.86 / BPB
+   1.535** — worse than AdamW's real 4.504 / 90.38 by a clear ~6% relative PPL margin, and
+   worse than the earlier extrapolated estimate of ~84. **The extrapolation was wrong** — it
+   overestimated how much Muon's per-token quality edge would compound at a larger token
+   budget; AdamW's own token-scaling turned out stronger than the borrowed-slope assumption
+   captured. This resolves finding 5's residual uncertainty with a real, non-extrapolated
+   result: **AdamW wins at matched wall-clock time, including against the best Muon
+   configuration this project has found.** Peak VRAM: hybrid Muon 5.08 GB vs AdamW's 5.63 GB
+   — the one axis where Muon still has a real, measured edge.
 
 ## What this does not settle
 
@@ -102,12 +132,11 @@ at ~4,409 tok/s, 2,320s wall.
 - **The `torch.compile`-on-Muon corruption's exact root cause is not diagnosed** (finding 3)
   — the practical recommendation (avoid it) does not depend on knowing the mechanism, but a
   deeper investigation was out of scope for a bounded pre-work pass.
-- **FP32 Newton-Schulz was only tested at ns_steps=5, lr=3e-3** — whether it composes
-  cleanly with a higher LR (e.g. 1e-2) or with `ns_steps=3` was not tested in this pass; a
-  natural next step if Muon remains under consideration despite finding 5.
 - **The wall-clock-matched AdamW comparison used one AdamW LR (1e-3, the prior best) at one
   matched-time point** — it does not establish AdamW's own ceiling at this larger effective
-  token budget, nor test whether a re-tuned LR for the larger budget would do even better.
+  token budget, nor test whether a re-tuned LR for the larger budget would do even better. If
+  AdamW's own LR were re-tuned for this larger budget, its real advantage over Muon (finding 6)
+  could plausibly be even larger, not smaller.
 - **Single seed, ~10-24M tokens per arm** — far short of the frozen 3B-token target for the
   actual 350M run. Exploratory, not scale-representative, matching every other MF-070
   pre-work pass this session.
@@ -120,10 +149,13 @@ at ~4,409 tok/s, 2,320s wall.
   it consumed the full GPU budget, an unacceptable risk profile given finding 3 already shows
   how easily an optimizer-internals change can silently corrupt training on this hardware.
 
-**Conclusion for MF-070's 350M run:** given finding 5, **AdamW at matched wall-clock time
-currently outperforms every tested Muon configuration** on this hardware — this reverses the
-prior report's "Muon wins on quality" framing once the comparison is done on the metric that
-actually matters for a fixed-compute-budget run. If Muon is still desired for its
-quality-per-token characteristics or its lower VRAM footprint, `fp32-ns-3e-3`'s configuration
-(FP32 Newton-Schulz, no compile) is the correct one to use — never `--compile-optimizer-step`,
-and expect `ns_steps=3` to trade real quality for real speed rather than being free.
+**Conclusion for MF-070's 350M run: use AdamW.** Findings 5 and 6 together settle this with
+real, matched-wall-clock evidence, not extrapolation: **AdamW beats every tested Muon
+configuration, including the best-case hybrid combining every real Muon speed win found in
+this pass at Muon's best known LR.** This reverses the original report's "Muon wins on
+quality" framing once the comparison is done on the metric that actually matters for a
+fixed-compute-budget run. Muon's only remaining real advantage is lower peak VRAM (5.08 GB vs
+AdamW's 5.63 GB) — worth revisiting only if MF-070's actual 350M profiling run turns out to be
+VRAM-bound rather than time-bound. If Muon is used regardless, `fp32-ns-3e-3`'s configuration
+(FP32 Newton-Schulz, no compile) is the correct base — never `--compile-optimizer-step`, and
+expect `ns_steps=3` to trade real quality for real speed rather than being free.

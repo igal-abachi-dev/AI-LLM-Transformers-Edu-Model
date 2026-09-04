@@ -180,3 +180,52 @@ The Azure Dev Box is the correctness environment and uses the CPU PyTorch extra.
 - Four-bit work begins only from F16/BF16 GGUF and initially uses Q4_K_M. Calibration provenance is
   explicit, and every candidate remains `publish_ready=false` until CLI/server, memory/throughput,
   tokenizer/template, and quality-regression gates pass on the intended Windows CUDA runtime.
+
+## 2026-09-04 — Real RTX 2070 Super evidence: optimizer, position encoding, local window, and compile behavior
+
+- Muon (first-party `torch.optim.Muon`) beats AdamW on quality *per token* at 150m-modern scale
+  (val PPL 121.9 vs 169.0, ~10.23M tokens, seed 42) but is ~2.3x slower in wall-clock throughput.
+  At *matched wall-clock time* — the real constraint on this project's single 8GB card — AdamW
+  wins decisively: real PPL 90.38 (23.94M tokens in ~5,600s) vs Muon's best-case hybrid
+  configuration (FP32 Newton-Schulz + `ns_steps=3` + Muon's best known LR, 1e-2) at real PPL 95.86
+  for the same wall-clock budget. **AdamW is the optimizer for real training runs on this
+  hardware**, including MF-070's 350M run. Muon remains an available experiment with lower peak
+  VRAM (5.08GB vs 5.63GB) but no time-matched quality advantage found. See
+  `reports/mf070-pre-muon-vs-adamw.md` and `reports/mf070-muon-followup.md`.
+- `torch.optim.Muon`'s internal Newton-Schulz iteration is hardcoded to `bfloat16` with no public
+  override (confirmed by reading the installed `torch.optim._muon` source directly, not from
+  documentation). This RTX 2070 Super (Turing) has no native BF16 tensor cores; emulated BF16
+  measurably costs real per-iteration time inside Muon's optimizer step (fitted: ~0.121s/iteration
+  in bf16 vs ~0.084s/iteration in fp32, from three real measurements). If Muon is ever used on this
+  hardware, a monkeypatch to FP32 gives a real ~21% speedup with matching quality (val CE 4.800 vs
+  4.803).
+- `torch.compile` does not reliably help on this PyTorch 2.13.0+cu130/Windows build and has two
+  independent, real failure modes: compiling `flex_attention` directly fails to lower
+  (`InductorError: LoweringException: SubgraphLoweringException`, reproduced on CPU and CUDA —
+  MF-078 — independently reconfirmed after ruling out a missing-`triton` explanation); compiling
+  `torch.optim.Muon.step()` runs without error but silently corrupts training quality (measured
+  perplexity up to ~3.2x worse than the uncompiled control, with inconsistent severity across
+  configs) while giving zero real speedup. Do not enable `torch.compile` on either path on this
+  build.
+- `local_window` size (128/256/512, all genuinely restrictive relative to `sequence_length=1024`)
+  has no measurable effect on training quality at this scale (~10.23M tokens/arm; val PPL spans
+  only 170.5-171.6, within noise). The frozen default (512) is not starving local layers. A
+  longer-context (`sequence_length=2048`) re-test was considered and skipped: the most restrictive
+  tested ratio (128:1024, 8:1) already showed nothing, and 512:2048 (4:1) is less restrictive, so a
+  repeat is expected to reconfirm rather than reveal anything new. See
+  `reports/mf070-local-window-corrected.md`.
+- Global NoPE (RoPE on local layers, no positional encoding on the one global layer) does not
+  outperform RoPE-everywhere, in-distribution (val PPL 171.6 vs 173.8) or under 2x-length
+  extrapolation (both checkpoints improve slightly at 2x length; RoPE stays ahead at both segments;
+  the two checkpoints' early-to-late deltas differ by only ~0.007 nats, within single-seed noise).
+  RoPE remains the correct default; NoPE stays an available, off-by-default experiment. See
+  `reports/mf070-global-nope-quality.md` and `reports/mf070-nope-long-context-extrapolation.md`.
+- Reconsidered whether recent frontier-model convergence (GLM-5.3-Flash's MoE + hyper-connections,
+  Qwen3.8-Flash-Next's Gated DeltaNet + MoE, Nanbeige 4.2's looped-transformer weight sharing) means
+  techniques frozen out of V1 scope should be revisited. Conclusion: no. GLM-5.3-Flash and
+  Qwen3.8-Flash-Next solve massive-MoE-scale and multi-hundred-GB-deployment problems irrelevant at
+  150M-1B dense scale on one 8GB card. Recurrent-depth/looped-transformer weight sharing (Nanbeige
+  4.2, Mixture-of-Recursions, arXiv:2507.10524) trades wall-clock compute for parameter-count
+  savings (Nanbeige's own paper: ~75% token efficiency for a 2x-pass loop) — the wrong trade for a
+  project that is compute/wall-clock-bound, not parameter-bound; not adopted. The freeze on
+  MoE/DeltaNet/MLA/hyper-connections/recurrent-depth stands.
