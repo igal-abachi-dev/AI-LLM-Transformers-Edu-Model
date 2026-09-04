@@ -21,16 +21,23 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from collections.abc import Iterator
 from dataclasses import asdict
 from pathlib import Path
 
+import torch
+
 from minifrontier.checkpoint import save_training_checkpoint
 from minifrontier.config import ModelConfig
+from minifrontier.evaluation.validation import ValidationBatch, evaluate_token_batches
 from minifrontier.model import MiniFrontier
 from minifrontier.mtp import MTPHeads
 from minifrontier.reproducibility import seed_everything
 from minifrontier.shards import PackedShardDataset, ShardBatchProvider
+from minifrontier.tokenizer import MiniFrontierTokenizer
 from minifrontier.training import TrainingConfig, build_adamw, train_updates
+
+VALIDATION_BATCH_SIZE = 8
 
 
 def parse_args() -> argparse.Namespace:
@@ -45,7 +52,49 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mtp-extra-heads", type=int, default=1)
     parser.add_argument("--mtp-loss-weight", type=float, default=0.3)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--validation-shards",
+        type=Path,
+        help="Optional packed held-out shards. Without this, only training loss is "
+        "reported and quality_claim stays False, matching compare_optimizers.py.",
+    )
+    parser.add_argument("--tokenizer", type=Path, default=Path("data/tokenizer"))
     return parser.parse_args()
+
+
+def _validation_batches(
+    dataset: PackedShardDataset, tokenizer: MiniFrontierTokenizer, device: torch.device
+) -> Iterator[ValidationBatch]:
+    """Real held-out validation batches, decoded back to UTF-8 for bits-per-byte.
+
+    Mirrors this project's own established validation recipe (see the MF-070
+    pre-work reports) rather than inventing a new one: pack ``VALIDATION_BATCH_SIZE``
+    sequences at a time, decode each back to text (skipping padding) purely to
+    count real UTF-8 bytes -- bits-per-byte is the one metric comparable across
+    tokenizers, so it is worth the decode cost.
+    """
+
+    pad_id = tokenizer.pad_id
+    buffer: list[torch.Tensor] = []
+    for index in range(len(dataset)):
+        tokens, _ = dataset[index]
+        buffer.append(tokens)
+        if len(buffer) == VALIDATION_BATCH_SIZE:
+            yield _stack_validation_batch(buffer, tokenizer, pad_id, device)
+            buffer = []
+    if buffer:
+        yield _stack_validation_batch(buffer, tokenizer, pad_id, device)
+
+
+def _stack_validation_batch(
+    buffer: list[torch.Tensor], tokenizer: MiniFrontierTokenizer, pad_id: int, device: torch.device
+) -> ValidationBatch:
+    stacked = torch.stack(buffer, dim=0).to(device)
+    utf8_bytes = 0
+    for row in buffer:
+        ids = [int(value) for value in row.tolist() if int(value) != pad_id]
+        utf8_bytes += len(tokenizer.decode(ids, skip_special_tokens=True).encode("utf-8"))
+    return ValidationBatch(tokens=stacked, utf8_bytes=utf8_bytes)
 
 
 def main() -> None:
@@ -57,6 +106,11 @@ def main() -> None:
     config = ModelConfig.from_toml(args.config)
     dataset = PackedShardDataset(args.train_shards)
     args.output.mkdir(parents=True, exist_ok=True)
+    tokenizer = (
+        MiniFrontierTokenizer.from_directory(args.tokenizer)
+        if args.validation_shards is not None
+        else None
+    )
 
     seed_everything(args.seed, deterministic=args.device == "cpu")
     initial = MiniFrontier(config).state_dict()
@@ -103,6 +157,21 @@ def main() -> None:
             mtp_heads=mtp_heads,
         )
         elapsed = time.perf_counter() - started
+        validation: dict[str, float | int] | None = None
+        if args.validation_shards is not None:
+            torch_device = torch.device(args.device)
+            validation_dataset = PackedShardDataset(args.validation_shards)
+            metrics = evaluate_token_batches(
+                model,
+                _validation_batches(validation_dataset, tokenizer, torch_device),
+                pad_id=tokenizer.pad_id,
+            )
+            validation = {
+                "cross_entropy": metrics.cross_entropy,
+                "perplexity": metrics.perplexity,
+                "bits_per_byte": metrics.bits_per_byte,
+                "predicted_tokens": metrics.predicted_tokens,
+            }
         arm_name = f"seed-{args.seed}-{label}"
         save_training_checkpoint(
             args.output / arm_name,
@@ -131,23 +200,28 @@ def main() -> None:
                 "wall_seconds": elapsed,
                 "tokens_per_second": state.consumed_target_tokens / elapsed,
                 "checkpoint": str(args.output / arm_name),
+                "validation": validation,
             }
         )
     token_budgets = {int(result["tokens"]) for result in results}
     if len(token_budgets) != 1:
         raise RuntimeError("MTP arms consumed different token budgets")
+    has_validation = args.validation_shards is not None
+    limitations = [
+        "Single seed, single MTP configuration -- not a weight/head-count sweep.",
+        "MTP heads are a simplified linear-only variant, not DeepSeek-V3's full design.",
+        "Bounded token budget, far short of the frozen 3B-token release target.",
+    ]
+    if not has_validation:
+        limitations.append("No --validation-shards given: only training loss is reported.")
     report = {
         "status": "bounded_engineering_comparison",
-        "quality_claim": False,
+        "quality_claim": has_validation,
         "model_config": config.to_dict(),
         "updates": args.updates,
         "batch_size": args.batch_size,
         "results": results,
-        "limitations": [
-            "Single seed, single MTP configuration -- not a weight/head-count sweep.",
-            "MTP heads are a simplified linear-only variant, not DeepSeek-V3's full design.",
-            "Bounded token budget, far short of the frozen 3B-token release target.",
-        ],
+        "limitations": limitations,
     }
     (args.output / "comparison.json").write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n",
