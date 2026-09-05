@@ -685,7 +685,104 @@ Every change in `tiny_modern` is about **memory, speed, or training stability**.
 changed the fundamental idea. If you understand `tiny_edu`, you understand the shape of
 every model in that list at the top of this page. The rest is scale, data, and post-training.
 
-## 3.6  How a real model actually gets built
+
+Here are three ready-to-paste sections written in the same plain-language, source-linked style as the rest of `introduction.md`. You can drop them wherever they fit best (e.g. near the training discussion in Part 2 / Part 8, or as new glossary entries).
+
+---
+
+## 3.6 FIM — Fill-in-the-Middle (code training)
+
+Ordinary next-token training only ever teaches a model to **continue** text at the end. That is fine for stories and chat, but it is the wrong shape for writing code. In an editor the model is almost always asked to fill a *hole in the middle* of an existing file — the prefix and the suffix are already there; only the middle is missing.
+
+**Fill-in-the-Middle (FIM)** teaches exactly that skill without changing the model, the loss, or the training loop. It only rearranges the *data*.
+
+A code document is split into three pieces and then re-ordered with three special tokens that already live in the vocabulary:
+
+```text
+<|fim_prefix|> text that came before
+<|fim_suffix|> text that comes after
+<|fim_middle|> the hole that should be filled
+```
+
+The model still predicts left-to-right, one token at a time. Because it has already been shown the surrounding context, “what comes next” now happens to be the missing middle. That is the whole trick.
+
+In this repo the transform lives in `src/minifrontier/code_data.py`:
+
+- `deterministic_fim()` chooses the two cut points from a hash of the document identity and a seed, so the same file always produces the same FIM example.
+- `mix_fim_documents()` applies the transform to a reproducible fraction of the code (default **15 %**, the frozen `fim-psm-v1` rate).
+- The special tokens `<|fim_prefix|>`, `<|fim_suffix|>`, `<|fim_middle|>` are three of the eleven reserved tokens listed in the tokenizer.
+
+Nothing about the model architecture changes. The same `next_token_loss` and the same `MiniFrontier.forward` are used; only the training sequences look different. That is why FIM is a pure data-pipeline experiment (`scripts/apply_fim.py`, `scripts/compare_fim.py`) rather than a model change.
+
+---
+
+## 3.7 Muon — an optimizer that treats matrices as matrices
+
+AdamW (the default optimizer in `training.py`) looks at every weight as an independent number and gives each one its own adaptive step size. That works, but it ignores structure: most of the important weights in a transformer are *matrices* (the Q/K/V projections, the SwiGLU gates, the output projections, …).
+r
+
+**AdamW** is the default optimizer this repo (and almost every modern LLM) starts with. It lives in `src/minifrontier/training.py` and is the baseline every other experiment is measured against.
+
+The basic idea is simple: after the model makes a guess and we measure how surprised it was, we need to nudge the weights a tiny bit so the next guess will be less surprising. AdamW does that nudge with two extra tricks:
+
+1. **Momentum / memory** — it remembers the recent direction of the gradient for each weight, so the update doesn’t jitter wildly from one step to the next.
+2. **Adaptive step sizes** — it keeps a running estimate of how “noisy” or “large” the gradient has been for each individual weight and scales the step accordingly. Weights that have been moving a lot get smaller steps; quiet ones get larger ones.
+
+Because it treats every single number in the model as independent, it works on embeddings, 1-D scales (RMSNorm), and the big 2-D projection matrices alike. That universality is why it became the default for a decade.
+
+The same independence is also its limitation: it never notices that a Q/K/V projection or a SwiGLU gate is a *matrix* whose rows and columns have structure. That is exactly the gap Muon tries to fill (see the Muon section). In this project AdamW remains the trusted baseline; Muon is the optional experiment that has to beat it on equal token budgets.
+
+
+**Muon** optimizer treats those matrices as matrices. On every step it takes the raw gradient matrix and “orthogonalizes” it — roughly, it forces all of the singular values toward 1 — before applying the update. The intuition without the linear algebra:
+
+> A raw gradient is usually lopsided. A couple of directions dominate and the rest are almost ignored, so most of the step just reinforces what the model already knows. Muon evens the directions out so the update pushes on all of them more evenly. In practice that often reaches the same loss in fewer steps.
+
+The educational implementation of the orthogonalization step is the Newton–Schulz iteration in `src/minifrontier/muon.py` (`newton_schulz_reference`). It uses only matrix multiplies (the one thing a GPU is superb at) and five iterations are enough to get the singular values clustered near 1. You can watch it happen live with:
+
+```bash
+uv run --extra cpu python labs/06_adamw_vs_muon.py
+```
+
+Two kinds of parameter are deliberately left on AdamW:
+
+- the token embedding (rows are independent token identities, not a linear transformation),
+- every 1-D parameter (RMSNorm scales, etc.).
+
+So a Muon run is really **two optimizers side-by-side** over a proven-disjoint partition of the weights (`partition_muon_parameters` + `build_muon_adamw`). The production path calls the real `torch.optim.Muon`; the readable FP32 Newton–Schulz function exists only so you can understand what is happening. AdamW remains the baseline that every claim is measured against.
+
+---
+
+## 3.8 MTP — Multi-Token Prediction (optional auxiliary loss)
+
+Normal training grades every position on exactly one question: “was your guess about the *very next* token right?”  
+
+**Multi-Token Prediction (MTP)** adds a few extra, smaller heads that also grade guesses further ahead — “was your guess about two tokens from now right? Three?” — and adds those losses (with a weight) to the main next-token loss.
+
+The idea, taken from Gloeckle et al. and used in production by DeepSeek-V3, is that forcing the model to commit to a sharper picture of where the text is going *sooner* can improve how much it learns per token.
+
+In this repo the mechanism is deliberately simplified and kept completely outside the model class:
+
+- Each extra head is a single linear layer that reads the *same* final hidden state the ordinary `lm_head` reads (`src/minifrontier/mtp.py`, class `MTPHeads`).
+- The heads never appear in `MiniFrontier`’s `state_dict()` or in `ModelConfig`. They are owned by the training script and only receive `return_hidden_states=True` from the forward pass.
+- Consequently a checkpoint trained with or without MTP is byte-identical on the model side; old checkpoints keep loading.
+
+Configuration is just two fields on `TrainingConfig`:
+
+- `mtp_extra_heads` — how many extra offsets (t+2, t+3, …), usually t+2 ,
+- `mtp_loss_weight` — how heavily those auxiliary losses are mixed in.
+
+By default both are off. The lab that shows the actual targets each head is grading is:
+
+```bash
+uv run --extra cpu python labs/08_mtp.py
+```
+
+Because the literature gains appear mainly at very large scale, MTP is treated as an opt-in experiment (`scripts/compare_mtp.py`) rather than a default training setting.
+
+---
+
+
+## 3.9  How a real model actually gets built
  
 previouse sections were about *what a model is*. This part is about *how one comes to exist* —
 the full assembly line, from raw text on the internet to something answering questions
