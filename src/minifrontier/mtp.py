@@ -18,6 +18,28 @@ the cost of not reproducing DeepSeek-V3's exact architecture -- a fair trade
 for a project whose entire point is "every important operation stays
 explainable from the local source."
 
+Two upgrades toward DeepSeek-V3's design were considered and explicitly
+deferred (2026-09-04 decision, `reports/mf070-mtp-quality.md`):
+
+- **Teacher-forced conditioning** -- DeepSeek-V3's module feeds each depth the
+  true token embedding at that position alongside the previous depth's hidden
+  state, not just the shared hidden state alone. At this project's
+  ``n_extra_heads=1`` (only t+2, matching DeepSeek-V3's own real D=1 choice),
+  that is a real, cheap difference (concat + linear, no new attention) worth
+  revisiting as a follow-up if the plain-linear-head result justifies further
+  investment -- but is not implemented here yet.
+- **A full chained transformer block per depth** (DeepSeek-V3's own design,
+  with its own causal self-attention) goes further than that: a materially
+  bigger implementation, and neither DeepSeek-V3 nor Gloeckle et al. isolate
+  how much of their reported gain came from the attention block itself versus
+  teacher-forced conditioning versus simply having *any* auxiliary loss. Out
+  of scope for this bounded experiment.
+
+``mtp_loss_weight`` is also fixed for the whole run rather than decayed.
+DeepSeek-V3 decays 0.3 to 0.1 over 14.8T tokens; this project's bounded test
+runs roughly 10M tokens, far too short for a decay schedule to matter. Revisit
+only if MTP proves valuable at the project's real 3B-token release scale.
+
 Why this lives outside ``MiniFrontier``
 ----------------------------------------
 MTP heads are never part of the model class and never appear in its

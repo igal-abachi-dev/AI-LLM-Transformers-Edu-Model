@@ -332,6 +332,47 @@ def test_cuda_bfloat16_full_and_cached_logits_match_within_declared_tolerance() 
 
 
 @requires_cuda
+def test_cuda_train_updates_moves_mtp_heads_built_on_cpu_to_device() -> None:
+    """Regression test for a real bug: MTPHeads built on CPU (its default, since
+    a caller may not know the target device yet -- see scripts/compare_mtp.py)
+    crashed with a cross-device RuntimeError the first time this ran at real
+    scale on CUDA. train_updates must move mtp_heads itself, the same way it
+    already moves model."""
+
+    torch.manual_seed(42)
+    device = torch.device("cuda")
+    config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
+    model = MiniFrontier(config).to(device)
+    mtp_heads = MTPHeads(d_model=config.d_model, vocab_size=config.vocab_size, n_extra_heads=1)
+    assert next(mtp_heads.parameters()).device.type == "cpu"
+    tokens = torch.randint(0, config.vocab_size, (2, 8))
+    training_config = TrainingConfig(
+        max_updates=1,
+        learning_rate=1e-2,
+        min_learning_rate=1e-2,
+        warmup_updates=0,
+        weight_decay=0.0,
+        gradient_clip=1e9,
+        precision="float32",
+        mtp_extra_heads=1,
+        mtp_loss_weight=0.5,
+    )
+    optimizer = torch.optim.AdamW(
+        list(model.parameters()) + list(mtp_heads.parameters()),
+        lr=training_config.learning_rate,
+    )
+    train_updates(
+        model,
+        ListBatchProvider([TrainingBatch(tokens)]),
+        training_config,
+        device=device,
+        optimizer=optimizer,
+        mtp_heads=mtp_heads,
+    )
+    assert next(mtp_heads.parameters()).device.type == "cuda"
+
+
+@requires_cuda
 def test_cuda_gradient_accumulation_matches_unsplit_batch() -> None:
     torch.manual_seed(41)
     device = torch.device("cuda")

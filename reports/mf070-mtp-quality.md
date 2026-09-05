@@ -46,6 +46,34 @@ difference," or "slightly hurts" would all be consistent with this prediction; o
 unambiguous improvement (comparable in size to what larger-scale results report) would be a
 real surprise relative to it.
 
+## Design decisions recorded before the real run (2026-09-04)
+
+Two more design questions came up after the prediction above was written, once it was clear
+DeepSeek-V3's real MTP module is a small sequential transformer block (its own causal
+self-attention, chained off the previous depth's hidden state plus the true token embedding
+at that position) rather than an independent linear head. Recording the decisions here,
+before the real result exists, for the same reason the prediction above is pre-registered.
+
+**Module depth: keep the linear head, do not build a chained transformer block.**
+DeepSeek's design bundles two separable ideas: (a) chaining/teacher-forcing — each depth
+sees the true token embedding at that position, not just the shared hidden state, which
+mainly matters *across multiple* depths — and (b) a full transformer block with its own
+attention. This project runs `n_extra_heads=1` (t+2 only, matching DeepSeek-V3's own real
+choice at 671B scale), so idea (a)'s cross-depth chaining is structurally almost moot; the
+one part that would still apply at n=1 is teacher-forced conditioning on the true t+1
+embedding, which is cheap (concat + linear) and recorded as a considered, not-yet-built
+follow-up (see `src/minifrontier/mtp.py`'s docstring). The full chained block is a materially
+bigger, riskier addition whose marginal value at n=1 neither DeepSeek-V3 nor Gloeckle et al.
+isolate from teacher-forcing alone or from simply having an auxiliary loss at all — out of
+scope for this bounded experiment, and not added before a scheduled, previously-crashed-once
+real run.
+
+**Loss weight: fixed at 0.3, not decayed.** DeepSeek-V3 decays 0.3 → 0.1 over 14.8T training
+tokens — a schedule calibrated for a run roughly 1,400,000x longer than this bounded ~10.23M-
+token test. A decay schedule has essentially no room to matter at this scale and would add a
+new hyperparameter to a test whose point is answering a simpler question first. Revisit decay
+only if MTP proves valuable at the project's real 3B-token release scale.
+
 ## Real result
 
 *(Not yet run. To be filled in after `scripts/compare_mtp.py` completes, with real command

@@ -523,6 +523,15 @@ def train_updates(
     model.train()
     execution_model = forward_model or model
     execution_model.train()
+    if mtp_heads is not None:
+        # A caller may build MTPHeads before knowing the target device (see
+        # scripts/compare_mtp.py). .to() moves each Parameter's storage in
+        # place rather than replacing the object, so this is safe regardless
+        # of whether an optimizer already holds references to these
+        # parameters -- the standard "call .to(device) before or after
+        # constructing the optimizer" PyTorch guarantee.
+        mtp_heads.to(torch_device)
+        mtp_heads.train()
 
     while state.completed_updates < update_limit:
         # Collect every microbatch that will contribute to this single update.
