@@ -40,6 +40,7 @@ There is no internal database, no separate “understanding” module, and no tr
 
 When the statistical patterns the model learned match reality well, the output looks like reasoning, factual knowledge, or working code. When they do not, the output looks like hallucination or, in extreme cases, incoherent “psychosis.”
 
+
 ---
 
 # Part 1 — What is a chatbot, really?
@@ -160,6 +161,24 @@ producing text that *pattern-matches* plausible, without any mechanism that chec
 When Claude or ChatGPT searches the web for you, that's genuinely different: the search
 result text gets pasted into the token stream as extra context, and *then* it guesses. The
 guessing machine hasn't changed; it just got better input.
+
+ How does “guess the next token” produce working code, coherent arguments, or correct facts?
+ 
+ Because the training data contains almost every pattern humans have written down. To keep being surprised less often, 
+ the model is forced to notice regularities that actually help prediction:Grammar is useful: after “the cat sat on the”, “mat” is far less surprising than “quickly”.
+Facts are useful: after “the capital of France is”, “Paris” scores higher than “Berlin”.
+Code structure is useful: after def add(a, b): return, the tokens a + b are more predictable than random characters.
+Simple reasoning patterns are useful: after “If all A are B, and X is an A, then X is”, the continuation “a B” becomes the low-surprise choice.
+
+None of these were programmed in. They emerged as side-effects of getting better at the single narrow job. 
+The bigger the model and the more diverse the text, the more of these useful internal circuits appear. 
+That is what people mean by “emergent abilities.”
+
+Emergent does not mean magical. The model is still only doing next-token prediction. It has no separate module that “understands,” “plans,” or “checks truth.” When it solves a hard problem, it is because the pattern of tokens that solves the problem was the least-surprising continuation given everything it has seen.
+
+so the model has compressed so many statistical regularities into its weights that the most probable next tokens often look like thinking
+
+
 
 ## 1.5 Two more honest things
 
@@ -358,6 +377,7 @@ The tests check they agree. Read the manual one to learn; run the fast one for r
 ```python
 down(silu(gate(x)) * up(x))
 ```
+It is the “thinking” part of the block — the part that looks at one token at a time (no mixing with other tokens).
 
 Each token, alone, gets expanded from 32 numbers to 96 (a bigger room to think in), then
 squeezed back down to 32.
@@ -371,6 +391,24 @@ idea apply right now".
 
 This is where most of the model's weights live — in `tiny_edu`, 9,216 of 13,376 per block —
 and where a lot of the raw factual knowledge is thought to be stored.
+
+x = x + attention(norm(x))      # gather information from other tokens
+x = x + feed_forward(norm(x))   # ← SwiGLU happens here (think alone)
+SwiGLU processes each token independently and adds its conclusion back onto the residual stream.
+
+Simple mental model:
+Attention = “Who should I listen to?”
+SwiGLU = “Given what I just heard, what do I conclude about this token?”
+That is the complete mechanics of SwiGLU 
+
+
+
+Most of the model’s parameters live in the three SwiGLU matrices (especially in larger models).
+
+
+
+
+
 
 ## 2.6 Step four: turning a card back into words
 
@@ -396,7 +434,7 @@ idea that confuses everyone the first time:
 
 ```python
 shifted_logits = logits[:, :-1, :]  # my guesses, ignoring the last position
-targets = tokens[:, 1:]  # the real answers, shifted left by one
+targets = tokens[:, 1:]  # the real answers, shifted left by one (in mtp[multi-token prediction] head: it also shift by 2)
 ```
 
 Every position guesses its *neighbour to the right*. So one sentence of 32 tokens gives you
@@ -419,6 +457,27 @@ From `src/minifrontier/training.py`, the grown-up knobs:
   from destroying hours of training.
 - **Weight decay 0.1** — gently pull weights toward zero unless the data insists otherwise.
   Discourages memorizing.
+  
+  
+  Post-training beyond SFT:
+  SFT is only the second stage. After a model has learned to continue text and then learned to answer instead of continue, 
+  commercial chat models almost always get a third stage of training. People collect pairs of answers — one better, one worse — and teach the model to prefer the better one. 
+  The 2 most common recipes are RLHF (Reinforcement Learning from Human Feedback/or verifier tool automatically) 
+  and DPO (Direct Preference Optimization).
+  
+  SFT is “here are many examples of good answers — copy this style.” 
+  Preference training is “here are two answers to the same question; this one is better, that one is worse — move toward the better one.” 
+  The model still only ever predicts the next token. 
+  The training signal just becomes “make the tokens of the preferred answer more likely and the tokens of the rejected answer less likely.”
+  
+  This is why Claude or ChatGPT feels more helpful, less sycophantic, and more careful than a pure SFT model. 
+  
+  It is also why the same base model can be turned into different products: the core guessing machine stays the same; 
+  the preference data and the third training stage shape its personality and safety behaviour. 
+  This repo stops at SFT (train/sft.py and the loss_mask) because that is enough to understand the architecture. 
+  The extra alignment stage does not change any of the boxes
+
+
 
 ## 2.8 The notebook that makes chat fast (KV cache)
 
@@ -626,6 +685,114 @@ Every change in `tiny_modern` is about **memory, speed, or training stability**.
 changed the fundamental idea. If you understand `tiny_edu`, you understand the shape of
 every model in that list at the top of this page. The rest is scale, data, and post-training.
 
+## 3.6  How a real model actually gets built
+ 
+previouse sections were about *what a model is*. This part is about *how one comes to exist* —
+the full assembly line, from raw text on the internet to something answering questions
+in a chat window.
+ 
+ 
+> Stage 1: data prep → attention → architecture. 
+> Stage 2: pretraining → foundation model.
+> Stage 3: finetune into a classifier, or finetune into a personal assistant.
+ 
+ 
+![The six stages of building a model, and the loop that connects them](svg/19-pipeline-stages.svg)
+
+ 
+| Stage | What happens | Share of total compute | In this repo? |
+|---|---|---|---|
+| 1 · Data foundation | Collect, filter, dedup, tokenize | small compute, huge effort | `data.py`, `tokenizer.py` |
+| 2 · Pretraining | The long run that makes a **base foundation model** | ~90% | `training.py`, `muon.py`, `scale.py` |
+| 3 · Mid-training | Long context, code, math injected on top | ~2–5% | ✗ not covered inside repo|
+| 4 · Post-training | SFT → preferences → RL. Behaviour forms here | ~5% | `sft.py` only for now |
+| 5 · Evaluation & safety | Benchmarks, red-teaming, Alignment capability tests | small | `evaluation/` |
+| 6 · Deployment | Quantize, serve, run as chat or agent | ongoing, forever | `gguf.py`, `precision.py`, `generation.py` |
+ 
+2 things jump out. Pretraining eats almost all the compute — 
+and almost none of the *character* of the model comes from it.
+
+And stages 3 and 4, which are cheap, are where
+"this model is good at coding" or "this model refuses politely" actually gets decided.
+
+
+
+1. **Pretraining makes it knowledgeable. Post-training makes it useful.** They are different
+   phases with different data, different objectives, and a 20:1 compute ratio.
+2. **Data quality beats architecture.** Every clever attention variant in Part 3 is worth a
+   few percent. Better data is worth multiples.
+3. **The big change since 2023 is RL against checkable answers.** Reward from a unit test
+   instead of from an opinion — that is what produced reasoning models.
+4. **It's a loop, not a line.**
+
+This repo is a complete, honest implementation of **stages 1, 2, 5 and 6**, plus the SFT
+half of stage 4:
+ 
+* `data.py`, `code_data.py`, `tokenizer.py` — stage 1
+* `training.py`, `muon.py`, `scale.py`, `precision.py`, `shards.py` — stage 2
+* `sft.py` — the first phase of stage 4
+* `evaluation/` — stage 5
+* `generation.py`, `gguf.py`, `hf_export.py`, `release.py` — stage 6
+
+**Not covered: stage 3, and the RL half of stage 4.** That is a deliberate scope choice, not
+an oversight — but it does mean that if you read only this repo, you will understand exactly
+how a base foundation model is built and will have seen none of the machinery that turns one into a
+reasoning model. and that big model can later be distilled into smaller quantized model 
+
+
+
+more on this on part 8
+
+# 3.7 on model abliteration:
+Your MiniFrontier models (tiny_edu, tiny_modern, and the larger presets) are pure next-token predictors. 
+They have not been safety-aligned with the kind of refusal training (SFT on refusal examples + RLHF/DPO) that creates a strong, concentrated “refusal direction.” in the safetensors file
+
+Why the refusal direction doesn’t exist here
+The phenomenon  appears in models that were deliberately trained to refuse certain requests. 
+That training causes the model to reliably write a particular direction into the residual stream when it decides to refuse.  
+
+this models were never given that training signal, so they do not develop (or only very weakly develop) such a refusal direction. 
+A base or lightly SFT’d model will usually just continue the text, hallucinate, or produce incoherent output , 
+rather than issue a clean “I cannot fulfill this request.”
+
+Where it would live if the model were aligned
+Conceptually, the residual stream is exactly the place the literature talks about. 
+In your code that stream is the tensor named hidden (or inputs inside the blocks):
+# model.py – MiniFrontier.forward
+hidden = self.token_embedding(tokens)          # residual stream starts here
+
+for block in self.blocks:
+    hidden = block(hidden, ...)                # each block reads and writes to it
+
+hidden = self.final_norm(hidden) # harmful vs harmless activation difference
+
+
+Inside every TransformerBlock the two places that write into the residual stream are:Attention output projection
+src/minifrontier/attention.py → self.out_proj
+SwiGLU down projection
+src/minifrontier/layers.py → self.down_proj
+
+These are precisely the matrices that abliteration orthogonalizes (W_new = W - (W · r̂)r̂) 
+in aligned models.
+You can also read the residual-stream activations at any layer by hooking the output of TransformerBlock.
+
+forward or the inputs to the final norm — 
+that is where researchers record the harmful vs harmless activation difference to extract r⃗\vec{r}\vec{r}
+.
+Matrices that would be edited to abliterat model: out_proj and down_proj
+
+So the geometric idea is fully compatible with your architecture, but the specific refusal feature itself is absent because of how (and how little) the models have been trained.
+
+
+
+
+
+
+
+
+
+
+
 ---
 
 # Part 4 — Vocabulary → where it lives in the code
@@ -731,6 +898,76 @@ To understand how we went from foundational computer science principles to moder
     
 ![Word2Vec turns words into coordinates](svg/p7-03-word2vec.svg)
 
+ **Single Artificial neuron**:
+1) Weighted sum of inputs + bias  
+2) Non-linearity (like the sigmoid “S-curve”)  
+3) Goal: minimize the distance between prediction and truth
+
+That is the actual atomic building block that everything else (MLPs, Transformers, LLMs) is made of. 
+
+From a single artificial neuronEverything starts with one simple unit. 
+An artificial neuron does three things and nothing more:It multiplies its inputs by learned weights and adds a bias (a weighted sum).  
+It bends the result with a non-linear curve (classically a sigmoid, later ReLU, SiLU, etc.).  
+It adjusts its weights so that its output gets closer to the truth.
+
+That gentle non-linearity is the entire reason deep networks can separate data that no straight line could. 
+Stack many of these units into layers, connect the layers, and you get a neural network. 
+The Transformer is just a particularly clever way of arranging and connecting these units so they can look at an entire sequence at once.
+
+
+1. Weigh its inputs (weighted sum + bias)
+This is done by every nn.Linear layer.In tiny_modern the most important ones are:
+
+Attention projections (src/minifrontier/attention.py):
+
+self.q_proj = nn.Linear(..., bias=False)
+self.k_proj = nn.Linear(..., bias=False)
+self.v_proj = nn.Linear(..., bias=False)
+self.out_proj = nn.Linear(..., bias=False)
+
+Feed-forward (SwiGLU) (src/minifrontier/layers.py):
+
+self.gate_proj = nn.Linear(d_model, d_ff, bias=False)
+self.up_proj   = nn.Linear(d_model, d_ff, bias=False)
+self.down_proj = nn.Linear(d_ff, d_model, bias=False)
+
+Final scoreboard (src/minifrontier/model.py):
+
+self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
+
+
+
+
+2. Bend the result with a curve (non-linearity)
+This is the activation function.
+In your code it happens mainly here:
+SwiGLU (src/minifrontier/layers.py, line ~100):
+
+return self.down_proj(F.silu(self.gate_proj(inputs)) * self.up_proj(inputs))
+
+F.silu is the non-linearity (SiLU / Swish = x⋅σ(x)x \cdot \sigma(x)x \cdot \sigma(x)
+).
+This is the modern replacement for the classic sigmoid or ReLU.
+
+There is no classic sigmoid left in the model. 
+Softmax appears only at the very end when turning logits into probabilities (during generation or loss), not inside the residual stream.
+
+3. Quietly shrink its own mistakes (learning)
+This does not happen inside the model forward pass.
+It happens during training:Loss calculation → src/minifrontier/loss.py (next_token_loss)
+Backpropagation → automatic via loss.backward()
+Weight update → the optimizer in src/minifrontier/training.py (AdamW by default, or Muon in the experimental lab)
+
+Every time you call the training loop, PyTorch computes gradients for all the nn.
+Linear weights (and the RMSNorm scales) and the optimizer nudges them to make the next-token predictions less surprising.
+
+
+
+
+
+
+
+
 **2\. The Architecture Evolution: Processing Sequences**Language has order and context. How do you feed a sequence of words into a network?
 
 *   **Recurrent Neural Networks (RNNs):** These networks processed words one by one, keeping a running "memory" of the sentence.
@@ -822,3 +1059,169 @@ Every generated token becomes part of the context for the next prediction. This 
 
 `next_token_loss` measures how surprised the model is by the true next token (cross-entropy after shifting the sequence). 
 Training repeatedly reduces this surprise across vast amounts of text. There is still no truth filter — only a statistical pressure to make the correct continuation less surprising.
+
+
+
+
+
+
+
+
+# Part 8 —  How a real AI model actually gets built
+
+## 8 Stage 1 — Data foundation
+ 
+In 2020 people thought architecture was the lever. It wasn't. **Data is the lever.** Most
+of the published quality gains of the last three years came from better data, not better
+maths.
+ 
+Four jobs live here:
+ 
+* **Collect and license.** Web crawls, books, code repositories, licensed corpora.
+* **Deduplicate.** The same article appears on 400 sites. Training on it 400 times teaches
+  the model to memorize instead of generalize.
+* **Filter for quality.** Usually with a small classifier model that scores "does this look
+  like something worth learning from?" — machine-generated spam is filtered out by machine.
+* **Decontaminate.** Strip the benchmark test sets *out* of the training data. Skip this and
+  your evaluation scores are fiction: the model has simply seen the answers.
+Then the tokenizer is trained on the final mix (`tokenizer.py`), and the mix proportions get
+tuned — 40% web, 20% code, 10% math, and so on. Those proportions are one of the most
+closely guarded numbers at any lab.
+ 
+**Increasingly, a lot of this data is synthetic** — written by an existing model, then
+filtered. That sounds circular, and it partly is, but a strong model producing carefully
+verified examples turns out to be a very cheap way to make training data for the next one.
+ 
+---
+ 
+## 8.3 Stage 2 — Pretraining
+ 
+This is section 2.7 of this document, scaled up by a factor of a million. Hide the next
+token, guess it, measure the surprise, nudge the weights. Nothing more exotic than that,
+running for weeks across thousands of GPUs.
+ 
+What is different at scale:
+ 
+* **Scaling-law preflight.** You do *not* start a $50M run and hope. You train a ladder of
+  tiny models, fit a curve, and predict what the big one will do. `scale.py` in this repo is
+  the toy version of exactly that.
+* **Distributed training.** The model does not fit on one GPU, so it gets sliced — across
+  layers, across the width of each matrix, across the batch.
+* **Precision.** Weights in bf16 or fp8 rather than fp32. Half the memory, double the speed,
+  and a whole category of new numerical bugs.
+* **The optimizer matters again.** For a decade AdamW was the only answer. Muon and its
+  relatives (`muon.py`) now regularly beat it.
+Out the other end comes a **base foundation model**. It is not a chatbot. It cannot hold a conversation.
+It only continues text. Give it "The capital of France is" and it says "Paris"; give it
+"How are you?" and it might reply with three more questions, because that is what a list of
+questions looks like on the internet.
+ 
+---
+ 
+## 8.4 Stage 3 — Mid-training
+ 
+This phase did not have a name in 2023 and is the biggest gap in the older diagrams.
+ 
+The idea: pretraining runs at a short context — 4k or 8k tokens — because attention cost
+grows with the square of the sequence length (section 3.3). Doing the whole run at 128k
+would be absurdly expensive. So you pretrain short, then **extend afterwards** in a short,
+cheap phase:
+ 
+* **Long-context extension.** Increase RoPE's `rope_theta` so the rotations turn more slowly
+  and reach further (section 2.2), then train briefly on genuinely long documents.
+* **High-quality anneal.** Near the end, swap the fire-hose of web text for a small, very
+  clean mix and let the learning rate decay into it. The model's last impressions stick.
+* **Domain injection.** Heavy doses of code and mathematics, because these are where
+  capability transfers most broadly.
+A few percent of the compute, a large share of what the finished model can do.
+ 
+---
+ 
+## 8.5 Stage 4 — Post-training
+ 
+The old diagram has one arrow here labelled "finetuning". It is now three or four distinct
+phases, and it is where a base model becomes an assistant.
+ 
+**1. SFT — supervised finetuning.** Show the model thousands of example conversations and
+train it to imitate the assistant's half. This is `sft.py` in this repo, and the `loss_mask`
+you saw in `model.forward` exists precisely for this: score only the assistant's tokens, not
+the user's. SFT teaches *format*: turn-taking, following instructions, using tools.
+ 
+**2. Preference optimization.** SFT teaches one valid answer. But usually several answers
+are valid and humans still prefer one. So you collect pairs — "answer A is better than
+answer B" — and train the model to raise the probability of A relative to B. DPO does this
+directly from the pairs; the older RLHF route trains a separate reward model first and then
+runs PPO against it.
+ 
+**3. RLVR — reinforcement learning from verifiable rewards.** The big one, and the reason
+2026 models differ so much from 2023 models at the same size.
+ 
+The insight is embarrassingly simple. For preferences you need a human, or a model
+imitating a human, to say which answer is better — expensive and noisy. But for a large
+class of problems **you can just check the answer**:
+ 
+* Code → run the unit tests. Pass or fail.
+* Maths → verify the final result symbolically. Correct or not.
+* A build → does it compile?
+So: let the model attempt a problem many times, keep what worked, push the weights toward
+it. The reward comes from a checker, not from an opinion. Run this long enough and the model
+starts to *think before answering* — writing out a long chain of reasoning, catching its own
+mistakes — not because anyone taught it that format, but because it raises the pass rate.
+ 
+The dominant algorithm is **GRPO**, introduced by DeepSeek. Its trick is that it needs no
+separate value network: it takes a group of attempts at the same prompt and uses that
+group's own average score as the baseline. Cheaper and simpler than PPO, which is most of
+why it took over.
+ 
+**4. Distillation.** A big expensive model teaches a small cheap one. Two flavours:
+ 
+* *Off-policy* — generate a pile of the teacher's answers and fine-tune the student on them.
+  This is how the DeepSeek-R1-Distill models were made.
+* *On-policy* — the student generates, and the teacher scores its output token by token.
+  Slower per step, dramatically more sample-efficient, and now the standard final phase in
+  most open-model recipes.
+In 2026 distillation is also used to **merge** capabilities: train several specialists with
+RLVR — one for maths, one for code, one for agentic tool use — then distil all of them into
+a single model. RLVR builds the specialists; distillation fuses them.
+ 
+---
+ 
+## 8.6 Stage 5 — Evaluation and safety
+ 
+Not a footnote. It is a gate: a model that fails here does not ship.
+ 
+* **Benchmarks and held-out evals.** Public ones for comparison, private ones because public
+  ones leak into training data within months.
+* **Red-teaming.** People and automated attackers try to make the model do things it
+  shouldn't, including through multi-turn attacks that succeed where single-turn refusals
+  hold firm.
+* **Capability evaluations.** Testing specifically for dangerous capabilities. Every major
+  lab now publishes a policy tying release decisions to these results.
+The honest caveat: benchmark scores are the *least* reliable part of any model announcement,
+because contamination is hard to rule out and everyone is optimizing for the same numbers.
+ 
+---
+ 
+## 8.7 Stage 6 — Deployment
+ 
+Training happens once. Serving happens a billion times, so this is where the money goes.
+ 
+* **Quantization.** 16-bit weights down to 8 or 4 bits. `gguf.py` and `precision.py` cover
+  this — it's how a 30B model fits on a laptop.
+* **KV cache management.** Section 2.8 showed *why* the cache exists. At production scale it
+  is the binding constraint: paged allocation so one long conversation doesn't fragment
+  memory for everyone else. GQA and the hybrid local/global pattern from Part 3 exist almost
+  entirely to shrink this.
+* **Speculative decoding.** A small draft model guesses several tokens ahead; the big model
+  verifies them in one pass. Same output, several times faster.
+* **The product layer.** Chat, tool calling, agents, retrieval. Note what is *not* here any
+  more: "finetune the base model into a text classifier" was a sensible 2023 endpoint and is
+  now a rounding error — you'd use embeddings or a tiny specialist model instead.
+---
+ 
+## 8.8 The ai model stages loop
+ 
+The arrow that the linear diagrams all miss: **stage 6 feeds back into stage 1.** Production
+traffic shows what users actually ask. Evaluation failures show what the model can't do.
+Both become training data for the next run. Model development is a cycle with a period of
+roughly three to six months, not a pipeline with an end.

@@ -56,10 +56,25 @@ One compact codebase exposes two presets:
 > Edu architecture:
 ![minifrontier edu architecture](svg/minifrontier_edu_architecture.svg)
 
+**Edu blocks: 2 only because that's `tiny_edu()`.** Your table used the tiny factory defaults, so It drew `n_layers=2`. 
+The real Edu configs are `50m-edu.toml` at 14 layers and `150m-edu.toml` at 20; the bare `ModelConfig` default is also 20. 
+
+In Edu it genuinely doesn't matter which one you draw — `is_local_layer` returns `False` unconditionally when `attention_pattern="full"`, and `position_encoding_for_layer` always returns `"rope"`. 
+Every Edu block is byte-identical, so 2 boxes or 20 boxes carry the same information.
+
 
 > Modern architecture:
 ![minifrontier modern architecture](svg/minifrontier_modern_architecture.svg)
+![minifrontier modern architecture - global block](svg/minifrontier_modern_global_block.svg)
 
+**Modern: 3 local + 1 global is the repeating unit, not the total.** `tiny_modern()` has `n_layers=4`, so you see exactly one cycle and it looks like the whole model. At real scale the pattern just repeats:
+
+| config | layers | local | global (indices) |
+|---|---|---|---|
+| `50m-modern` | 14 | 11 | 3, 7, 11 |
+| `150m-modern` | 20 | 15 | 3, 7, 11, 15, 19 |
+| `500m-modern` | 24 | 18 | 3, 7 … 23 |
+| `350m-modern` | 28 | 21 | 3, 7 … 27 |
 
 The learning progression is deliberate:
 

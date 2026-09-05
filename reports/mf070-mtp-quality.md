@@ -74,8 +74,68 @@ token test. A decay schedule has essentially no room to matter at this scale and
 new hyperparameter to a test whose point is answering a simpler question first. Revisit decay
 only if MTP proves valuable at the project's real 3B-token release scale.
 
-## Real result
+## Real result (2026-09-06)
 
-*(Not yet run. To be filled in after `scripts/compare_mtp.py` completes, with real command
-output/checkpoint records per this project's own evidence discipline — never reported without
-them.)*
+Command actually run, in the user's own foreground terminal (after one earlier attempt crashed
+on the cross-device bug fixed in `training.py`; this run redid the baseline arm from scratch
+since the script has no per-arm resume logic):
+
+```
+./.venv/Scripts/python.exe scripts/compare_mtp.py --config configs/150m-modern.toml \
+  --train-shards data/shards/mf064-150m-train/train \
+  --validation-shards data/shards/mf064-150m-train/validation \
+  --output artifacts/mf070-mtp-quality --updates 5000 --batch-size 2 --seed 42 \
+  --learning-rate 3e-4 --mtp-extra-heads 1 --mtp-loss-weight 0.3 --device cuda
+```
+
+Real output (`artifacts/mf070-mtp-quality/comparison.json`), both arms trained on the exact
+same 10,230,000 tokens (5,000 updates, batch=2), same seed, same starting weights:
+
+| Metric | Baseline | MTP (n=1, w=0.3) | Δ (relative) |
+|---|---|---|---|
+| Train loss (primary next-token only, uncontaminated by the auxiliary term) | 5.224824 | 5.227843 | +0.058% (slightly worse) |
+| Validation cross-entropy | 5.137413 | 5.129997 | −0.144% (better) |
+| Validation perplexity | 170.275 | 169.017 | −0.739% (better) |
+| Validation bits/byte | 1.728251 | 1.725756 | −0.144% (better) |
+| Tokens/second | 4188.7 | 3977.3 | −5.05% (slower) |
+| Wall time | 2442.3s (40.7 min) | 2572.1s (42.9 min) | +5.31% (slower) |
+
+The baseline arm's numbers are bit-for-bit identical to the original (crashed-mid-run) attempt's
+baseline arm, confirming full reproducibility of this bounded-comparison methodology.
+
+### Reading the result against the pre-registered prediction
+
+The prediction above was: "a small, uncertain effect — plausibly a modest improvement,
+plausibly a wash, plausibly a slight regression — not a clear, confident win." The real result
+lands squarely inside that range: a **small, consistent improvement on all three held-out
+validation metrics** (CE, PPL, BPB all move the same direction, as they must — BPB is CE
+rescaled by a fixed bytes/token constant, so this is an internal consistency check, not three
+independent confirmations), alongside a **very slightly worse primary training loss** and a
+**real, measurable wall-clock cost** (~5.3% slower). Not a large, unambiguous win of the kind
+DeepSeek-V3 reports at 671B/14.8T scale — consistent with Gloeckle et al.'s finding that the
+effect is weaker at small scale. Also not a wash or a regression. The result is genuinely
+informative rather than a formality, exactly as the prediction anticipated.
+
+The train-loss-slightly-worse / validation-slightly-better split is a plausible, coherent
+signature of MTP acting as a regularizer (trading a sliver of primary-objective train-set fit
+for better generalization) rather than noise in opposite directions — but this is a **single
+seed, single configuration** (already listed as a limitation in `comparison.json` itself), so
+it should be read as suggestive, not confirmed. The effect size (~0.74% relative PPL
+improvement) is larger than this project's own established single-seed noise floor from the
+corrected local-window test (~0.04% relative CE difference, called "no measurable difference"
+there), so this is more likely a real small effect than pure noise, but a second seed would be
+needed to be confident.
+
+### Decision for MF-070
+
+**Do not enable MTP for MF-070's 350M profiling run.** Reasoning: MTP is off-by-default per
+its `AGENTS.md` carve-out, so this is a "stay with the default" decision, not a reversal.
+The measured trade — a ~0.74% relative validation-quality improvement at a ~5.3% wall-clock
+cost — mirrors the exact shape of the Muon-vs-AdamW decision earlier in this pre-work: a real
+per-token quality edge that loses once wall-clock time (this project's actual bottleneck,
+not parameter count) is weighed in. A single-seed, ~10M-token bounded result is also too
+thin to justify carrying a training-time complexity/cost addition into a real multi-hour
+350M run. MTP remains a documented, working, tested feature (`src/minifrontier/mtp.py`,
+`scripts/compare_mtp.py`) that can be revisited with a second seed or at larger scale
+(where Gloeckle et al.'s own finding predicts the effect should grow) as independent
+follow-up work — it is not a blocker for MF-070 either way.
