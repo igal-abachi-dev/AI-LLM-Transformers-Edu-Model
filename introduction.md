@@ -275,7 +275,7 @@ Two details worth noticing in the code:
 - The rotation is applied to Q and K only — never to V. (Reason: it's about *where to look*,
   not *what to fetch*.)
 
-## 2.3 Step three: the block, repeated
+## 2.3 Step three: the Transformer Block, repeated
 
 `TransformerBlock` in `model.py` is 30 lines and it does exactly two things, both in the same
 shape:
