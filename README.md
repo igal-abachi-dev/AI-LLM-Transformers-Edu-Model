@@ -62,6 +62,7 @@ The real Edu configs are `50m-edu.toml` at 14 layers and `150m-edu.toml` at 20; 
 In Edu it genuinely doesn't matter which one you draw — `is_local_layer` returns `False` unconditionally when `attention_pattern="full"`, and `position_encoding_for_layer` always returns `"rope"`. 
 Every Edu block is byte-identical, so 2 boxes or 20 boxes carry the same information.
 
+![The whole model, tokens in to logits out](svg/05-model-overview.svg)
 
 > Modern architecture:
 ![minifrontier modern architecture](svg/minifrontier_modern_architecture.svg)
