@@ -180,7 +180,7 @@ so the model has compressed so many statistical regularities into its weights th
 
 
 
-## 1.5 Two more honest things
+## 1.5 Two more honest things , and about SFT — supervised fine-tuning
 
 **It doesn't remember you.** Each request starts fresh. What looks like memory is either
 (a) the whole conversation being re-sent every single time, or (b) a separate notes system
