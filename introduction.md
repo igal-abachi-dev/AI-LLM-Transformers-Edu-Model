@@ -840,7 +840,7 @@ reasoning model. and that big model can later be distilled into smaller quantize
 
 more on this on part 8
 
-# 3.7 on model abliteration:
+# on model Abliteration:
 Your MiniFrontier models (tiny_edu, tiny_modern, and the larger presets) are pure next-token predictors. 
 They have not been safety-aligned with the kind of refusal training (SFT on refusal examples + RLHF/DPO) that creates a strong, concentrated “refusal direction.” in the safetensors file
 
@@ -855,7 +855,8 @@ rather than issue a clean “I cannot fulfill this request.”
 Where it would live if the model were aligned
 Conceptually, the residual stream is exactly the place the literature talks about. 
 In your code that stream is the tensor named hidden (or inputs inside the blocks):
-# model.py – MiniFrontier.forward
+
+model.py – MiniFrontier.forward:
 hidden = self.token_embedding(tokens)          # residual stream starts here
 
 for block in self.blocks:
