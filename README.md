@@ -52,6 +52,15 @@ One compact codebase exposes two presets:
 | Feed-forward | Dense SwiGLU | Dense SwiGLU |
 | Embeddings | Tied input/output | Tied input/output |
 
+
+> Edu architecture:
+![minifrontier edu architecture](svg/minifrontier_edu_architecture.svg)
+
+
+> Modern architecture:
+![minifrontier modern architecture](svg/minifrontier_modern_architecture.svg)
+
+
 The learning progression is deliberate:
 
 ```text
