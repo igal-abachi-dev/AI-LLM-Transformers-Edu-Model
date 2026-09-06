@@ -184,6 +184,30 @@ Because the split happens *before* BPE merges, long digit strings can no longer 
 This change lives only in the pre-tokenizer. The rest of the frozen contract (special-token IDs, byte alphabet, no unknown token, deterministic training) is unchanged. 
 The vocabulary size was also raised from 16 384 → 32 768 at the same time so the larger model scale is not under-provisioned for tokens.
 
+
+### shards - the ready-to-train dataset
+is the main prepared training data.
+After documents are filtered and deduplicated, 
+they get tokenized once and written out as many small, fixed-size files called shards.
+
+Raw documents
+    ↓ filter + dedup (uses dedup-signatures.sqlite ,not full document text)
+Tokenize + pack into fixed-length sequences
+    ↓
+shards/
+  ├── shard-00000.tokens.npy   ← the actual token IDs (the actual data the model trains on)
+  ├── shard-00000.counts.npy   ← how many real tokens per row (used to build the loss mask during training)
+  ├── shard-00001.tokens.npy
+  ├── shard-00001.counts.npy
+  └── manifest.json            ← list + hashes of everything
+  
+
+Why shards?
+Training can memory-map them (treat the file as if it were already in RAM).
+
+Works even if the whole dataset is bigger than your memory.
+
+Training can resume from an exact cursor (which shard + which row) if it gets interrupted.
 ---
 
 ## 1.2 The chat you see is a lie (a friendly one)
