@@ -199,7 +199,9 @@ def test_cuda_flex_block_mask_from_inference_mode_does_not_break_later_training(
 
     training_attention = CausalSelfAttention(config, layer_index=0).to(device)
     training_inputs = torch.randn(1, length, config.d_model, device=device, requires_grad=True)
-    cosine, sine = rope(torch.arange(length, device=device), dtype=training_inputs.dtype, device=device)
+    cosine, sine = rope(
+        torch.arange(length, device=device), dtype=training_inputs.dtype, device=device
+    )
     output = training_attention(training_inputs, cosine, sine, implementation="flex")
     output.sum().backward()  # would raise "Inference tensors cannot be saved for backward" pre-fix
     assert training_inputs.grad is not None
