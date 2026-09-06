@@ -581,7 +581,7 @@ you can see the effect directly.
 
 ## 3.3 Hybrid attention — three near-sighted layers, one far-sighted
 
-**The problem.** Full attention means every token looks at every earlier token. Double the
+**The problem.** Full attention layers (like in edu) means every token looks at every earlier token. Double the
 context, quadruple the work. That quadratic wall is the reason long context is expensive.
 
 **The observation.** Most of language is local. To finish `"the cat sat on the ___"` you
@@ -589,7 +589,7 @@ need the last six words, not paragraph three. Only *occasionally* do you need th
 reach — a variable declared 400 lines up, a name from the top of the document.
 
 **The fix.** Don't make every layer far-sighted. Make most of them near-sighted and cheap,
-and put a proper long-range layer in every so often.
+and put a proper long-range layer in every so often (3 local 1 global).
 
 ![Three local layers and one global layer](svg/17-hybrid-attention.svg)
 In `config.py`, one line does it:
@@ -626,17 +626,49 @@ The cache saving is larger still, because the local layers only need to *remembe
 tokens, ever. For the 150M model at 2,048 context, KV cache drops from ~126 MB to ~18 MB —
 roughly **7× less**, combining GQA and hybrid.
 
-### The whiteboard-with-limited-space trick (ring cache)
 
-If a local layer only ever looks back 512 tokens, storing 100,000 is pointless. So local
-layers get a **ring buffer**: a whiteboard with exactly 512 slots. Slot 513 overwrites slot
-1. `LayerKVCache` with `ring=True` does this with `index_copy_` and a modulo. Memory stops
-growing entirely for those layers, no matter how long the conversation gets.
+Here are two beginner-friendly sections written in the same plain-language style as the rest of `introduction.md`. You can paste them in (they expand and clarify the existing material around hybrid attention and NoPE).
 
-![The ring buffer cache for local layers](svg/18-ring-cache.svg)
+---
 
-Global layers keep the normal ever-growing cache — they're the ones that actually need the
-history.
+### Attention kernels — how the model actually does the “looking”
+
+Attention is just a weighted average of other tokens. The *math* is always the same:
+
+```text
+scores = (Query · Keyᵀ) / √head_dim
+weights = softmax(scores + mask)
+output  = weights · Value
+```
+
+What changes is *which piece of code* runs that math. Different masks and different sequence lengths favour different kernels, so the model picks the cheapest correct one.
+
+**Edu (the simple preset)**  
+Every layer is full causal attention. The default kernel is **SDPA** (`F.scaled_dot_product_attention`).  
+SDPA is PyTorch’s fused, highly optimised path. It never builds the huge score matrix in one piece, and it has a specially fast path for the ordinary “lower-triangular causal” mask that Edu uses everywhere. You can force the slow, readable teaching path with `attention_impl = "manual"` if you want to see every number; the tests check that both paths give the same answer.
+
+**Modern (the hybrid preset)**  
+Local layers and global layers have *differently shaped* masks, so they prefer different kernels. The config setting is `attention_impl = "auto"`. That single word means:
+
+- **Local layers** (the short-sighted ones that only look back `local_window` tokens) → **FlexAttention**.  
+  Flex is told “banded diagonal”. Whole rectangular tiles of the score grid are guaranteed to be masked out, so Flex can skip them completely. That is where the speed-up on long sequences comes from. The block-mask object is built once and cached (`_BLOCK_MASK_CACHE` in `attention.py`).
+
+- **Global layers** (the far-sighted ones that see the whole history) → **SDPA**.  
+  A plain causal triangle is exactly what SDPA’s fused fast path is already tuned for, so there is no need for Flex.
+
+There is one extra rule that looks surprising until you know why it exists: during single-token generation a local layer *downgrades* from Flex back to SDPA. With only one query row there is no big sparse grid left to skip — only compile and launch overhead — so SDPA is cheaper. That decision lives in `CausalSelfAttention.resolved_implementation`.
+
+You can override the choice per call (`attention_impl="manual"`, `"sdpa"` or `"flex"`) when you are measuring or debugging. The tests assert that all three paths agree within a tight tolerance.
+
+In short:
+
+| Preset  | Default setting | What actually runs                          |
+|---------|-----------------|---------------------------------------------|
+| Edu     | `"sdpa"`        | SDPA on every layer                         |
+| Modern  | `"auto"`        | Flex on local layers, SDPA on global layers |
+
+The maths never changes; only the engine that evaluates it does.
+
 
 ### Different layers, different fast paths
 
@@ -654,6 +686,21 @@ single-token generation, local layers *downgrade* from Flex back to SDPA
 (`resolved_implementation`). With only one query token, Flex's block-skipping machinery
 costs more than it saves.
 
+---
+
+
+### The whiteboard-with-limited-space trick (ring cache)
+
+If a local layer only ever looks back 512 tokens, storing 100,000 is pointless. So local
+layers get a **ring buffer**: a whiteboard with exactly 512 slots. Slot 513 overwrites slot
+1. `LayerKVCache` with `ring=True` does this with `index_copy_` and a modulo. Memory stops
+growing entirely for those layers, no matter how long the conversation gets.
+
+![The ring buffer cache for local layers](svg/18-ring-cache.svg)
+
+Global layers keep the normal ever-growing cache — they're the ones that actually need the
+history.
+
 ## 3.4 NoPE on global layers (the experiment)
 
 `global_position_encoding` can be `"rope"` (default) or `"none"`.
@@ -668,6 +715,27 @@ there *are* local layers underneath doing the position work.
 
 This one is genuinely an open question in the field, which is why the repo labels it an
 experiment and gives it a lab: `labs/07_rope_vs_global_nope.py`.
+
+**RoPE** (Rotary Position Embedding) is the normal way this model stamps position onto every token.  
+It rotates the Query and Key vectors of each token by an angle that depends on that token’s absolute position. When two tokens are later compared with a dot-product, the two rotations partly cancel and what survives depends on *how far apart* the tokens are. That relative-distance signal is what lets the model tell “dog bites man” from “man bites dog”. RoPE is applied only to Q and K, never to V, and it has no learned parameters — pure arithmetic.
+
+**NoPE** simply means “No Position Encoding”.  
+When a layer is configured with NoPE it receives the Query and Key vectors *without* any rotation. Those vectors contain only content information; the layer sees an unordered bag of tokens.
+
+In this codebase NoPE is an *experiment that applies only to the global layers* of a hybrid model:
+
+- Local layers **always** keep RoPE. They are the ones that first inject ordering into the residual stream.
+- Global layers may optionally drop the rotation (`global_position_encoding = "none"`).
+
+The idea behind the experiment is:
+
+1. The three local layers below a global layer have already mixed neighbouring tokens and written position-aware sticky notes onto the residual stream.
+2. By the time the global layer looks at the whole history, the ordering information may already be present in the cards themselves.
+3. A global layer that never saw a rotation trained only up to 2 048 positions might generalise better when you later stretch the model to much longer contexts (the classic “RoPE extrapolation” problem).
+
+Because NoPE only makes sense when local layers underneath have already done the position work, the config forbids it on pure full-attention (Edu) models.
+
+---
 
 ## 3.5 What did *not* change — and why that's the lesson
 

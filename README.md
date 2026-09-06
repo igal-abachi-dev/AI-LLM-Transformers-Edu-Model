@@ -226,6 +226,38 @@ better for general chat and coding completions
 (1B-3B need to lease paid servers to train the model , not feasable on home pc single gpu,
 7B+ needs massive resources)
 
+
+### Architecture
+Pre-norm residual blocks: x = x + attn(norm(x)); x = x + ffn(norm(x))
+RMSNorm (FP32 mean-square + rsqrt, then scale, cast back)
+SwiGLU: down(silu(gate(x)) * up(x)), no biases
+Residual output projections scaled by 1/√(2L) (GPT-2-style depth scaling)
+Tied embeddings when requested
+Proper weight init (1/√d_model, residual projections smaller)
+
+### RoPE
+Split-half (LLaMA-style) pairing, not interleaved
+Applied only to Q/K, after QK-Norm when present
+Frequency table computed once, shared across layers
+Rotation done in FP32 even under BF16/FP16 autocast (important for precision)
+Supports absolute positions (correct for KV-cache generation)
+Tests compare against Hugging Face LLaMA’s apply_rotary_pos_emb
+
+### Attention
+Clean MHA / GQA path (compact K/V; enable_gqa=True on SDPA/Flex)
+Explicit teaching path (manual_scaled_dot_product_attention) that expands KV so the math is readable
+Correct causal + sliding-window masking
+Hybrid schedule: local layers use window + Flex; global use full causal + SDPA
+Careful mask selection for training vs. prefill vs. single-token decode vs. ring cache
+QK-Norm → then RoPE order is fixed and tested
+
+### Caching / generation
+Proper KVCache with ring support for local windows
+logits_to_keep optimization
+Activation checkpointing support
+Rollback on failure so a partial cache cannot corrupt later steps
+
+
 ## V1 scope
 
 V1 includes:
