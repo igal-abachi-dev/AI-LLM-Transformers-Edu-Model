@@ -163,9 +163,7 @@ def test_train_updates_clips_mtp_head_gradients_together_with_model(monkeypatch)
         mtp_extra_heads=1,
         mtp_loss_weight=0.5,
     )
-    optimizer = torch.optim.AdamW(
-        list(model.parameters()) + list(mtp_heads.parameters()), lr=1e-3
-    )
+    optimizer = torch.optim.AdamW(list(model.parameters()) + list(mtp_heads.parameters()), lr=1e-3)
 
     seen_parameter_ids: set[int] = set()
     original_clip = torch.nn.utils.clip_grad_norm_

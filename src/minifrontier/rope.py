@@ -78,7 +78,9 @@ def apply_rotary(
     # A caller already passing FP32/FP64 (e.g. a high-precision reference test)
     # is never *downcast* -- only BF16/FP16 get lifted.
     original_dtype = inputs.dtype
-    compute_dtype = original_dtype if original_dtype in (torch.float32, torch.float64) else torch.float32
+    compute_dtype = (
+        original_dtype if original_dtype in (torch.float32, torch.float64) else torch.float32
+    )
     cosine = cosine.to(dtype=compute_dtype).unsqueeze(0).unsqueeze(0)
     sine = sine.to(dtype=compute_dtype).unsqueeze(0).unsqueeze(0)
     inputs = inputs.to(dtype=compute_dtype)
