@@ -114,6 +114,49 @@ is used for both “ID → meaning” and “meaning → ID”.
 so the tokenizer is a small, carefully frozen contract that sits between human text 
 and the integer sequences the neural network actually understands.
 
+
+Here are three beginner-friendly sections written for the new source (digit splitting in the tokenizer, chunked cross-entropy / CCE, and Triton kernels). They match the plain-language style of `introduction.md`.
+
+---
+
+## Digit splitting in the tokenizer
+
+A model only ever sees **token IDs**. How those IDs are chosen for numbers matters a lot for arithmetic.
+
+### The old (GPT-2-style) behaviour
+
+Ordinary byte-level BPE is free to merge whatever pairs appear most often. Long runs of digits such as `123456789` often collapse into **one** token, because the same digit pairs keep showing up. That looks efficient, but it hurts math:
+
+- The model never sees the individual digits as separate pieces.
+- Adding 1 to a large number becomes a mysterious “replace this whole token with a different whole token” problem instead of a digit-by-digit pattern it can learn.
+
+### The new (Llama 3 / Qwen-style) fix
+
+Before the normal byte-level pass, the tokenizer now runs a **digit-splitting** pre-tokenizer:
+
+```python
+_DIGIT_SPLIT_PATTERN = Regex(r"\d{1,3}")
+
+backend.pre_tokenizer = Sequence([
+    Split(_DIGIT_SPLIT_PATTERN, behavior="isolated"),  # groups of 1–3 digits
+    ByteLevel(add_prefix_space=False, use_regex=True), # ordinary byte BPE after that
+])
+```
+
+What this does:
+
+- Any run of digits is broken into pieces of **at most 3 digits**.
+- `"123456"` becomes `"123"` + `"456"`.
+- `"42"` stays `"42"`.
+- Non-digit text is untouched — the second step (ByteLevel) still works exactly as before.
+
+Because the split happens *before* BPE merges, long digit strings can no longer fuse into a single opaque token. The model is forced to see numbers as short, reusable digit groups, which makes arithmetic patterns far easier to learn at this scale.
+
+This change lives only in the pre-tokenizer. The rest of the frozen contract (special-token IDs, byte alphabet, no unknown token, deterministic training) is unchanged. 
+The vocabulary size was also raised from 16 384 → 32 768 at the same time so the larger model scale is not under-provisioned for tokens.
+
+---
+
 ## 1.2 The chat you see is a lie (a friendly one)
 
 You see a chat window with bubbles. The model sees one long flat string of tokens.
@@ -520,6 +563,43 @@ From `src/minifrontier/training.py`, the grown-up knobs:
   The extra alignment stage does not change any of the boxes
 
 
+## Chunked cross-entropy (CCE) — computing the loss without exploding memory
+
+### The ordinary next-token loss
+
+Training asks: “at every position, how surprised was the model by the *real* next token?”  
+That surprise is **cross-entropy**. The classic implementation does:
+
+1. Project the final hidden states through `lm_head` → a huge tensor of shape `[batch, sequence, vocab_size]`.
+2. Run `F.cross_entropy` on the flattened logits.
+
+With a 32 k vocabulary and a long sequence this tensor is enormous. On a consumer GPU it is often the single biggest memory spike (x2-x4 probably if not chunked) in the whole training step.
+
+### What “chunked” cross-entropy changes
+
+Instead of building the full logits tensor, the new path (`chunked_next_token_loss_stats` + `_ChunkedCrossEntropy` in `loss.py`) does the work in **small vertical slices**:
+
+1. Take the final hidden states and the `lm_head` weight matrix directly.
+2. Process only `chunk_size` rows at a time (default 1024).
+3. For each chunk:
+   - Compute that chunk’s logits (`hidden_chunk @ weight.T`).
+   - Compute the cross-entropy loss and the exact gradient with respect to `hidden` and `weight`.
+   - **Throw the logits away immediately**.
+4. Accumulate only gradients that have the same shape as the original tensors (never vocab-sized).
+
+A plain Python loop that called `F.cross_entropy` per chunk would still force PyTorch to re-walk the *entire* transformer graph on every backward, turning one backward into many. 
+The custom `torch.autograd.Function` avoids that: it calculates the closed-form cross-entropy gradient (`softmax(logits) − one_hot(target)`) itself, 
+stores only the compact gradients, and lets the rest of the model’s backward run exactly once.
+
+### What stayed the same
+
+- The mathematical meaning of the loss is identical to the classic version.
+- The same shift (predict token `t+1` from position `t`) and the same masking rules (`ignore_index`, SFT `loss_mask`) still apply.
+- The trainer still receives a **sum** of losses and a **count** of valid tokens so micro-batch accumulation stays exact.
+
+In short: the model still learns “guess the next token,” but the memory peak that used to come from materializing the full vocabulary scores is gone.
+
+---
 
 ## 2.8 The notebook that makes chat fast (KV cache)
 
@@ -711,9 +791,6 @@ In short:
 
 The maths never changes; only the engine that evaluates it does.
 
-
-### Different layers, different fast paths
-
 Because local and global layers have differently-shaped masks, they run best on different
 kernels. `attention_impl = "auto"` sorts it out per layer:
 
@@ -727,6 +804,17 @@ There's one further wrinkle worth knowing since it looks like a bug otherwise: d
 single-token generation, local layers *downgrade* from Flex back to SDPA
 (`resolved_implementation`). With only one query token, Flex's block-skipping machinery
 costs more than it saves.
+
+## What is a Triton/CUDA kernel
+
+A **kernel** is a small program that runs directly on the GPU. Ordinary PyTorch operations are already implemented as kernels; 
+libraries such as SDPA or FlexAttention are just carefully written ones. 
+**Triton** is a language and compiler that lets you write new GPU kernels in a Python-like syntax; the compiler turns them into efficient GPU code.
+**cuda** is similar
+
+People use custom Triton kernels when they need an operation that:
+- is not already fused in PyTorch, or
+- can save a large amount of memory or time by doing several steps in one pass.
 
 ---
 
