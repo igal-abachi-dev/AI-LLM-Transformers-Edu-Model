@@ -293,10 +293,6 @@ Now we open the box. `tiny_edu` is defined in `src/minifrontier/config.py` as
 > Edu architecture:
 ![minifrontier edu architecture](svg/minifrontier_edu_architecture.svg)
 
-> Modern architecture:
-![minifrontier modern architecture](svg/minifrontier_modern_architecture.svg)
-![minifrontier modern architecture - global block](svg/minifrontier_modern_global_block.svg)
-
 
 ## 2.0 How small is small?
 
@@ -642,6 +638,12 @@ between 2019 and 2025. The 2017 skeleton survived; people fixed four specific pa
 | Norms | pre-norm only | **+ QK-Norm** | Training blows up at scale |
 | Attention span | full, every layer | **3 local + 1 global** | Attention cost grows quadratically |
 | Position | RoPE everywhere | RoPE, **optional NoPE on global layers** | Long-context behaviour |
+
+
+> Modern architecture:
+![minifrontier modern architecture](svg/minifrontier_modern_architecture.svg)
+![minifrontier modern architecture - global block](svg/minifrontier_modern_global_block.svg)
+
 
 ## 3.1 GQA — four askers share two note-takers
 
