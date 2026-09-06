@@ -41,6 +41,13 @@ There is no internal database, no separate “understanding” module, and no tr
 When the statistical patterns the model learned match reality well, the output looks like reasoning, factual knowledge, or working code. When they do not, the output looks like hallucination or, in extreme cases, incoherent “psychosis.”
 
 
+> Edu architecture:
+![minifrontier edu architecture](svg/minifrontier_edu_architecture.svg)
+
+> Modern architecture:
+![minifrontier modern architecture](svg/minifrontier_modern_architecture.svg)
+![minifrontier modern architecture - global block](svg/minifrontier_modern_global_block.svg)
+
 ---
 
 # Part 1 — What is a chatbot, really?
