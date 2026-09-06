@@ -294,21 +294,56 @@ Foundation -> M0 math -> M1 Edu -> M2 tokenizer/data -> M3 inference
 
 M10 (350M/500M scale checks) and M11 (Transformers/vLLM/GGUF adapters) are post-V1 and cannot block the educational release. Their software harnesses may land before the deferred RTX session; measured decisions and compatibility claims remain gated on real canonical artifacts and external-runtime runs.
 
-## Planned repository layout
+##  repository layout
 
 ```text
 configs/                 Frozen model/training presets
 src/minifrontier/        Readable neural core and runtime
 train/                   From-scratch pretraining and SFT loops
 scripts/                 Tokenizer, data, train, eval, sample, chat, export
-src/minifrontier/evaluation/  Language, code, FIM, and benchmark runtime
+src/minifrontier/evaluation/  Language, code, FIM,SFT,Validation and benchmark runtime
 eval/                    Versioned suites and evaluation-only fixtures
-labs/                    Single-variable educational experiments
+labs/                    Small educational experiments (attention math, RoPE, GQA, Muon, MTP, etc.)
 tests/                   Primitive, model, cache, generation, and I/O tests
 templates/               Simple chat serialization
 artifacts/               Ignored local run outputs and checkpoints
-tasks/                   Ordered Markdown and Jira-form backlog
+tasks/                   Ordered Markdown and Jira-form backlog for Task tracking + evidence files
 docs/                    Research references
+reports/                 Release verification / readiness reports
+adapters/                Hugging Face + llama.cpp adapter code
+```
+
+```text
+File,Role
+tokenizer.py,Tokenization
+config.py,"Model size presets (tiny_edu, tiny_modern, 50M/150M…)"
+model.py,The actual Transformer
+attention.py,"Attention (MHA / GQA, hybrid, etc.)"
+rope.py,Rotary position embeddings
+layers.py,"RMSNorm, SwiGLU, residuals"
+masking.py,Causal mask , also used for more advanced packing / loss masks
+cache.py,KV cache
+loss.py,Next-token loss + chunked cross-entropy
+generation.py,Autoregressive sampling loop
+training.py,Training loop + AdamW
+sft.py,Supervised fine-tuning
+code_data.py,FIM (Fill-in-the-Middle)
+muon.py,Muon optimizer experiment
+mtp.py,Multi-Token Prediction heads
+shards.py,"Builds & reads the immutable token shards (tokens.npy / counts.npy), deduplication, exact resume cursor. One of the most important practical files."
+data.py,"Lower-level document loading, filtering, basic admission pipeline."
+checkpoint.py,"Saving/loading training checkpoints vs clean releases. Safetensors handling, atomic writes, training-state separation."
+release.py,"Release validation, matched Edu/Modern checks, load tests, protocol freezing."
+hf_export.py + adapters/huggingface/,"Exports a Transformers-compatible package (config.json, model.safetensors, chat template, etc.)."
+gguf.py,GGUF conversion path (for llama.cpp etc.).
+chat.py,Higher-level chat interface that uses the template + system prompt.
+precision.py,BF16 / FP16 / GradScaler / mixed-precision handling.
+compilation.py,torch.compile related helpers.
+scale.py,Scale measurement / profiling helpers for deciding model size.
+overfit.py,Tiny overfit tests (sanity checks that the model can memorize a small set).
+reproducibility.py,RNG state capture/restore so runs can be resumed exactly.
+run_metadata.py,"Records what was trained (git hash, config, hardware, etc.)."
+ecosystem.py,Compatibility helpers for external runtimes.
 ```
 
 ## Bootstrap
