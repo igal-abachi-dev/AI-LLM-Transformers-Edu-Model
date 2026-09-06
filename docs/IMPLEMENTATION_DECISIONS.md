@@ -229,3 +229,54 @@ The Azure Dev Box is the correctness environment and uses the CPU PyTorch extra.
   savings (Nanbeige's own paper: ~75% token efficiency for a 2x-pass loop) — the wrong trade for a
   project that is compute/wall-clock-bound, not parameter-bound; not adopted. The freeze on
   MoE/DeltaNet/MLA/hyper-connections/recurrent-depth stands.
+
+## 2026-09-06 — External code review: verified defects fixed, tokenizer vocabulary reopened, larger proposals bounded
+
+An external line-by-line review of `src/minifrontier/` (config.py, model.py, attention.py,
+cache.py, layers.py, rope.py, loss.py, masking.py, training.py, muon.py, mtp.py, precision.py,
+data.py, sft.py, tokenizer.py, and the six preset TOMLs) reported no architectural bugs in what
+this project has already shipped, plus a set of real gaps and a much larger set of proposed
+additions. Per this project's own established discipline (do not accept external review at face
+value — see the 2026-09-02/03 Muon/local-window/NoPE verification above), every concrete claim was
+independently re-checked against the actual source before any action.
+
+- **Five real defects, confirmed and fixed** (MF-080, Done): non-finite gradients under BF16/FP32
+  were applied with no guard (`GradScaler`'s own inf/nan skip only exists under FP16); MTP head
+  gradients were excluded from `clip_grad_norm_` since they live outside `model.parameters()`;
+  RoPE's rotation multiply ran at the model's running precision (BF16/FP16) rather than FP32,
+  losing accuracy in the cos/sin tables that every Q/K in every layer depends on; the FlexAttention
+  block-mask cache had no size bound; `MTPHeads`' init std was a hardcoded constant that would
+  silently stop matching `ModelConfig.resolved_init_std` once a config set an explicit `init_std`.
+  All five fixed with new regression tests (215 passed, up from 208).
+- **Tokenizer vocabulary reopened** (2026-09-06, user-approved): 16,384 → 32,768 tokens, plus
+  digit-splitting pre-tokenization (Llama 3/Qwen-style, vs. the current GPT-2-style regex that
+  merges digit runs into single tokens) — see `AGENTS.md`'s Frozen V1 section for the updated
+  line. Grounded in Tao et al. (arXiv:2407.13623): optimal vocabulary size scales with model size,
+  and most LLMs (including this project's original 16,384 choice) under-provision it. This is a
+  frozen-artifact-breaking decision, explicitly accepted: every checkpoint trained under the
+  16,384 tokenizer (MF-063, MF-064/065, the tagged `v0.1.0` release) is incompatible with the new
+  tokenizer and is not retroactively upgraded. MF-087 owns the actual retrain.
+- **The frozen 3B-token release target was reconsidered and kept unchanged** (2026-09-06,
+  user-approved): the review argued for 30-70B tokens minimum, citing SmolLM2/IMU-1 precedents
+  using 100-800x more tokens than this project's target. At this hardware's measured ~4,200 tok/s
+  (150m-modern), 30B tokens alone is roughly 82 days of continuous GPU time per model size — a
+  multi-month project-timeline decision, not a code change. Explicitly kept at 3B; V1 remains an
+  honestly-labeled pipeline-validation scale rather than a benchmark-competitive one.
+- **A large set of architecture/recipe proposals were bounded into backlog tasks rather than
+  adopted directly** (MF-081 through MF-086): z-loss, LayerNorm scaling, value residuals, and
+  split local/global RoPE theta (MF-081); per-head gated attention or another attention-sink fix
+  for the ring-cache's windowed local layers (MF-082, blocked on a long-context eval that does not
+  yet exist); a WSD learning-rate schedule and cautious weight decay (MF-083); chunked
+  cross-entropy to reduce logits memory (MF-084 — the review's other suggestion, Cut
+  Cross-Entropy/arXiv:2411.09009, needs custom Triton kernels and is not adopted, since
+  `AGENTS.md` explicitly excludes those from V1); document-boundary intra-document attention
+  masking for packed shards (MF-085); and a broader evaluation harness — BPB, long-context
+  retrieval, BLiMP, additional lm-eval tasks, checkpoint EMA (MF-086). None of these are adopted
+  yet; each needs its own real, bounded, matched-token test on this project's own model/data/
+  hardware before becoming a default, per this project's established practice — a cited paper's
+  own numbers (IMU-1's ablations, in particular) are a real prior, not a substitute for that test.
+- **One recommendation was checked against existing evidence and rejected**: "promote Muon to
+  default," based on IMU-1's iteration/token-matched NorMuon-vs-AdamW result. This project already
+  ran the more relevant, decisive test (`reports/mf070-muon-followup.md`): at *wall-clock-matched*
+  budgets, AdamW beats every tested Muon configuration on this hardware. Muon stays an experiment,
+  not the default.

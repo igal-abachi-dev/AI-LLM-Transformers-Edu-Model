@@ -21,7 +21,7 @@ If documents conflict, follow the earlier item. Record a proposed architecture c
 - One implementation with two presets:
   - **Edu:** pre-RMSNorm, RoPE, full causal MHA, dense SwiGLU, tied embeddings.
   - **Modern:** Edu plus GQA, optional QK-Norm, and Local/Local/Local/Global attention. RoPE everywhere by default; global NoPE is an experiment.
-- One 16,384-token byte-level BPE tokenizer for every model size.
+- One byte-level BPE tokenizer for every model size, with digit-splitting pre-tokenization: **32,768 tokens** (2026-09-06 decision, `docs/IMPLEMENTATION_DECISIONS.md`; revised from the original 16,384, per evidence that vocabulary size should scale with model size — Tao et al., arXiv:2407.13623). This is a frozen-artifact-breaking change: every checkpoint trained under the 16,384 tokenizer (MF-063's 50M gate, MF-064/065's 150M Edu/Modern, the tagged `v0.1.0` release) is incompatible with the new tokenizer and is not retroactively upgraded. MF-087 owns the retrain and its migration accounting.
 - 50M is the developer model; matched 150M Edu and Modern models are the V1 release artifacts.
 - Manual attention is retained for teaching and correctness. PyTorch SDPA/GQA is the optimized
   full-attention path; FlexAttention is the planned optimized local-attention path.
