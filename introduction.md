@@ -40,14 +40,6 @@ There is no internal database, no separate “understanding” module, and no tr
 
 When the statistical patterns the model learned match reality well, the output looks like reasoning, factual knowledge, or working code. When they do not, the output looks like hallucination or, in extreme cases, incoherent “psychosis.”
 
-
-> Edu architecture:
-![minifrontier edu architecture](svg/minifrontier_edu_architecture.svg)
-
-> Modern architecture:
-![minifrontier modern architecture](svg/minifrontier_modern_architecture.svg)
-![minifrontier modern architecture - global block](svg/minifrontier_modern_global_block.svg)
-
 ---
 
 # Part 1 — What is a chatbot, really?
@@ -121,8 +113,6 @@ is used for both “ID → meaning” and “meaning → ID”.
 so the tokenizer is a small, carefully frozen contract that sits between human text 
 and the integer sequences the neural network actually understands.
 
-
-Here are three beginner-friendly sections written for the new source (digit splitting in the tokenizer, chunked cross-entropy / CCE, and Triton kernels). They match the plain-language style of `introduction.md`.
 
 ---
 
@@ -299,6 +289,14 @@ machinery is what it grows in order to hit that goal.
 Now we open the box. `tiny_edu` is defined in `src/minifrontier/config.py` as
 `ModelConfig.tiny_edu()` and built by the `MiniFrontier` class in
 `src/minifrontier/model.py`.
+
+> Edu architecture:
+![minifrontier edu architecture](svg/minifrontier_edu_architecture.svg)
+
+> Modern architecture:
+![minifrontier modern architecture](svg/minifrontier_modern_architecture.svg)
+![minifrontier modern architecture - global block](svg/minifrontier_modern_global_block.svg)
+
 
 ## 2.0 How small is small?
 
