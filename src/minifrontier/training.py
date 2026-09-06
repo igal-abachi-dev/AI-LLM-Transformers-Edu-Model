@@ -38,7 +38,7 @@ from typing import Any, Protocol
 import torch
 
 from minifrontier.config import AttentionImplementation
-from minifrontier.loss import next_token_loss_stats
+from minifrontier.loss import chunked_next_token_loss_stats, next_token_loss_stats
 from minifrontier.model import MiniFrontier
 from minifrontier.precision import Precision, PrecisionPolicy, resolve_precision
 
@@ -88,6 +88,17 @@ class TrainingConfig:
     # How much the summed MTP auxiliary loss counts against the primary
     # next-token loss. Only meaningful when mtp_extra_heads > 0.
     mtp_loss_weight: float = 0.0
+    # None (the default): compute the primary loss the original way, materializing
+    # full [B, S, vocab_size] logits. A positive value switches to
+    # loss.chunked_next_token_loss_stats, which never materializes that tensor --
+    # see MF-084's backlog entry for why this matters once vocab_size grows. Same
+    # answer either way (tested); this only trades one implementation for another.
+    loss_chunk_size: int | None = None
+    # PaLM-style logit-magnitude stability penalty (lambda * log_sum_exp(logits)^2),
+    # weight baked in (unlike mtp_loss_weight, applied here inside the loss itself).
+    # Only available alongside loss_chunk_size, since it is computed from the same
+    # per-chunk log-sum-exp chunked cross-entropy already needs.
+    z_loss_weight: float = 0.0
 
     def __post_init__(self) -> None:
         if self.max_updates <= 0:
@@ -114,6 +125,12 @@ class TrainingConfig:
             raise ValueError("mtp_loss_weight must be positive when mtp_extra_heads > 0")
         if self.mtp_extra_heads == 0 and self.mtp_loss_weight != 0.0:
             raise ValueError("mtp_loss_weight has no effect when mtp_extra_heads is 0")
+        if self.loss_chunk_size is not None and self.loss_chunk_size < 1:
+            raise ValueError("loss_chunk_size must be positive when provided")
+        if self.z_loss_weight < 0:
+            raise ValueError("z_loss_weight cannot be negative")
+        if self.z_loss_weight > 0 and self.loss_chunk_size is None:
+            raise ValueError("z_loss_weight requires loss_chunk_size to be set")
 
 
 @dataclass(slots=True)
@@ -562,6 +579,7 @@ def train_updates(
             tokens_device = batch.tokens.to(torch_device)
             labels_device = labels.to(torch_device)
             mask_device = batch.loss_mask.to(torch_device) if batch.loss_mask is not None else None
+            use_chunked_loss = config.loss_chunk_size is not None
             # Under BF16 autocast the matmuls run in half precision while the
             # sensitive reductions stay FP32. On CPU this context does nothing.
             with policy.autocast_context():
@@ -569,18 +587,35 @@ def train_updates(
                     tokens_device,
                     attention_impl=config.attention_impl,
                     activation_checkpointing=config.activation_checkpointing,
-                    return_hidden_states=mtp_heads is not None,
+                    return_hidden_states=mtp_heads is not None or use_chunked_loss,
+                    skip_logits=use_chunked_loss,
                 )
-                loss_sum, _ = next_token_loss_stats(
-                    output.logits,
-                    labels_device,
-                    loss_mask=mask_device,
-                )
+                if use_chunked_loss:
+                    # Never materializes [B, S, vocab_size] logits -- see
+                    # loss.chunked_next_token_loss_stats and MF-084's backlog entry.
+                    loss_sum, _, z_loss_sum = chunked_next_token_loss_stats(
+                        output.hidden_states,
+                        model.lm_head.weight,
+                        labels_device,
+                        loss_mask=mask_device,
+                        chunk_size=config.loss_chunk_size,
+                        z_loss_weight=config.z_loss_weight,
+                    )
+                else:
+                    loss_sum, _ = next_token_loss_stats(
+                        output.logits,
+                        labels_device,
+                        loss_mask=mask_device,
+                    )
+                    z_loss_sum = None
                 # Everything backpropagated may include the weighted MTP
-                # auxiliary term, but `loss_sum` itself (used for `last_loss`
-                # below) stays the primary next-token loss alone -- keeping the
-                # logged/reported loss directly comparable to a non-MTP run's.
+                # auxiliary term and/or z-loss, but `loss_sum` itself (used for
+                # `last_loss` below) stays the primary next-token loss alone --
+                # keeping the logged/reported loss directly comparable to a
+                # run without either.
                 total_loss_sum = loss_sum
+                if z_loss_sum is not None:
+                    total_loss_sum = total_loss_sum + z_loss_sum
                 if mtp_heads is not None:
                     mtp_loss_sum, _ = mtp_heads.loss_sum_and_count(
                         output.hidden_states,

@@ -92,6 +92,81 @@ def test_training_config_rejects_inconsistent_mtp_fields() -> None:
     TrainingConfig(max_updates=2, warmup_updates=0, mtp_extra_heads=1, mtp_loss_weight=0.5)
 
 
+def test_training_config_rejects_inconsistent_chunk_and_z_loss_fields() -> None:
+    with pytest.raises(ValueError, match="loss_chunk_size"):
+        TrainingConfig(max_updates=2, warmup_updates=0, loss_chunk_size=0)
+    with pytest.raises(ValueError, match="z_loss_weight"):
+        TrainingConfig(max_updates=2, warmup_updates=0, z_loss_weight=-0.1)
+    with pytest.raises(ValueError, match="z_loss_weight"):
+        TrainingConfig(max_updates=2, warmup_updates=0, z_loss_weight=0.1, loss_chunk_size=None)
+    # Consistent combinations are accepted without raising.
+    TrainingConfig(max_updates=2, warmup_updates=0, loss_chunk_size=4)
+    TrainingConfig(max_updates=2, warmup_updates=0, loss_chunk_size=4, z_loss_weight=1e-4)
+
+
+def test_train_updates_with_chunked_loss_matches_unchunked_training_exactly() -> None:
+    """The whole point of MF-084: same math, different memory profile. If a
+    chunked run and an unchunked run from identical starting weights ever
+    diverge, the chunked path has a bug."""
+
+    config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
+    tokens = torch.randint(0, config.vocab_size, (2, 8))
+    training_config_kwargs = dict(
+        max_updates=1,
+        learning_rate=1e-2,
+        min_learning_rate=1e-2,
+        warmup_updates=0,
+        weight_decay=0.0,
+        gradient_clip=1e9,
+        precision="float32",
+    )
+
+    torch.manual_seed(50)
+    unchunked_model = MiniFrontier(config)
+    initial_state = {k: v.clone() for k, v in unchunked_model.state_dict().items()}
+    train_updates(
+        unchunked_model,
+        ListBatchProvider([TrainingBatch(tokens.clone())]),
+        TrainingConfig(**training_config_kwargs),
+    )
+
+    chunked_model = MiniFrontier(config)
+    chunked_model.load_state_dict(initial_state)
+    train_updates(
+        chunked_model,
+        ListBatchProvider([TrainingBatch(tokens.clone())]),
+        TrainingConfig(**training_config_kwargs, loss_chunk_size=3),
+    )
+
+    for name, param in unchunked_model.state_dict().items():
+        assert torch.allclose(param, chunked_model.state_dict()[name], atol=1e-6), name
+
+
+def test_train_updates_with_chunked_loss_and_tied_embeddings_updates_shared_weight() -> None:
+    """Tied embeddings share one tensor between `token_embedding` and `lm_head` --
+    the chunked path's hand-derived weight gradient must accumulate onto it
+    correctly, same as the ordinary autograd path already does."""
+
+    config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
+    model = MiniFrontier(config)
+    assert model.lm_head.weight is model.token_embedding.weight  # Edu preset ties by default
+    initial_weight = model.token_embedding.weight.clone()
+    tokens = torch.randint(0, config.vocab_size, (2, 8))
+    training_config = TrainingConfig(
+        max_updates=1,
+        learning_rate=1e-2,
+        min_learning_rate=1e-2,
+        warmup_updates=0,
+        weight_decay=0.0,
+        gradient_clip=1e9,
+        precision="float32",
+        loss_chunk_size=3,
+    )
+    train_updates(model, ListBatchProvider([TrainingBatch(tokens)]), training_config)
+    assert not torch.equal(model.token_embedding.weight, initial_weight)
+    assert torch.isfinite(model.token_embedding.weight).all()
+
+
 def test_train_updates_requires_mtp_heads_iff_mtp_extra_heads_positive() -> None:
     config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
     model = MiniFrontier(config)

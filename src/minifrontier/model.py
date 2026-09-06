@@ -50,11 +50,17 @@ class ModelOutput:
     ``loss`` is only filled in when ``labels`` were supplied, i.e. during training.
     ``hidden_states`` is only filled in when ``return_hidden_states=True`` was
     passed to ``forward`` -- the same ``[B, S, d_model]`` tensor ``lm_head`` reads,
-    exposed for Multi-Token Prediction's extra heads (see ``mtp.py``). Ordinary
-    callers never need it and pay nothing for it: this field stays ``None``.
+    exposed for Multi-Token Prediction's extra heads (see ``mtp.py``) and for
+    ``loss.chunked_next_token_loss_stats``, which projects and scores it in
+    chunks rather than needing the full ``[B, S, vocab_size]`` tensor below.
+    Ordinary callers never need it and pay nothing for it: this field stays
+    ``None``. ``logits`` is ``None`` only when ``skip_logits=True`` was passed
+    to ``forward`` -- the caller has committed to computing loss from
+    ``hidden_states`` itself and does not want the ``lm_head`` projection run
+    at all.
     """
 
-    logits: torch.Tensor
+    logits: torch.Tensor | None
     loss: torch.Tensor | None = None
     hidden_states: torch.Tensor | None = None
 
@@ -178,6 +184,7 @@ class MiniFrontier(nn.Module):
         logits_to_keep: int | None = None,
         activation_checkpointing: bool = False,
         return_hidden_states: bool = False,
+        skip_logits: bool = False,
     ) -> ModelOutput:
         """Run the stack once and return per-position scores over the vocabulary.
 
@@ -198,8 +205,14 @@ class MiniFrontier(nn.Module):
           by recomputing each block's internals in the backward pass.
         * ``return_hidden_states`` -- also return the full, unsliced ``[B, S,
           d_model]`` tensor fed to ``lm_head``. Off by default and free when
-          unused; Multi-Token Prediction's extra heads (``mtp.py``) are the only
-          current caller.
+          unused; Multi-Token Prediction's extra heads (``mtp.py``) and
+          ``loss.chunked_next_token_loss_stats`` are the current callers.
+        * ``skip_logits`` -- skip the ``lm_head`` projection entirely and return
+          only ``hidden_states`` (which this requires, since otherwise there is
+          nothing to return). For training with
+          ``loss.chunked_next_token_loss_stats``, which projects to vocabulary
+          size itself, in chunks -- computing the full ``[B, S, vocab_size]``
+          logits here first would defeat the whole point.
 
         Everything below the docstring up to ``start_pos`` is argument validation:
         catching a mistake here produces a sentence, not a stack trace from inside
@@ -224,6 +237,12 @@ class MiniFrontier(nn.Module):
             raise ValueError("selective logits cannot be used while computing loss")
         if activation_checkpointing and (not self.training or cache is not None):
             raise ValueError("activation checkpointing requires uncached training mode")
+        if skip_logits and logits_to_keep is not None:
+            raise ValueError("skip_logits and logits_to_keep are mutually exclusive")
+        if skip_logits and labels is not None:
+            raise ValueError("skip_logits skips loss computation; pass labels=None and score externally")
+        if skip_logits and not return_hidden_states:
+            raise ValueError("skip_logits requires return_hidden_states=True, or there is nothing to return")
 
         # Where this call sits in the sequence. Without a cache every call starts
         # at position 0; with one, it continues after whatever is already stored.
@@ -356,8 +375,9 @@ class MiniFrontier(nn.Module):
                 # scoreboard matmul for the ones that would be discarded.
                 normalized = normalized[:, -logits_to_keep:]
             # [B, S, d_model] -> [B, S, vocab_size]: how good is every token as the
-            # continuation of each position?
-            logits = self.lm_head(normalized)
+            # continuation of each position? Skipped when the caller is about to
+            # score `hidden_states` itself in chunks (see `skip_logits` above).
+            logits = None if skip_logits else self.lm_head(normalized)
             loss = None
             if labels is not None:
                 loss = next_token_loss(logits, labels, loss_mask=loss_mask)

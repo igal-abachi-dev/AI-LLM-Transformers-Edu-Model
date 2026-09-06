@@ -87,6 +87,33 @@ def test_hidden_states_are_none_by_default_and_populated_when_requested() -> Non
     assert torch.allclose(with_hidden.loss, default_output.loss)
 
 
+def test_skip_logits_returns_only_hidden_states() -> None:
+    torch.manual_seed(10)
+    config = ModelConfig.tiny_edu()
+    model = MiniFrontier(config)
+    tokens = torch.randint(0, config.vocab_size, (2, 7))
+
+    full_output = model(tokens, return_hidden_states=True)
+    skipped_output = model(tokens, return_hidden_states=True, skip_logits=True)
+
+    assert skipped_output.logits is None
+    assert skipped_output.hidden_states is not None
+    assert torch.equal(skipped_output.hidden_states, full_output.hidden_states)
+
+
+def test_skip_logits_requires_return_hidden_states_and_rejects_labels_or_logits_to_keep() -> None:
+    config = ModelConfig.tiny_edu()
+    model = MiniFrontier(config)
+    tokens = torch.randint(0, config.vocab_size, (2, 7))
+
+    with pytest.raises(ValueError, match="return_hidden_states"):
+        model(tokens, skip_logits=True)
+    with pytest.raises(ValueError, match="skip_logits"):
+        model(tokens, labels=tokens, skip_logits=True, return_hidden_states=True)
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        model(tokens, skip_logits=True, return_hidden_states=True, logits_to_keep=1)
+
+
 def test_model_rejects_long_or_non_integer_tokens() -> None:
     model = MiniFrontier(ModelConfig.tiny_edu(max_seq_len=8))
     with pytest.raises(ValueError, match="sequence length"):
