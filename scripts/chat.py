@@ -18,7 +18,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from minifrontier.chat import ChatMessage, generate_assistant, load_system_prompt
+from minifrontier.chat import (
+    ChatMessage,
+    generate_assistant,
+    load_system_prompt,
+    non_assistant_special_token_ids,
+)
 from minifrontier.checkpoint import load_release
 from minifrontier.precision import cast_model_for_inference
 
@@ -42,6 +47,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top-k", type=int, default=40)
     parser.add_argument("--top-p", type=float, default=0.95)
+    parser.add_argument(
+        "--min-p",
+        type=float,
+        default=0.05,
+        help="adaptive floor: drop candidates below min_p * top-candidate probability",
+    )
+    parser.add_argument(
+        "--repetition-penalty",
+        type=float,
+        default=1.1,
+        help="1.0 disables; >1.0 discourages repeating already-emitted tokens",
+    )
+    parser.add_argument(
+        "--no-repeat-ngram-size",
+        type=int,
+        default=None,
+        help="hard-block any n-gram (size N) that would repeat one already emitted",
+    )
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 
@@ -63,6 +86,7 @@ def main() -> None:
         release_prompt = args.model / "system_prompt.md"
         system_prompt = load_system_prompt(release_prompt if release_prompt.exists() else None)
     messages = [ChatMessage("system", system_prompt)] if system_prompt else []
+    suppress_token_ids = non_assistant_special_token_ids()
     while True:
         try:
             prompt = input("user> ")
@@ -80,6 +104,10 @@ def main() -> None:
                 temperature=args.temperature,
                 top_k=args.top_k,
                 top_p=args.top_p,
+                min_p=args.min_p,
+                repetition_penalty=args.repetition_penalty,
+                no_repeat_ngram_size=args.no_repeat_ngram_size,
+                suppress_token_ids=suppress_token_ids,
                 seed=args.seed,
             )
         except ValueError as error:

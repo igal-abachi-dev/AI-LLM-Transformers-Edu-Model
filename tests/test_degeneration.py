@@ -23,7 +23,8 @@ def test_distinct_n_pools_across_multiple_sequences() -> None:
 
 def test_repeated_ngram_fraction_is_the_complement_of_distinct_n() -> None:
     sequence = [1, 2, 1, 2, 1, 2]
-    assert repeated_ngram_fraction([sequence], n=2) == pytest.approx(1 - distinct_n([sequence], n=2))
+    expected = 1 - distinct_n([sequence], n=2)
+    assert repeated_ngram_fraction([sequence], n=2) == pytest.approx(expected)
 
 
 def test_distinct_n_rejects_invalid_n_or_empty_input() -> None:

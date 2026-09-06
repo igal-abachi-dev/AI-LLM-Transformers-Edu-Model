@@ -21,6 +21,7 @@ chat product is the whole transcript being re-sent every single turn.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
@@ -178,6 +179,17 @@ def complete_text(
     return tokenizer.decode(generated[0].tolist(), skip_special_tokens=True)
 
 
+def non_assistant_special_token_ids() -> list[int]:
+    """Every special-token ID except ``<|eos|>``.
+
+    A chat reply should never itself contain role markers, ``<|pad|>``, or
+    FIM/tool tokens -- those are structural, not assistant vocabulary. ``<|eos|>``
+    is excluded because it must remain samplable: it's how generation stops.
+    """
+
+    return [token_id for token, token_id in SPECIAL_TOKEN_IDS.items() if token != "<|eos|>"]
+
+
 def generate_assistant(
     model: MiniFrontier,
     tokenizer: MiniFrontierTokenizer,
@@ -187,6 +199,10 @@ def generate_assistant(
     temperature: float = 0.0,
     top_k: int | None = None,
     top_p: float = 1.0,
+    min_p: float = 0.0,
+    repetition_penalty: float = 1.0,
+    no_repeat_ngram_size: int | None = None,
+    suppress_token_ids: Sequence[int] | None = None,
     seed: int = 42,
 ) -> str:
     if max_new_tokens <= 0 or max_new_tokens >= model.config.max_seq_len:
@@ -208,6 +224,10 @@ def generate_assistant(
         temperature=temperature,
         top_k=top_k,
         top_p=top_p,
+        min_p=min_p,
+        repetition_penalty=repetition_penalty,
+        no_repeat_ngram_size=no_repeat_ngram_size,
+        suppress_token_ids=suppress_token_ids,
         eos_id=tokenizer.eos_id,
         generator=generator,
     )
