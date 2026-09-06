@@ -38,7 +38,12 @@ from minifrontier.shards import PackedShardDataset, ShardBatchProvider
 from minifrontier.tokenizer import MiniFrontierTokenizer
 from minifrontier.training import TrainingConfig, build_adamw, train_updates
 
-VALIDATION_BATCH_SIZE = 8
+# Smaller than compare_mtp.py's 8: at this project's larger (32k) vocabulary,
+# validation's own [batch, seq, vocab_size] FP32 logits tensor is real memory
+# (roughly 1GB at batch=8), stacked right on top of training's leftover
+# gradients/optimizer state. Aggregate metrics are a weighted sum across
+# batches regardless of batch size, so this changes nothing about the result.
+VALIDATION_BATCH_SIZE = 2
 # How many updates to run between wall-clock checks -- small enough that the
 # budget isn't overshot by much, large enough that per-call overhead is noise.
 UPDATES_PER_TICK = 25
@@ -151,14 +156,26 @@ def _run_arm(
         next_stop = min(state.completed_updates + UPDATES_PER_TICK, args.max_updates)
     elapsed = time.perf_counter() - started
 
+    # Gradients from the last completed update are still populated here --
+    # they are only cleared at the *start* of the next update, and there is no
+    # next one. Left alone, they (plus AdamW's own FP32 moment buffers, never
+    # touched here) sit fully resident right as validation tries to allocate
+    # its own tensors, including a [batch, seq, vocab_size] logits tensor at
+    # FP32. At this project's larger (32k) vocabulary that combination is
+    # enough to OOM an 8GB card on the very next small allocation -- observed
+    # for real on this run. Freeing what training no longer needs first is
+    # cheap and safe; it does not touch the optimizer's own resumable state.
+    model.zero_grad(set_to_none=True)
     torch_device = torch.device(args.device)
-    validation_dataset = PackedShardDataset(validation_shards)
-    metrics = evaluate_token_batches(
-        model,
-        _validation_batches(validation_dataset, tokenizer, torch_device),
-        pad_id=tokenizer.pad_id,
-    )
+    if torch_device.type == "cuda":
+        torch.cuda.empty_cache()
 
+    # Saved BEFORE validation, not after: validation is a real, separate
+    # failure point (it OOM'd here once already), and there is no reason a
+    # crash there should also cost the actual trained weights -- the whole
+    # point of this comparison is the training result, not the validation
+    # call. Same atomic-write path as every other checkpoint in this project
+    # (see MF-079), so an interrupted save still can't corrupt this one.
     arm_name = f"seed-{args.seed}-{label}"
     save_training_checkpoint(
         args.output / arm_name,
@@ -173,6 +190,14 @@ def _run_arm(
         },
         data_cursor=provider.state_dict(),
     )
+
+    validation_dataset = PackedShardDataset(validation_shards)
+    metrics = evaluate_token_batches(
+        model,
+        _validation_batches(validation_dataset, tokenizer, torch_device),
+        pad_id=tokenizer.pad_id,
+    )
+
     return {
         "arm": arm_name,
         "label": label,
