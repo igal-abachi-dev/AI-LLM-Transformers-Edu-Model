@@ -191,9 +191,9 @@ class _ChunkedCrossEntropy(torch.autograd.Function):
                 z_term = z_loss_weight * log_sum_exp.pow(2) * valid_chunk
                 z_loss_sum += z_term.sum()
                 # d(z_loss_weight * lse^2)/dlogits = 2 * z_loss_weight * lse * softmax(logits)
-                grad_logits_z = (
-                    2.0 * z_loss_weight * log_sum_exp * valid_chunk
-                ).unsqueeze(-1) * probabilities
+                grad_logits_z = (2.0 * z_loss_weight * log_sum_exp * valid_chunk).unsqueeze(
+                    -1
+                ) * probabilities
                 grad_hidden_z[start:end] = grad_logits_z @ weight_f32
                 grad_weight_z += grad_logits_z.T @ hidden_chunk
 
@@ -252,7 +252,9 @@ def chunked_next_token_loss_stats(
     """
 
     if hidden_states.ndim != 3 or tokens.ndim != 2:
-        raise ValueError("hidden_states must be [batch, sequence, d_model] and tokens [batch, sequence]")
+        raise ValueError(
+            "hidden_states must be [batch, sequence, d_model] and tokens [batch, sequence]"
+        )
     if hidden_states.shape[:2] != tokens.shape:
         raise ValueError("hidden_states and tokens must share batch and sequence dimensions")
     if weight.ndim != 2 or weight.shape[1] != hidden_states.shape[-1]:

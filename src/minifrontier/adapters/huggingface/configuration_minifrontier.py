@@ -10,7 +10,7 @@ class MiniFrontierConfig(PretrainedConfig):
 
     def __init__(
         self,
-        vocab_size: int = 16_384,
+        vocab_size: int = 32_768,
         max_seq_len: int = 2_048,
         n_layers: int = 20,
         d_model: int = 768,

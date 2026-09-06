@@ -1,0 +1,238 @@
+"""Wall-clock-matched comparison: the old 16k tokenizer versus the new 32k one."""
+
+# MF-087's real acceptance test. A larger vocabulary is not automatically a net
+# win just because fertility (bytes/token) improves -- the lm_head projection
+# itself gets more expensive too (verified: ~277 -> ~302 MFLOP/token for this
+# project's 150m-modern config, roughly +9% forward compute, so roughly -8%
+# tokens/second at fixed wall-clock). The only fair comparison is real held-out
+# bits-per-byte (tokenizer-independent by construction) at *matched wall-clock
+# time*, not matched tokens -- the same standard that correctly settled the
+# Muon-vs-AdamW question (reports/mf070-muon-followup.md), for the same reason:
+# whichever tokenizer produces more real learning per second of GPU time wins,
+# regardless of how many tokens that took.
+#
+# Two arms, each with its own tokenizer, packed shards, and ModelConfig (vocab
+# size differs, so the model itself differs -- this is not a matched-parameter
+# comparison, it is a matched-wall-clock-time one, same as the optimizer/Muon
+# precedent). Both run from a fresh model (no shared initial state_dict is
+# possible here, unlike compare_mtp.py/compare_optimizers.py, since the two
+# models have different embedding table shapes).
+
+from __future__ import annotations
+
+import argparse
+import json
+import time
+from collections.abc import Iterator
+from dataclasses import asdict
+from pathlib import Path
+
+import torch
+
+from minifrontier.checkpoint import save_training_checkpoint
+from minifrontier.config import ModelConfig
+from minifrontier.evaluation.validation import ValidationBatch, evaluate_token_batches
+from minifrontier.model import MiniFrontier
+from minifrontier.reproducibility import seed_everything
+from minifrontier.shards import PackedShardDataset, ShardBatchProvider
+from minifrontier.tokenizer import MiniFrontierTokenizer
+from minifrontier.training import TrainingConfig, build_adamw, train_updates
+
+VALIDATION_BATCH_SIZE = 8
+# How many updates to run between wall-clock checks -- small enough that the
+# budget isn't overshot by much, large enough that per-call overhead is noise.
+UPDATES_PER_TICK = 25
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--old-config", type=Path, required=True)
+    parser.add_argument("--old-tokenizer", type=Path, required=True)
+    parser.add_argument("--old-train-shards", type=Path, required=True)
+    parser.add_argument("--old-validation-shards", type=Path, required=True)
+    parser.add_argument("--new-config", type=Path, required=True)
+    parser.add_argument("--new-tokenizer", type=Path, required=True)
+    parser.add_argument("--new-train-shards", type=Path, required=True)
+    parser.add_argument("--new-validation-shards", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--seconds", type=float, required=True, help="wall-clock budget per arm")
+    parser.add_argument("--max-updates", type=int, default=50_000)
+    parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--learning-rate", type=float, default=3e-4)
+    parser.add_argument("--device", default="cpu")
+    return parser.parse_args()
+
+
+def _validation_batches(
+    dataset: PackedShardDataset, tokenizer: MiniFrontierTokenizer, device: torch.device
+) -> Iterator[ValidationBatch]:
+    """Real held-out validation batches, decoded back to UTF-8 for bits-per-byte.
+
+    Mirrors this project's own established validation recipe (compare_mtp.py,
+    the MF-070 pre-work reports): pack VALIDATION_BATCH_SIZE sequences at a
+    time, decode each back to text (skipping padding) purely to count real
+    UTF-8 bytes -- bits-per-byte is the one metric comparable across
+    tokenizers, so it is worth the decode cost.
+    """
+
+    pad_id = tokenizer.pad_id
+    buffer: list[torch.Tensor] = []
+    for index in range(len(dataset)):
+        tokens, _ = dataset[index]
+        buffer.append(tokens)
+        if len(buffer) == VALIDATION_BATCH_SIZE:
+            yield _stack_validation_batch(buffer, tokenizer, pad_id, device)
+            buffer = []
+    if buffer:
+        yield _stack_validation_batch(buffer, tokenizer, pad_id, device)
+
+
+def _stack_validation_batch(
+    buffer: list[torch.Tensor], tokenizer: MiniFrontierTokenizer, pad_id: int, device: torch.device
+) -> ValidationBatch:
+    stacked = torch.stack(buffer, dim=0).to(device)
+    utf8_bytes = 0
+    for row in buffer:
+        ids = [int(value) for value in row.tolist() if int(value) != pad_id]
+        utf8_bytes += len(tokenizer.decode(ids, skip_special_tokens=True).encode("utf-8"))
+    return ValidationBatch(tokens=stacked, utf8_bytes=utf8_bytes)
+
+
+def _run_arm(
+    *,
+    label: str,
+    config_path: Path,
+    tokenizer_path: Path,
+    train_shards: Path,
+    validation_shards: Path,
+    args: argparse.Namespace,
+) -> dict[str, object]:
+    config = ModelConfig.from_toml(config_path)
+    tokenizer = MiniFrontierTokenizer.from_directory(tokenizer_path)
+    if tokenizer.vocab_size != config.vocab_size:
+        raise ValueError(
+            f"{label}: tokenizer vocab_size {tokenizer.vocab_size} != config vocab_size "
+            f"{config.vocab_size}"
+        )
+
+    seed_everything(args.seed, deterministic=args.device == "cpu")
+    model = MiniFrontier(config)
+    training = TrainingConfig(
+        max_updates=args.max_updates,
+        learning_rate=args.learning_rate,
+        min_learning_rate=args.learning_rate * 0.1,
+        warmup_updates=min(200, args.max_updates - 1),
+        precision="float32" if args.device == "cpu" else "auto",
+        attention_impl="sdpa" if args.device == "cpu" else None,
+    )
+    optimizer, names = build_adamw(model, training)
+    dataset = PackedShardDataset(train_shards)
+    provider = ShardBatchProvider(dataset, batch_size=args.batch_size, seed=args.seed)
+
+    schedule = None
+    state = None
+    started = time.perf_counter()
+    next_stop = UPDATES_PER_TICK
+    while True:
+        optimizer, schedule, state, _ = train_updates(
+            model,
+            provider,
+            training,
+            device=args.device,
+            optimizer=optimizer,
+            schedule=schedule,
+            state=state,
+            stop_after_updates=next_stop,
+        )
+        elapsed = time.perf_counter() - started
+        if elapsed >= args.seconds or state.completed_updates >= args.max_updates:
+            break
+        next_stop = min(state.completed_updates + UPDATES_PER_TICK, args.max_updates)
+    elapsed = time.perf_counter() - started
+
+    torch_device = torch.device(args.device)
+    validation_dataset = PackedShardDataset(validation_shards)
+    metrics = evaluate_token_batches(
+        model,
+        _validation_batches(validation_dataset, tokenizer, torch_device),
+        pad_id=tokenizer.pad_id,
+    )
+
+    arm_name = f"seed-{args.seed}-{label}"
+    save_training_checkpoint(
+        args.output / arm_name,
+        model,
+        optimizer=optimizer,
+        scheduler=schedule,
+        trainer_state={
+            "training_state": state.to_dict(),
+            "training_config": asdict(training),
+            "adamw_param_group_names": names,
+            "tokenizer_vocab_size": tokenizer.vocab_size,
+        },
+        data_cursor=provider.state_dict(),
+    )
+    return {
+        "arm": arm_name,
+        "label": label,
+        "vocab_size": config.vocab_size,
+        "seed": args.seed,
+        "completed_updates": state.completed_updates,
+        "tokens": state.consumed_target_tokens,
+        "tokens_per_second": state.consumed_target_tokens / elapsed,
+        "loss": state.last_loss,
+        "wall_seconds": elapsed,
+        "checkpoint": str(args.output / arm_name),
+        "validation": {
+            "cross_entropy": metrics.cross_entropy,
+            "perplexity": metrics.perplexity,
+            "bits_per_byte": metrics.bits_per_byte,
+            "predicted_tokens": metrics.predicted_tokens,
+        },
+    }
+
+
+def main() -> None:
+    args = parse_args()
+    if args.seconds <= 0 or args.batch_size <= 0 or args.max_updates <= 0:
+        raise ValueError("seconds, batch-size, and max-updates must be positive")
+    args.output.mkdir(parents=True, exist_ok=True)
+
+    old_result = _run_arm(
+        label="16k",
+        config_path=args.old_config,
+        tokenizer_path=args.old_tokenizer,
+        train_shards=args.old_train_shards,
+        validation_shards=args.old_validation_shards,
+        args=args,
+    )
+    new_result = _run_arm(
+        label="32k",
+        config_path=args.new_config,
+        tokenizer_path=args.new_tokenizer,
+        train_shards=args.new_train_shards,
+        validation_shards=args.new_validation_shards,
+        args=args,
+    )
+
+    report = {
+        "status": "bounded_engineering_comparison",
+        "quality_claim": True,
+        "wall_clock_budget_seconds": args.seconds,
+        "results": [old_result, new_result],
+        "limitations": [
+            "Single seed, single wall-clock budget -- not a sweep.",
+            "The two arms train different-vocabulary-size models, not matched-parameter.",
+            "Bounded token budget, far short of the frozen 3B-token release target.",
+        ],
+    }
+    (args.output / "comparison.json").write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    print(f"wrote {args.output / 'comparison.json'}")
+
+
+if __name__ == "__main__":
+    main()

@@ -22,6 +22,7 @@ import torch
 from minifrontier.cache import KVCache
 from minifrontier.config import ModelConfig
 from minifrontier.model import MiniFrontier
+from minifrontier.tokenizer import VOCAB_SIZE
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,7 +57,7 @@ def main() -> None:
     args = parse_args()
     root = Path(__file__).parents[1]
     torch.manual_seed(45)
-    tokens = torch.randint(0, 16_384, (1, 8))
+    tokens = torch.randint(0, VOCAB_SIZE, (1, 8))
     report = {
         "status": "engineering_smoke",
         "quality_claim": False,

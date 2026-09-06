@@ -37,9 +37,10 @@ AttentionImplementation = Literal["auto", "manual", "sdpa", "flex"]
 class ModelConfig:
     """All architecture choices needed by the compact neural core."""
 
-    # How many distinct tokens exist. One 16,384-entry byte-level BPE vocabulary
-    # is shared by every model size in this project.
-    vocab_size: int = 16_384
+    # How many distinct tokens exist. One 32,768-entry byte-level BPE vocabulary
+    # is shared by every model size in this project (revised from 16,384 -- see
+    # docs/IMPLEMENTATION_DECISIONS.md, 2026-09-06).
+    vocab_size: int = 32_768
     # The longest sequence the model may ever see, in tokens. Fixes the RoPE table
     # size and the maximum KV-cache length.
     max_seq_len: int = 2_048

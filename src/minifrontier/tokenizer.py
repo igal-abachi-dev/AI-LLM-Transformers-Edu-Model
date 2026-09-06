@@ -13,9 +13,16 @@ adjacent pair into a new token. Common words like " the" end up as one token;
 something unusual falls back to a few pieces; and because every byte is in the
 alphabet, *nothing is ever unrepresentable* -- there is no "unknown token".
 
-This project freezes one 16,384-token vocabulary for every model size, so a
-tokenizer trained once can be compared across experiments. The first eleven IDs
-are reserved for markers that never appear in ordinary text::
+This project freezes one 32,768-token vocabulary for every model size, so a
+tokenizer trained once can be compared across experiments (revised from an
+original 16,384 -- see `docs/IMPLEMENTATION_DECISIONS.md`, 2026-09-06: vocabulary
+size should scale with model size, and 16,384 under-provisioned this project's
+~138M-parameter non-vocab scale). Digits are also split before the ordinary
+byte-level pass (Llama 3/Qwen-style, groups of at most 3 -- see
+``train_byte_bpe``'s pre-tokenizer), rather than GPT-2's convention of letting
+long digit runs merge into single tokens, which measurably hurts arithmetic at
+this scale. The first eleven IDs are reserved for markers that never appear in
+ordinary text::
 
     <|pad|> <|bos|> <|eos|> <|system|> <|user|> <|assistant|>
     <|fim_prefix|> <|fim_suffix|> <|fim_middle|> <|tool_call|> <|tool_result|>
@@ -35,15 +42,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from tokenizers import Tokenizer
+from tokenizers import Regex, Tokenizer
 from tokenizers.decoders import ByteLevel as ByteLevelDecoder
 from tokenizers.models import BPE
-from tokenizers.pre_tokenizers import ByteLevel
+from tokenizers.pre_tokenizers import ByteLevel, Sequence, Split
 from tokenizers.trainers import BpeTrainer
 
 # Frozen for the whole project. Commercial models use 100k-200k; the idea is the
 # same, and a smaller vocabulary keeps the tied embedding table affordable here.
-VOCAB_SIZE: Final = 16_384
+VOCAB_SIZE: Final = 32_768
+# Isolate runs of at most 3 digits before the ordinary byte-level pass, so
+# "123456" pre-tokenizes as "123" + "456" rather than merging into one token
+# the way GPT-2's regex would. `Sequence` runs this first; ByteLevel then
+# further splits whatever's left exactly as before, so this changes nothing
+# about non-digit text.
+_DIGIT_SPLIT_PATTERN: Final = Regex(r"\d{1,3}")
 TOKENIZER_VERSION: Final = 1
 SPECIAL_TOKENS: Final[tuple[str, ...]] = (
     "<|pad|>",
@@ -206,7 +219,12 @@ def train_byte_bpe(
     # unk_token=None: with full byte coverage there is no such thing as an unknown
     # character, so an "unknown" token would only ever hide a bug.
     backend = Tokenizer(BPE(unk_token=None))
-    backend.pre_tokenizer = ByteLevel(add_prefix_space=False, use_regex=True)
+    backend.pre_tokenizer = Sequence(
+        [
+            Split(_DIGIT_SPLIT_PATTERN, behavior="isolated"),
+            ByteLevel(add_prefix_space=False, use_regex=True),
+        ]
+    )
     backend.decoder = ByteLevelDecoder()
     trainer = BpeTrainer(
         vocab_size=vocab_size,

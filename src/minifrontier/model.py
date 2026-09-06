@@ -240,9 +240,13 @@ class MiniFrontier(nn.Module):
         if skip_logits and logits_to_keep is not None:
             raise ValueError("skip_logits and logits_to_keep are mutually exclusive")
         if skip_logits and labels is not None:
-            raise ValueError("skip_logits skips loss computation; pass labels=None and score externally")
+            raise ValueError(
+                "skip_logits skips loss computation; pass labels=None and score externally"
+            )
         if skip_logits and not return_hidden_states:
-            raise ValueError("skip_logits requires return_hidden_states=True, or there is nothing to return")
+            raise ValueError(
+                "skip_logits requires return_hidden_states=True, or there is nothing to return"
+            )
 
         # Where this call sits in the sequence. Without a cache every call starts
         # at position 0; with one, it continues after whatever is already stored.
