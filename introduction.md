@@ -89,7 +89,7 @@ Common pieces such as " the" or "ing" become single tokens. Rare or weird string
 Because every byte is in the alphabet, nothing is ever unrepresentable — there is no unknown-token problem.
 
 How encoding and decoding work
-Pythontokenizer = MiniFrontierTokenizer.from_directory("path/to/tokenizer")
+tokenizer = MiniFrontierTokenizer.from_directory("path/to/tokenizer")
 
 ids = tokenizer.encode("Hello world", add_bos=True, add_eos=True)
  → [1, \ldots, 2]   (bos + content tokens + eos)
