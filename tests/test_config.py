@@ -46,6 +46,31 @@ def test_config_rejects_incompatible_heads() -> None:
         ModelConfig.tiny_edu(d_model=30, n_heads=4)
 
 
+def test_head_dim_override_decouples_from_d_model_and_n_heads() -> None:
+    # Qwen3-style: d_model does not evenly imply this head_dim, and would be
+    # rejected without the override.
+    config = ModelConfig.tiny_edu(d_model=30, n_heads=4, head_dim_override=8)
+    assert config.head_dim == 8
+
+    from minifrontier.model import MiniFrontier
+
+    model = MiniFrontier(config)
+    assert model.blocks[0].attention.q_proj.out_features == config.n_heads * 8
+    assert model.blocks[0].attention.out_proj.in_features == config.n_heads * 8
+    assert model.blocks[0].attention.out_proj.out_features == config.d_model
+
+    import torch
+
+    tokens = torch.randint(0, config.vocab_size, (1, 5))
+    output = model(tokens, labels=tokens)
+    assert torch.isfinite(output.loss)
+
+
+def test_head_dim_override_rejects_non_positive_values() -> None:
+    with pytest.raises(ValueError, match="head_dim_override must be positive"):
+        ModelConfig.tiny_edu(head_dim_override=0)
+
+
 def test_config_rejects_edu_gqa() -> None:
     with pytest.raises(ValueError, match="Edu requires MHA"):
         ModelConfig(n_kv_heads=4)

@@ -81,6 +81,12 @@ class ModelConfig:
     init_std: float | None = None
     # Which frozen recipe this config must obey. Enforced in __post_init__.
     preset: Preset = "edu"
+    # None (the default): head_dim is derived as d_model // n_heads, and
+    # d_model must divide evenly. Setting this decouples them (Qwen3-style,
+    # e.g. head_dim=128 with a d_model that doesn't evenly imply 128) -- Q/K/V
+    # project to n_heads * head_dim regardless of d_model, and out_proj maps
+    # back down, so the two are only linked by this override when one is given.
+    head_dim_override: int | None = None
 
     def __post_init__(self) -> None:
         # Fail here, loudly, with a message that names the offending field --
@@ -98,8 +104,14 @@ class ModelConfig:
         for name, value in positive.items():
             if value <= 0:
                 raise ValueError(f"{name} must be positive, got {value}")
-        # The heads split d_model evenly between them; head_dim is the quotient.
-        if self.d_model % self.n_heads != 0:
+        if self.head_dim_override is not None and self.head_dim_override <= 0:
+            raise ValueError("head_dim_override must be positive when provided")
+        # Without an override, the heads must split d_model evenly between
+        # them, since head_dim is then derived as the quotient. With an
+        # override, Q/K/V project to n_heads * head_dim independently of
+        # d_model (out_proj maps back down), so this constraint no longer
+        # applies -- that decoupling is the entire point of the override.
+        if self.head_dim_override is None and self.d_model % self.n_heads != 0:
             raise ValueError("d_model must be divisible by n_heads")
         # Each KV head must serve the same number of query heads, so the GQA
         # grouping is uniform: heads 0-1 share KV group 0, heads 2-3 group 1, ...
@@ -155,9 +167,14 @@ class ModelConfig:
 
     @property
     def head_dim(self) -> int:
-        """Numbers per head. 768 wide with 12 heads gives each head 64 to work with."""
+        """Numbers per head. 768 wide with 12 heads gives each head 64 to work with,
+        unless head_dim_override decouples the two (see that field's docstring)."""
 
-        return self.d_model // self.n_heads
+        return (
+            self.head_dim_override
+            if self.head_dim_override is not None
+            else (self.d_model // self.n_heads)
+        )
 
     @property
     def queries_per_kv(self) -> int:
@@ -248,6 +265,7 @@ class ModelConfig:
         n_heads: int = 4,
         d_ff: int = 96,
         attention_impl: AttentionImplementation = "sdpa",
+        head_dim_override: int | None = None,
     ) -> ModelConfig:
         """Return a CPU-friendly Edu config that exercises the exact production code.
 
@@ -267,6 +285,7 @@ class ModelConfig:
             local_window=min(16, max_seq_len),
             attention_impl=attention_impl,
             preset="edu",
+            head_dim_override=head_dim_override,
         )
 
     @classmethod
