@@ -29,7 +29,7 @@ from pathlib import Path
 
 import torch
 
-from minifrontier.checkpoint import save_training_checkpoint
+from minifrontier.checkpoint import load_training_checkpoint, save_training_checkpoint
 from minifrontier.config import ModelConfig
 from minifrontier.evaluation.validation import ValidationBatch, evaluate_token_batches
 from minifrontier.model import MiniFrontier
@@ -104,22 +104,16 @@ def _stack_validation_batch(
     return ValidationBatch(tokens=stacked, utf8_bytes=utf8_bytes)
 
 
-def _run_arm(
+def _train_and_checkpoint_arm(
     *,
     label: str,
-    config_path: Path,
-    tokenizer_path: Path,
+    config: ModelConfig,
+    tokenizer: MiniFrontierTokenizer,
     train_shards: Path,
-    validation_shards: Path,
+    checkpoint_dir: Path,
     args: argparse.Namespace,
-) -> dict[str, object]:
-    config = ModelConfig.from_toml(config_path)
-    tokenizer = MiniFrontierTokenizer.from_directory(tokenizer_path)
-    if tokenizer.vocab_size != config.vocab_size:
-        raise ValueError(
-            f"{label}: tokenizer vocab_size {tokenizer.vocab_size} != config vocab_size "
-            f"{config.vocab_size}"
-        )
+) -> tuple[MiniFrontier, int, int, float, float]:
+    """Real training path: returns (model, completed_updates, tokens, loss, wall_seconds)."""
 
     seed_everything(args.seed, deterministic=args.device == "cpu")
     model = MiniFrontier(config)
@@ -166,8 +160,7 @@ def _run_arm(
     # for real on this run. Freeing what training no longer needs first is
     # cheap and safe; it does not touch the optimizer's own resumable state.
     model.zero_grad(set_to_none=True)
-    torch_device = torch.device(args.device)
-    if torch_device.type == "cuda":
+    if args.device == "cuda":
         torch.cuda.empty_cache()
 
     # Saved BEFORE validation, not after: validation is a real, separate
@@ -176,9 +169,8 @@ def _run_arm(
     # point of this comparison is the training result, not the validation
     # call. Same atomic-write path as every other checkpoint in this project
     # (see MF-079), so an interrupted save still can't corrupt this one.
-    arm_name = f"seed-{args.seed}-{label}"
     save_training_checkpoint(
-        args.output / arm_name,
+        checkpoint_dir,
         model,
         optimizer=optimizer,
         scheduler=schedule,
@@ -190,6 +182,55 @@ def _run_arm(
         },
         data_cursor=provider.state_dict(),
     )
+    return model, state.completed_updates, state.consumed_target_tokens, state.last_loss, elapsed
+
+
+def _run_arm(
+    *,
+    label: str,
+    config_path: Path,
+    tokenizer_path: Path,
+    train_shards: Path,
+    validation_shards: Path,
+    args: argparse.Namespace,
+) -> dict[str, object]:
+    config = ModelConfig.from_toml(config_path)
+    tokenizer = MiniFrontierTokenizer.from_directory(tokenizer_path)
+    if tokenizer.vocab_size != config.vocab_size:
+        raise ValueError(
+            f"{label}: tokenizer vocab_size {tokenizer.vocab_size} != config vocab_size "
+            f"{config.vocab_size}"
+        )
+
+    arm_name = f"seed-{args.seed}-{label}"
+    checkpoint_dir = args.output / arm_name
+    torch_device = torch.device(args.device)
+    wall_seconds_is_exact = True
+
+    if (checkpoint_dir / "config.json").exists():
+        # Reuse an existing checkpoint from an earlier, partially-completed run
+        # instead of retraining -- explicit user choice, since it means
+        # wall_seconds below is inferred (the target --seconds budget this arm
+        # was run with), not a value this invocation actually measured itself.
+        print(f"{arm_name}: reusing existing checkpoint at {checkpoint_dir}, skipping training")
+        model = MiniFrontier(config)
+        saved, _ = load_training_checkpoint(checkpoint_dir, model, trusted_local_state=True)
+        model.to(torch_device)
+        training_state = saved["training_state"]
+        completed_updates = training_state["completed_updates"]
+        consumed_tokens = training_state["consumed_target_tokens"]
+        last_loss = training_state["last_loss"]
+        elapsed = args.seconds
+        wall_seconds_is_exact = False
+    else:
+        model, completed_updates, consumed_tokens, last_loss, elapsed = _train_and_checkpoint_arm(
+            label=label,
+            config=config,
+            tokenizer=tokenizer,
+            train_shards=train_shards,
+            checkpoint_dir=checkpoint_dir,
+            args=args,
+        )
 
     validation_dataset = PackedShardDataset(validation_shards)
     metrics = evaluate_token_batches(
@@ -203,12 +244,13 @@ def _run_arm(
         "label": label,
         "vocab_size": config.vocab_size,
         "seed": args.seed,
-        "completed_updates": state.completed_updates,
-        "tokens": state.consumed_target_tokens,
-        "tokens_per_second": state.consumed_target_tokens / elapsed,
-        "loss": state.last_loss,
+        "completed_updates": completed_updates,
+        "tokens": consumed_tokens,
+        "tokens_per_second": consumed_tokens / elapsed,
+        "loss": last_loss,
         "wall_seconds": elapsed,
-        "checkpoint": str(args.output / arm_name),
+        "wall_seconds_is_exact": wall_seconds_is_exact,
+        "checkpoint": str(checkpoint_dir),
         "validation": {
             "cross_entropy": metrics.cross_entropy,
             "perplexity": metrics.perplexity,
@@ -241,16 +283,26 @@ def main() -> None:
         args=args,
     )
 
+    results = [old_result, new_result]
+    limitations = [
+        "Single seed, single wall-clock budget -- not a sweep.",
+        "The two arms train different-vocabulary-size models, not matched-parameter.",
+        "Bounded token budget, far short of the frozen 3B-token release target.",
+    ]
+    reused_arms = [result["arm"] for result in results if not result["wall_seconds_is_exact"]]
+    if reused_arms:
+        limitations.append(
+            f"wall_seconds for {reused_arms} is the target --seconds budget, not a value "
+            "this invocation measured itself -- that arm's checkpoint was reused from an "
+            "earlier run rather than retrained."
+        )
+
     report = {
         "status": "bounded_engineering_comparison",
         "quality_claim": True,
         "wall_clock_budget_seconds": args.seconds,
-        "results": [old_result, new_result],
-        "limitations": [
-            "Single seed, single wall-clock budget -- not a sweep.",
-            "The two arms train different-vocabulary-size models, not matched-parameter.",
-            "Bounded token budget, far short of the frozen 3B-token release target.",
-        ],
+        "results": results,
+        "limitations": limitations,
     }
     (args.output / "comparison.json").write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n",
