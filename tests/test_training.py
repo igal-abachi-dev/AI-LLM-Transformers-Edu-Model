@@ -146,6 +146,76 @@ def test_train_updates_with_mtp_heads_trains_both_model_and_heads() -> None:
     assert not torch.equal(mtp_heads.heads[0].weight, initial_head_weight)
 
 
+def test_train_updates_clips_mtp_head_gradients_together_with_model(monkeypatch) -> None:
+    """MTP heads live outside `model` (see mtp.py), so clip_grad_norm_ must be told
+    about them explicitly -- passing only `model.parameters()` would silently
+    leave their gradients unclipped even though their loss is in the backward
+    graph."""
+
+    config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
+    model = MiniFrontier(config)
+    mtp_heads = MTPHeads(d_model=config.d_model, vocab_size=config.vocab_size, n_extra_heads=1)
+    tokens = torch.randint(0, config.vocab_size, (2, 8))
+    training_config = TrainingConfig(
+        max_updates=1,
+        warmup_updates=0,
+        precision="float32",
+        mtp_extra_heads=1,
+        mtp_loss_weight=0.5,
+    )
+    optimizer = torch.optim.AdamW(
+        list(model.parameters()) + list(mtp_heads.parameters()), lr=1e-3
+    )
+
+    seen_parameter_ids: set[int] = set()
+    original_clip = torch.nn.utils.clip_grad_norm_
+
+    def _capturing_clip(parameters, *args, **kwargs):
+        parameters = list(parameters)
+        seen_parameter_ids.update(id(p) for p in parameters)
+        return original_clip(parameters, *args, **kwargs)
+
+    monkeypatch.setattr(torch.nn.utils, "clip_grad_norm_", _capturing_clip)
+
+    train_updates(
+        model,
+        ListBatchProvider([TrainingBatch(tokens)]),
+        training_config,
+        optimizer=optimizer,
+        mtp_heads=mtp_heads,
+    )
+
+    mtp_head_parameter_ids = {id(p) for p in mtp_heads.parameters()}
+    assert mtp_head_parameter_ids
+    assert mtp_head_parameter_ids <= seen_parameter_ids
+
+
+def test_train_updates_skips_step_and_counts_a_nonfinite_gradient_without_a_scaler(
+    monkeypatch,
+) -> None:
+    """Under BF16/FP32 there is no GradScaler to catch an inf/nan gradient -- the
+    training loop must do it itself, or one bad batch permanently corrupts every
+    weight with no warning."""
+
+    config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
+    model = MiniFrontier(config)
+    tokens = torch.randint(0, config.vocab_size, (2, 8))
+    training_config = TrainingConfig(max_updates=1, warmup_updates=0, precision="float32")
+    initial_weight = model.blocks[0].feed_forward.down_proj.weight.clone()
+
+    monkeypatch.setattr(
+        torch.nn.utils, "clip_grad_norm_", lambda *args, **kwargs: torch.tensor(float("nan"))
+    )
+
+    _, _, state, _ = train_updates(
+        model, ListBatchProvider([TrainingBatch(tokens)]), training_config
+    )
+
+    assert state.nonfinite_updates == 1
+    assert state.completed_updates == 1
+    assert torch.equal(model.blocks[0].feed_forward.down_proj.weight, initial_weight)
+
+
 def test_cpu_batch_validation_rejects_bad_ids_and_all_masked() -> None:
     with pytest.raises(ValueError, match="vocabulary"):
         validate_cpu_batch(TrainingBatch(torch.tensor([[0, 8]])), vocab_size=8)

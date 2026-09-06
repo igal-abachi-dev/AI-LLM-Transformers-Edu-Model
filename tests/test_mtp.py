@@ -22,6 +22,38 @@ def test_mtp_heads_rejects_non_positive_dims() -> None:
         raise AssertionError("expected a ValueError for d_model=0")
 
 
+def test_mtp_heads_rejects_non_positive_init_std() -> None:
+    try:
+        MTPHeads(d_model=8, vocab_size=16, n_extra_heads=1, init_std=0.0)
+    except ValueError as error:
+        assert "init_std" in str(error)
+    else:
+        raise AssertionError("expected a ValueError for init_std=0.0")
+
+
+def test_mtp_heads_init_std_defaults_to_d_model_convention_but_is_overridable(monkeypatch) -> None:
+    """MTPHeads' own docstring claims it matches MiniFrontier's initializer
+    convention (`ModelConfig.resolved_init_std`) -- but that convention changes
+    when a config sets an explicit `init_std`, and a hardcoded `d_model**-0.5`
+    would silently stop matching it. This must be a parameter, not a constant."""
+
+    seen_stds: list[float] = []
+    original_normal_ = torch.nn.init.normal_
+
+    def _capturing_normal_(tensor, mean=0.0, std=1.0):
+        seen_stds.append(std)
+        return original_normal_(tensor, mean=mean, std=std)
+
+    monkeypatch.setattr(torch.nn.init, "normal_", _capturing_normal_)
+
+    MTPHeads(d_model=8, vocab_size=16, n_extra_heads=1)
+    assert seen_stds == [8**-0.5]
+
+    seen_stds.clear()
+    MTPHeads(d_model=8, vocab_size=16, n_extra_heads=1, init_std=0.02)
+    assert seen_stds == [0.02]
+
+
 def test_mtp_heads_produces_finite_loss_and_gradients() -> None:
     torch.manual_seed(3)
     mtp = MTPHeads(d_model=8, vocab_size=16, n_extra_heads=2)

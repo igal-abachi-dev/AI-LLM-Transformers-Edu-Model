@@ -75,21 +75,29 @@ class MTPHeads(nn.Module):
     prediction distance.
     """
 
-    def __init__(self, *, d_model: int, vocab_size: int, n_extra_heads: int) -> None:
+    def __init__(
+        self, *, d_model: int, vocab_size: int, n_extra_heads: int, init_std: float | None = None
+    ) -> None:
         super().__init__()
         if d_model <= 0 or vocab_size <= 0:
             raise ValueError("d_model and vocab_size must be positive")
         if n_extra_heads <= 0:
             raise ValueError("n_extra_heads must be positive")
+        if init_std is not None and init_std <= 0:
+            raise ValueError("init_std must be positive when provided")
         self.n_extra_heads = n_extra_heads
         self.heads = nn.ModuleList(
             nn.Linear(d_model, vocab_size, bias=False) for _ in range(n_extra_heads)
         )
         # Same small-random-noise convention as MiniFrontier's own initializer
-        # (model.py's `_initialize`), so an MTP head starts no more confidently
-        # wrong than any other freshly built projection.
+        # (model.py's `_initialize`, `ModelConfig.resolved_init_std`), so an MTP
+        # head starts no more confidently wrong than any other freshly built
+        # projection. `d_model**-0.5` is only `resolved_init_std`'s own default;
+        # a caller building `MTPHeads` alongside a model with an explicit
+        # `config.init_std` must pass that value here to actually match it.
+        resolved_std = init_std if init_std is not None else d_model**-0.5
         for head in self.heads:
-            nn.init.normal_(head.weight, mean=0.0, std=d_model**-0.5)
+            nn.init.normal_(head.weight, mean=0.0, std=resolved_std)
 
     def loss_sum_and_count(
         self,

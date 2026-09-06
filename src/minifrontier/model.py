@@ -246,9 +246,13 @@ class MiniFrontier(nn.Module):
         # the stack, `hidden` IS the residual stream.
         hidden = self.token_embedding(tokens)
         # Absolute positions for this call, e.g. [700] when decoding token 700.
-        # The rotation tables are computed ONCE and reused by every layer.
+        # The rotation tables are computed ONCE and reused by every layer. Always
+        # requested in FP32 (not `hidden.dtype`, which under autocast is
+        # BF16/FP16): `apply_rotary` does the actual rotation in FP32 too, so a
+        # table already rounded to BF16 here would throw away the precision that
+        # fix is trying to preserve. Only the rotated Q/K are cast back down.
         positions = torch.arange(start_pos, end_pos, device=tokens.device)
-        cosine, sine = self.rope(positions, dtype=hidden.dtype, device=hidden.device)
+        cosine, sine = self.rope(positions, dtype=torch.float32, device=hidden.device)
         # Masks are built lazily and at most once each. Many layers want the same
         # grid, and several kernel paths need no explicit mask at all -- so this
         # avoids allocating a [Sq, Sk] tensor nobody ends up reading.

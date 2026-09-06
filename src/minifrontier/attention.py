@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import math
 import warnings
+from collections import OrderedDict
 from collections.abc import Callable
 from typing import Any
 
@@ -47,7 +48,11 @@ from minifrontier.rope import apply_rotary
 # Building a FlexAttention BlockMask costs real time, and it depends only on
 # shapes -- never on the data flowing through. So identical (length, window,
 # device) requests reuse one object across layers, decode steps, and calls.
-_BLOCK_MASK_CACHE: dict[tuple[Any, ...], Any] = {}
+# Bounded and LRU-evicted: a long-running server seeing varied prompt/decode
+# lengths would otherwise grow this dict forever, since nothing else ever
+# clears it in normal operation.
+_BLOCK_MASK_CACHE_MAX_SIZE = 128
+_BLOCK_MASK_CACHE: OrderedDict[tuple[Any, ...], Any] = OrderedDict()
 
 
 def clear_block_mask_cache() -> None:
@@ -151,6 +156,7 @@ def _flex_block_mask(
     )
     cached = _BLOCK_MASK_CACHE.get(key)
     if cached is not None:
+        _BLOCK_MASK_CACHE.move_to_end(key)
         return cached
 
     def mask_mod(
@@ -177,6 +183,8 @@ def _flex_block_mask(
         device=device,
     )
     _BLOCK_MASK_CACHE[key] = block_mask
+    if len(_BLOCK_MASK_CACHE) > _BLOCK_MASK_CACHE_MAX_SIZE:
+        _BLOCK_MASK_CACHE.popitem(last=False)
     return block_mask
 
 

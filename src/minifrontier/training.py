@@ -304,6 +304,11 @@ class TrainingState:
     # use a GradScaler. Restoring this on resume matters: losing the learned scale
     # factor mid-run can reintroduce the overflow/underflow it exists to prevent.
     grad_scaler_state: dict[str, Any] | None = None
+    # Under FP16, GradScaler itself detects and skips an inf/nan gradient step.
+    # BF16/FP32 have no scaler to do that, so `train_updates` does the same check
+    # manually and counts it here -- a run climbing this number is unwell (a data
+    # or numerical-stability problem), even though each skip alone is harmless.
+    nonfinite_updates: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -532,6 +537,13 @@ def train_updates(
         # constructing the optimizer" PyTorch guarantee.
         mtp_heads.to(torch_device)
         mtp_heads.train()
+    # Computed once: MTP heads live outside `model` (see mtp.py), so their
+    # gradients -- which are real, since the MTP loss feeds the same backward
+    # pass below -- must be included explicitly or clip_grad_norm_ silently
+    # ignores them every update.
+    trainable_parameters = list(model.parameters())
+    if mtp_heads is not None:
+        trainable_parameters += list(mtp_heads.parameters())
 
     while state.completed_updates < update_limit:
         # Collect every microbatch that will contribute to this single update.
@@ -606,14 +618,21 @@ def train_updates(
         # thing down to that length. Direction preserved, magnitude capped -- one
         # freak batch cannot then blow the model up. The returned norm is the
         # pre-clipping length, which is a useful health signal in the logs.
-        gradient_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip)
+        gradient_norm = torch.nn.utils.clip_grad_norm_(trainable_parameters, config.gradient_clip)
         # Apply the nudge. This is the only line that changes the model's weights.
-        # Under FP16, the scaler skips this step instead (leaving the parameters
+        # Under FP16, the scaler itself skips this step (leaving the parameters
         # untouched) whenever it detects an inf/nan gradient this update, then
-        # shrinks the scale factor for next time -- the schedule still advances
+        # shrinks the scale factor for next time. BF16/FP32 have no scaler doing
+        # that check, so `torch.isfinite` does it here -- without it, one batch
+        # producing an inf/nan gradient would silently corrupt every weight,
+        # permanently, with no warning. Either way, the schedule still advances
         # below, so a skipped step still counts as one update, same as
         # nanoGPT/nanochat's convention.
-        scaler.step(optimizer)
+        if policy.needs_grad_scaler or torch.isfinite(gradient_norm):
+            scaler.step(optimizer)
+        else:
+            optimizer.zero_grad(set_to_none=True)
+            state.nonfinite_updates += 1
         scaler.update()
         state.completed_updates += 1
         schedule.completed_updates = state.completed_updates

@@ -69,9 +69,21 @@ def apply_rotary(
         raise ValueError("cosine and sine must match [sequence, head_dim]")
     # Every batch item and every head is rotated identically, so add two leading
     # size-1 axes and let broadcasting do the work: [S, D] -> [1, 1, S, D].
-    cosine = cosine.to(dtype=inputs.dtype).unsqueeze(0).unsqueeze(0)
-    sine = sine.to(dtype=inputs.dtype).unsqueeze(0).unsqueeze(0)
-    return inputs * cosine + rotate_half(inputs) * sine
+    # The rotation itself runs at FP32 or better, regardless of `inputs.dtype`
+    # (which under autocast is BF16/FP16): cos/sin values are concentrated in
+    # [-1, 1], where BF16's 8 mantissa bits give only ~0.4% relative precision,
+    # applied identically to every Q/K in every layer. HF, torchtitan, and
+    # Megatron all keep this multiply in FP32 for the same reason -- only the
+    # rotated result is cast back down, matching the rest of the compute graph.
+    # A caller already passing FP32/FP64 (e.g. a high-precision reference test)
+    # is never *downcast* -- only BF16/FP16 get lifted.
+    original_dtype = inputs.dtype
+    compute_dtype = original_dtype if original_dtype in (torch.float32, torch.float64) else torch.float32
+    cosine = cosine.to(dtype=compute_dtype).unsqueeze(0).unsqueeze(0)
+    sine = sine.to(dtype=compute_dtype).unsqueeze(0).unsqueeze(0)
+    inputs = inputs.to(dtype=compute_dtype)
+    rotated = inputs * cosine + rotate_half(inputs) * sine
+    return rotated.to(dtype=original_dtype)
 
 
 class RoPE(nn.Module):

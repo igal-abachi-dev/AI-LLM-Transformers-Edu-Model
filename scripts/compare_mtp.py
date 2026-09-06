@@ -137,6 +137,7 @@ def main() -> None:
                 d_model=config.d_model,
                 vocab_size=config.vocab_size,
                 n_extra_heads=mtp_extra_heads,
+                init_std=config.resolved_init_std,
             )
         # build_adamw groups the model's own parameters by decay/no-decay; MTP
         # heads are simple untied Linear layers, so they get plain weight decay

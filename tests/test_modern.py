@@ -129,6 +129,22 @@ def test_flex_local_gqa_matches_manual_and_reuses_block_mask() -> None:
     assert block_mask_cache_size() == 1
 
 
+def test_flex_block_mask_cache_evicts_oldest_entry_once_full(monkeypatch) -> None:
+    """A long-running process seeing varied lengths must not grow this cache forever."""
+
+    clear_block_mask_cache()
+    monkeypatch.setattr(attention_module, "_BLOCK_MASK_CACHE_MAX_SIZE", 2)
+    config = ModelConfig.tiny_modern(n_layers=1, attention_impl="auto")
+    attention = CausalSelfAttention(config, layer_index=0).eval()
+    rope = RoPE(config.head_dim, config.max_seq_len)
+    for length in (4, 5, 6):
+        inputs = torch.randn(1, length, config.d_model)
+        cosine, sine = rope(torch.arange(length), dtype=inputs.dtype, device=inputs.device)
+        with torch.no_grad():
+            attention(inputs, cosine, sine, implementation="flex")
+    assert block_mask_cache_size() == 2
+
+
 @pytest.mark.slow
 def test_compiled_flex_attention_matches_eager_flex() -> None:
     """Compiling FlexAttention directly (not just the outer model) must not change the answer."""
