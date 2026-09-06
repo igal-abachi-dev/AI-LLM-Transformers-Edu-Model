@@ -38,6 +38,7 @@ from minifrontier.checkpoint import (
 from minifrontier.compilation import maybe_compile
 from minifrontier.config import ModelConfig
 from minifrontier.model import MiniFrontier
+from minifrontier.mtp import MTPHeads
 from minifrontier.reproducibility import seed_everything
 from minifrontier.run_metadata import RunMetadata
 from minifrontier.shards import PackedShardDataset, ShardBatchProvider
@@ -94,6 +95,40 @@ def parse_args() -> argparse.Namespace:
             "(the default), which a long run can turn into tens of GB of superseded state."
         ),
     )
+    parser.add_argument(
+        "--loss-chunk-size",
+        type=int,
+        help=(
+            "Compute the primary loss over sequence chunks of this size instead of "
+            "materializing full [batch, sequence, vocab_size] logits (see "
+            "loss.chunked_next_token_loss_stats, MF-084). Omit to keep the original "
+            "unfused path -- required at this project's 32,768 vocabulary to avoid the "
+            "OOM risk that motivated adding this in the first place; not on by default "
+            "since it is a memory/perf tradeoff, not a correctness fix."
+        ),
+    )
+    parser.add_argument(
+        "--z-loss-weight",
+        type=float,
+        default=0.0,
+        help=(
+            "PaLM-style logit-magnitude stability penalty, weight baked into the loss "
+            "itself. Requires --loss-chunk-size to be set (see TrainingConfig)."
+        ),
+    )
+    parser.add_argument(
+        "--mtp-extra-heads",
+        type=int,
+        default=0,
+        help=(
+            "Multi-Token Prediction: number of extra heads predicting further ahead "
+            "(t+2, t+3, ...), an off-by-default training-only experiment (see mtp.py, "
+            "AGENTS.md). 0 disables MTP entirely. NOT resumable yet: --resume together "
+            "with --mtp-extra-heads > 0 is rejected, because MTP head weights (unlike "
+            "the model and optimizer) are not currently persisted in the checkpoint."
+        ),
+    )
+    parser.add_argument("--mtp-loss-weight", type=float, default=0.0)
     return parser.parse_args()
 
 
@@ -102,6 +137,11 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         raise ValueError("checkpoint_interval must be positive")
     if args.keep_last_n_checkpoints is not None and args.keep_last_n_checkpoints <= 0:
         raise ValueError("keep_last_n_checkpoints must be positive")
+    if args.resume is not None and args.mtp_extra_heads > 0:
+        raise ValueError(
+            "--resume with --mtp-extra-heads > 0 is not supported: MTP head weights are "
+            "not part of the saved checkpoint (see mtp.py) and would silently reinitialize"
+        )
     model_config = ModelConfig.from_toml(args.config)
     train_config = TrainingConfig(
         max_updates=args.updates,
@@ -114,13 +154,29 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         precision=args.precision,
         activation_checkpointing=args.activation_checkpointing,
         attention_impl=args.attention_impl,
+        loss_chunk_size=args.loss_chunk_size,
+        z_loss_weight=args.z_loss_weight,
+        mtp_extra_heads=args.mtp_extra_heads,
+        mtp_loss_weight=args.mtp_loss_weight,
     )
     device = torch.device(args.device)
     seed_everything(args.seed)
     model = MiniFrontier(model_config).to(device)
+    mtp_heads = None
+    if args.mtp_extra_heads > 0:
+        mtp_heads = MTPHeads(
+            d_model=model_config.d_model,
+            vocab_size=model_config.vocab_size,
+            n_extra_heads=args.mtp_extra_heads,
+            init_std=model_config.resolved_init_std,
+        ).to(device)
     dataset = PackedShardDataset(args.train_shards)
     provider = ShardBatchProvider(dataset, batch_size=args.batch_size, seed=args.seed)
     optimizer = build_adamw(model, train_config)[0]
+    if mtp_heads is not None:
+        optimizer.add_param_group(
+            {"params": list(mtp_heads.parameters()), "weight_decay": train_config.weight_decay}
+        )
     schedule = WarmupCosineSchedule(train_config)
     state = TrainingState()
     if args.resume is not None:
@@ -191,6 +247,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         state=state,
         update_callback=None if args.no_checkpoint else checkpoint_callback,
         forward_model=execution_model,
+        mtp_heads=mtp_heads,
     )
     elapsed = time.perf_counter() - started
     if not args.no_checkpoint:

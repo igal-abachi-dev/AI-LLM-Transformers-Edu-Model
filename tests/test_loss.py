@@ -1,3 +1,4 @@
+import pytest
 import torch
 from torch.nn import functional as F
 
@@ -170,6 +171,48 @@ def test_z_loss_gradient_matches_plain_autograd_reference() -> None:
     assert not torch.equal(chunk_z, torch.zeros_like(chunk_z))
     assert torch.allclose(chunked_hidden.grad, reference_hidden.grad, atol=1e-9)
     assert torch.allclose(chunked_weight.grad, reference_weight.grad, atol=1e-9)
+
+
+requires_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA device required")
+
+
+@requires_cuda
+def test_cuda_chunked_matches_unchunked_loss_under_real_autocast() -> None:
+    """The gap the CPU/FP64 tests above cannot see: under a real
+    torch.autocast(dtype=float16) context -- the precision every actual
+    training run uses -- matmul casts its inputs to FP16 regardless of the
+    explicit FP32 casts inside _ChunkedCrossEntropy (verified empirically:
+    an FP32 tensor multiplied under autocast(float16) produces an FP16
+    result). This is not a bug -- the unfused path's own `lm_head` matmul has
+    the exact same property under the same context -- but nothing before this
+    test actually exercised the combination, so a real divergence here would
+    have gone uncaught."""
+
+    device = torch.device("cuda")
+    torch.manual_seed(6)
+    batch, seq, d_model, vocab = 2, 6, 16, 64
+    hidden = torch.randn(batch, seq, d_model, device=device)
+    weight = torch.randn(vocab, d_model, device=device)
+    tokens = torch.randint(0, vocab, (batch, seq), device=device)
+
+    with torch.autocast(device_type="cuda", dtype=torch.float16):
+        reference_hidden = hidden.clone().requires_grad_(True)
+        reference_weight = weight.clone().requires_grad_(True)
+        logits = reference_hidden @ reference_weight.T
+        ref_sum, ref_count = next_token_loss_stats(logits, tokens)
+        (ref_sum / ref_count).backward()
+
+        chunked_hidden = hidden.clone().requires_grad_(True)
+        chunked_weight = weight.clone().requires_grad_(True)
+        chunk_sum, chunk_count, _ = chunked_next_token_loss_stats(
+            chunked_hidden, chunked_weight, tokens, chunk_size=4
+        )
+        (chunk_sum / chunk_count).backward()
+
+    assert torch.isfinite(chunk_sum)
+    assert torch.allclose(chunk_sum, ref_sum, atol=5e-2, rtol=5e-2)
+    assert torch.allclose(chunked_hidden.grad, reference_hidden.grad, atol=5e-2, rtol=5e-2)
+    assert torch.allclose(chunked_weight.grad, reference_weight.grad, atol=5e-2, rtol=5e-2)
 
 
 def test_chunked_loss_rejects_invalid_arguments() -> None:

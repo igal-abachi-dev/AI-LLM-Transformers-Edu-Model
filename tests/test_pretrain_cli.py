@@ -98,6 +98,10 @@ def _args(
         compile_backend=None,
         compile_fail=False,
         keep_last_n_checkpoints=None,
+        loss_chunk_size=None,
+        z_loss_weight=0.0,
+        mtp_extra_heads=0,
+        mtp_loss_weight=0.0,
     )
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -122,3 +126,68 @@ def test_no_checkpoint_flag_skips_all_checkpoint_writes(tmp_path, mini_tokenizer
     assert not (bare_output / "final").exists()
     assert not list(bare_output.glob("checkpoint-*"))
     assert list(bare_output.iterdir()) == [bare_output / "run.json"]
+
+
+def test_loss_chunk_size_and_z_loss_weight_flags_reach_real_training(
+    tmp_path, mini_tokenizer
+) -> None:
+    """Regression for a real gap: MF-084's chunked loss/z-loss existed in
+    TrainingConfig but had no CLI path from the actual training entry point,
+    so a real run could never reach them regardless of vocabulary size."""
+
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    output = tmp_path / "chunked"
+    state, _ = pretrain.run(
+        _args(
+            config_path,
+            shards_path,
+            output,
+            no_checkpoint=True,
+            loss_chunk_size=2,
+            z_loss_weight=1e-4,
+        )
+    )
+    assert state.completed_updates == 2
+    assert state.last_loss is not None and state.last_loss == state.last_loss  # not NaN
+
+
+def test_resume_with_mtp_extra_heads_is_rejected(tmp_path, mini_tokenizer) -> None:
+    """MTP head weights are not part of the saved checkpoint (see mtp.py) --
+    combining --resume with MTP must fail loudly, not silently reinitialize."""
+
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    try:
+        pretrain.run(
+            _args(
+                config_path,
+                shards_path,
+                tmp_path / "out",
+                resume=tmp_path,
+                mtp_extra_heads=1,
+                mtp_loss_weight=0.5,
+            )
+        )
+    except ValueError as error:
+        assert "resume" in str(error) and "mtp" in str(error).lower()
+    else:
+        raise AssertionError("expected a ValueError for --resume with mtp_extra_heads > 0")
+
+
+def test_mtp_extra_heads_flag_reaches_real_training(tmp_path, mini_tokenizer) -> None:
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    output = tmp_path / "mtp"
+    state, _ = pretrain.run(
+        _args(
+            config_path,
+            shards_path,
+            output,
+            no_checkpoint=True,
+            mtp_extra_heads=1,
+            mtp_loss_weight=0.5,
+        )
+    )
+    assert state.completed_updates == 2
+    assert state.last_loss is not None and state.last_loss == state.last_loss  # not NaN

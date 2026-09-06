@@ -80,6 +80,16 @@ def parse_args() -> argparse.Namespace:
             "recent -- never touches `final/`. Omit to keep every periodic checkpoint."
         ),
     )
+    parser.add_argument(
+        "--loss-chunk-size",
+        type=int,
+        help=(
+            "Compute loss over sequence chunks instead of materializing full "
+            "[batch, sequence, vocab_size] logits (see loss.chunked_next_token_loss_stats, "
+            "MF-084). Omit to keep the original unfused path."
+        ),
+    )
+    parser.add_argument("--z-loss-weight", type=float, default=0.0)
     return parser.parse_args()
 
 
@@ -154,6 +164,8 @@ def main() -> None:
         gradient_clip=args.gradient_clip,
         precision=args.precision,
         attention_impl="sdpa" if args.device == "cpu" else None,
+        loss_chunk_size=args.loss_chunk_size,
+        z_loss_weight=args.z_loss_weight,
     )
     optimizer = build_adamw(model, training)[0]
     schedule = WarmupCosineSchedule(training)

@@ -151,17 +151,29 @@ class _ChunkedCrossEntropy(torch.autograd.Function):
         z_loss_weight: float,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         n_rows = hidden.shape[0]
-        # FP32 (or better) throughout: the same "reductions stay FP32 under
-        # autocast" convention the rest of the project follows (attention.py's
-        # manual reference path, rope.py's rotation), written explicitly since a
-        # hand-derived gradient gets no help from autocast's own rules. Never
-        # downcasts an already-FP64 caller -- gradcheck (tests/test_loss.py)
-        # needs that to hold, exactly like rope.apply_rotary.
+        # The reductions below (logsumexp, gather, softmax) are on autocast's
+        # own "promote to FP32" list already, so they stay accurate regardless
+        # of the ambient precision -- but the matmuls (hidden @ weight.T and
+        # its two gradient counterparts) are NOT: under a real autocast(dtype=
+        # float16) context, matmul casts its inputs down to float16 before
+        # computing, no matter what dtype was explicitly requested here (see
+        # tests/test_loss.py's CUDA autocast-equivalence test, which verified
+        # this empirically). That is the same behavior the unfused path's
+        # plain `lm_head` matmul already has under the same autocast context,
+        # so this is not a precision regression -- explicit casting below
+        # exists only to (a) never downcast an already-FP64 caller, which
+        # gradcheck needs, and (b) keep the accumulators themselves at a
+        # consistent, known precision when autocast is off (e.g. on CPU).
         compute_dtype = hidden.dtype if hidden.dtype == torch.float64 else torch.float32
         grad_hidden_loss = torch.zeros_like(hidden, dtype=compute_dtype)
         grad_weight_loss = torch.zeros_like(weight, dtype=compute_dtype)
-        grad_hidden_z = torch.zeros_like(hidden, dtype=compute_dtype)
-        grad_weight_z = torch.zeros_like(weight, dtype=compute_dtype)
+        # Allocated only when z-loss is actually in use: at 32k vocab,
+        # grad_weight_z alone is vocab_size * d_model * 4 bytes (~100MB), held
+        # from forward through backward, for nothing, whenever z_loss_weight
+        # is the default 0.0.
+        use_z_loss = bool(z_loss_weight)
+        grad_hidden_z = torch.zeros_like(hidden, dtype=compute_dtype) if use_z_loss else None
+        grad_weight_z = torch.zeros_like(weight, dtype=compute_dtype) if use_z_loss else None
         loss_sum = hidden.new_zeros((), dtype=compute_dtype)
         z_loss_sum = hidden.new_zeros((), dtype=compute_dtype)
 
@@ -178,28 +190,39 @@ class _ChunkedCrossEntropy(torch.autograd.Function):
             per_token_loss = (log_sum_exp - target_logit) * valid_chunk
             loss_sum += per_token_loss.sum()
 
+            # Only one [C, vocab_size] tensor lives past this point: `logits_chunk`
+            # is freed as soon as `probabilities` exists (target_logit/log_sum_exp
+            # already extracted what they needed from it, as new, small tensors).
             probabilities = torch.softmax(logits_chunk, dim=-1)
-            grad_logits_loss = probabilities.clone()
-            grad_logits_loss.scatter_add_(
-                -1, target_chunk.unsqueeze(-1), -valid_chunk.unsqueeze(-1)
-            )
-            grad_logits_loss *= valid_chunk.unsqueeze(-1)
-            grad_hidden_loss[start:end] = grad_logits_loss @ weight_f32
-            grad_weight_loss += grad_logits_loss.T @ hidden_chunk
+            del logits_chunk
 
-            if z_loss_weight:
+            if use_z_loss:
                 z_term = z_loss_weight * log_sum_exp.pow(2) * valid_chunk
                 z_loss_sum += z_term.sum()
                 # d(z_loss_weight * lse^2)/dlogits = 2 * z_loss_weight * lse * softmax(logits)
+                # Computed from `probabilities` before it is mutated in place below.
                 grad_logits_z = (2.0 * z_loss_weight * log_sum_exp * valid_chunk).unsqueeze(
                     -1
                 ) * probabilities
                 grad_hidden_z[start:end] = grad_logits_z @ weight_f32
                 grad_weight_z += grad_logits_z.T @ hidden_chunk
+                del grad_logits_z
 
-            del logits_chunk, probabilities, grad_logits_loss
+            # dL/dlogits = softmax(logits) - one_hot(target). Mutating
+            # `probabilities` in place (rather than cloning it first) is safe
+            # now: nothing above needed the untouched softmax values again.
+            probabilities.scatter_add_(-1, target_chunk.unsqueeze(-1), -valid_chunk.unsqueeze(-1))
+            probabilities *= valid_chunk.unsqueeze(-1)
+            grad_hidden_loss[start:end] = probabilities @ weight_f32
+            grad_weight_loss += probabilities.T @ hidden_chunk
+            del probabilities
 
-        ctx.save_for_backward(grad_hidden_loss, grad_weight_loss, grad_hidden_z, grad_weight_z)
+        ctx.save_for_backward(
+            grad_hidden_loss,
+            grad_weight_loss,
+            *((grad_hidden_z, grad_weight_z) if use_z_loss else ()),
+        )
+        ctx.use_z_loss = use_z_loss
         ctx.hidden_dtype = hidden.dtype
         ctx.weight_dtype = weight.dtype
         return loss_sum, z_loss_sum
@@ -208,12 +231,17 @@ class _ChunkedCrossEntropy(torch.autograd.Function):
     def backward(
         ctx: Any, grad_loss_sum: torch.Tensor, grad_z_loss_sum: torch.Tensor
     ) -> tuple[torch.Tensor | None, ...]:
-        grad_hidden_loss, grad_weight_loss, grad_hidden_z, grad_weight_z = ctx.saved_tensors
-        # Composed via the actual incoming gradients for each output rather than
-        # assuming the caller weights loss_sum/z_loss_sum equally -- correct
-        # regardless of how they get combined downstream.
-        grad_hidden = grad_loss_sum * grad_hidden_loss + grad_z_loss_sum * grad_hidden_z
-        grad_weight = grad_loss_sum * grad_weight_loss + grad_z_loss_sum * grad_weight_z
+        if ctx.use_z_loss:
+            grad_hidden_loss, grad_weight_loss, grad_hidden_z, grad_weight_z = ctx.saved_tensors
+            # Composed via the actual incoming gradients for each output rather
+            # than assuming the caller weights loss_sum/z_loss_sum equally --
+            # correct regardless of how they get combined downstream.
+            grad_hidden = grad_loss_sum * grad_hidden_loss + grad_z_loss_sum * grad_hidden_z
+            grad_weight = grad_loss_sum * grad_weight_loss + grad_z_loss_sum * grad_weight_z
+        else:
+            grad_hidden_loss, grad_weight_loss = ctx.saved_tensors
+            grad_hidden = grad_loss_sum * grad_hidden_loss
+            grad_weight = grad_loss_sum * grad_weight_loss
         return (
             grad_hidden.to(ctx.hidden_dtype),
             grad_weight.to(ctx.weight_dtype),
@@ -232,7 +260,13 @@ def chunked_next_token_loss_stats(
     loss_mask: torch.Tensor | None = None,
     ignore_index: int = -100,
     offset: int = 1,
-    chunk_size: int = 1024,
+    # Small on purpose: the loop's peak is now ~1x one chunk's [chunk_size,
+    # vocab_size] tensor (see _ChunkedCrossEntropy), so a larger chunk buys
+    # fewer kernel launches at the direct cost of that peak -- at 256 and
+    # vocab_size=32768, one chunk is ~34MB in FP32; at the old default of
+    # 1024 it was ~134MB. The launch-count difference is noise next to a
+    # vocab-sized matmul either way.
+    chunk_size: int = 256,
     z_loss_weight: float = 0.0,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Memory-efficient equivalent of ``next_token_loss_stats`` plus z-loss.
