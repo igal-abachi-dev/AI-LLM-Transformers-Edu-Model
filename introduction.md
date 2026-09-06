@@ -26,6 +26,10 @@ If that sounds too simple to produce something that can debug your code — you'
 suspicious. Hold that thought until the end of Part 1.
 
 
+AI is giant mathematical pattern-matching machine that predicts the next piece of text based on everything It was trained on + the conversation so far.
+Each time you send a message, the whole chat history is fed back into it as a long string of tokens, and It start guessing again from scratch.
+What feels like a conversation is really just the model generating one plausible-sounding reply after another.
+
 ## How the Process Actually Works
 
 1. Your text is broken into **tokens** (small chunks of characters or words).
@@ -39,6 +43,34 @@ suspicious. Hold that thought until the end of Part 1.
 There is no internal database, no separate “understanding” module, and no truth-checking mechanism. All of the model’s “knowledge” is compressed into millions or billions of numbers called **weights**. These weights were set during training by playing an enormous fill-in-the-blank game: hide the next token, measure how surprised the model is by the real answer, and nudge the weights so it will be less surprised next time.
 
 When the statistical patterns the model learned match reality well, the output looks like reasoning, factual knowledge, or working code. When they do not, the output looks like hallucination or, in extreme cases, incoherent “psychosis.”
+
+
+A language model is basically a super-powered autocomplete that keeps guessing the next tiny piece of text, over and over.
+Your message gets chopped into small chunks called tokens 
+Those tokens turn into plain numbers, because the computer only understands numbers.
+
+The model looks at all the numbers so far and gives a score to every possible next token it knows.
+It turns those scores into probabilities (like “this word is 70% likely, that one is 20%…”).
+
+Then it picks one token (sometimes the safest, sometimes a more creative one).
+It sticks the chosen token onto the end and does the whole thing again… and again… until the answer is finished.
+
+All of its “knowledge” is just billions of numbers (called weights) that were adjusted during training by playing fill-in-the-blank on massive amounts of text.
+Nobody programmed facts or reasoning into it — those patterns just emerged because they help it guess the next token better.
+
+it sometime called:
+Generalization - The model applying the patterns it learned to new text it has never seen before.
+What we observe when the patterns work outside the training data
+or:
+Emergence - Capabilities that suddenly appear (or get much better) 
+once the model is large enough and trained enough, without being explicitly taught.
+
+There is no separate “thinking brain” code, no database it looks things up in, and no truth-checker logic.
+only the weights in the model.safetensors (The actual neural network weights - the brain file) + the current whole conversation,
+
+When the patterns match reality well, the output looks smart; when they don’t, it hallucinates.
+So every reply you get is just hundreds or thousands of next-token guesses stacked together
+
 
 ---
 
@@ -213,7 +245,9 @@ riskily it picks from what it already scored.
 
 Inside the model are millions (or trillions) of numbers called **weights** or
 **parameters**. `tiny_edu` in this repo has **28,832** of them. GPT-4-class models have
-hundreds of billions. These numbers are the *entire* memory of the model.
+hundreds of billions. These numbers are the *entire* memory of the model. (most of them of SwiGLU)
+
+model.safetensors file is The actual neural network weights (the brain, all the learned numbers).
 
 Those numbers got set during **training**, which is a fill-in-the-blank game played
 astronomically many times:
@@ -986,12 +1020,42 @@ uv run --extra cpu python labs/08_mtp.py
 
 Because the literature gains appear mainly at very large scale, MTP is treated as an opt-in experiment (`scripts/compare_mtp.py`) rather than a default training setting.
 
----
+--- 
 
 
 ## 3.9  How a real model actually gets built
- 
-previouse sections were about *what a model is*. This part is about *how one comes to exist* —
+
+the model itself is just few files:
+model.safetensors,The actual neural network weights (all the learned numbers).,This is the big “brain.” file 
+
+config.json,"Architecture settings: number of layers, hidden size, vocabulary size, attention type, special token IDs, etc.",
+Tells the loading code how to build the model skeleton before putting the weights into it.
+
+tokenizer.json,The full tokenizer definition (vocabulary + merge rules + special tokens).,
+"Turns text ↔ token IDs. This is the complete, self-contained tokenizer."
+
+tokenizer_config.json,
+"Extra tokenizer settings (which special tokens exist, padding side, chat template reference, etc.).",
+Metadata the tokenizer needs in addition to the raw vocabulary.
+
+chat_template.jinja,
+Jinja template that turns a list of chat messages into the exact string the model expects.
+Defines the “roles” format 
+
+generation_config.json,"Default generation settings (temperature, top-p, max length, EOS token, etc.).",
+Sensible defaults so you don’t have to specify every sampling parameter every time.
+
+system_prompt.md,The default system prompt text used with this model.
+The “personality / instructions” that usually get placed at the start of a conversation.
+
+in short:
+Weights → model.safetensors
+How to build/load the model → config.json
+How to turn text into numbers → tokenizer.json + tokenizer_config.json
+How to format a chat → chat_template.jinja (+ system_prompt.md)
+How to sample text from model → generation_config.json
+
+so after we talked about *what a model is*. This part is about *how one comes to exist* —
 the full assembly line, from raw text on the internet to something answering questions
 in a chat window.
  
