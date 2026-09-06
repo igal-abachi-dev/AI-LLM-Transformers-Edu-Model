@@ -298,6 +298,7 @@ M10 (350M/500M scale checks) and M11 (Transformers/vLLM/GGUF adapters) are post-
 
 ```text
 configs/                 Frozen model/training presets
+data/                    Prepared shards, dedup-signatures.sqlite, manifests , tokenizer
 src/minifrontier/        Readable neural core and runtime
 train/                   From-scratch pretraining and SFT loops
 scripts/                 Tokenizer, data, train, eval, sample, chat, export
