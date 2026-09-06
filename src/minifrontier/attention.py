@@ -182,9 +182,22 @@ def _flex_block_mask(
         KV_LEN=key_length,
         device=device,
     )
-    _BLOCK_MASK_CACHE[key] = block_mask
-    if len(_BLOCK_MASK_CACHE) > _BLOCK_MASK_CACHE_MAX_SIZE:
-        _BLOCK_MASK_CACHE.popitem(last=False)
+    # Never cache a BlockMask built under torch.inference_mode(): its tensors
+    # are specially marked, and PyTorch refuses to reuse an inference tensor
+    # in any later autograd-tracked (i.e. training) computation --
+    # "Inference tensors cannot be saved for backward." A cache shared across
+    # calls has no way to know a later lookup with the same shape key will be
+    # a training forward pass rather than another inference-mode one, so the
+    # only safe rule is: an inference-mode-built mask is never shared, full
+    # stop. Reading a mask already in the cache (built outside inference_mode)
+    # while inside inference_mode is fine and unaffected -- only writing a
+    # tainted one in is the hazard. Real, reproduced case: evaluating a
+    # reused checkpoint (inference_mode) before training a second, same-shape
+    # model in the same process.
+    if not torch.is_inference_mode_enabled():
+        _BLOCK_MASK_CACHE[key] = block_mask
+        if len(_BLOCK_MASK_CACHE) > _BLOCK_MASK_CACHE_MAX_SIZE:
+            _BLOCK_MASK_CACHE.popitem(last=False)
     return block_mask
 
 

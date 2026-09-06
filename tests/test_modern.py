@@ -145,6 +145,67 @@ def test_flex_block_mask_cache_evicts_oldest_entry_once_full(monkeypatch) -> Non
     assert block_mask_cache_size() == 2
 
 
+def test_flex_block_mask_built_under_inference_mode_is_never_cached() -> None:
+    """Regression, reproduced for real during MF-087's tokenizer comparison:
+    evaluating a reused checkpoint (torch.inference_mode()) before training a
+    second, same-shape model in the same process crashed with "Inference
+    tensors cannot be saved for backward" -- the shared block-mask cache does
+    not know a later lookup with the same shape key will be a training
+    (autograd-tracked) call rather than another inference-mode one, so an
+    inference-mode-built mask must never be shared at all. CPU-safe half of
+    the regression: confirms nothing gets cached (no backward pass needed,
+    since FlexAttention doesn't support backward on CPU at all -- see the
+    CUDA-gated full reproduction below for the actual crash scenario)."""
+
+    clear_block_mask_cache()
+    config = ModelConfig.tiny_modern(n_layers=1, attention_impl="auto")
+    rope = RoPE(config.head_dim, config.max_seq_len)
+    length = 6
+
+    attention = CausalSelfAttention(config, layer_index=0).eval()
+    with torch.inference_mode():
+        inputs = torch.randn(1, length, config.d_model)
+        cosine, sine = rope(torch.arange(length), dtype=inputs.dtype, device=inputs.device)
+        attention(inputs, cosine, sine, implementation="flex")
+    assert block_mask_cache_size() == 0
+
+
+requires_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA device required")
+
+
+@requires_cuda
+def test_cuda_flex_block_mask_from_inference_mode_does_not_break_later_training() -> None:
+    """Full reproduction of the real crash: an inference_mode()-wrapped forward
+    pass (e.g. evaluating a reused checkpoint) followed by a same-shape
+    training forward+backward in the same process, on the device where the
+    bug actually occurred."""
+
+    clear_block_mask_cache()
+    device = torch.device("cuda")
+    config = ModelConfig.tiny_modern(n_layers=1, attention_impl="auto")
+    rope = RoPE(config.head_dim, config.max_seq_len)
+    length = 6
+
+    inference_attention = CausalSelfAttention(config, layer_index=0).eval().to(device)
+    with torch.inference_mode():
+        inference_inputs = torch.randn(1, length, config.d_model, device=device)
+        cosine, sine = rope(
+            torch.arange(length, device=device),
+            dtype=inference_inputs.dtype,
+            device=device,
+        )
+        inference_attention(inference_inputs, cosine, sine, implementation="flex")
+    assert block_mask_cache_size() == 0
+
+    training_attention = CausalSelfAttention(config, layer_index=0).to(device)
+    training_inputs = torch.randn(1, length, config.d_model, device=device, requires_grad=True)
+    cosine, sine = rope(torch.arange(length, device=device), dtype=training_inputs.dtype, device=device)
+    output = training_attention(training_inputs, cosine, sine, implementation="flex")
+    output.sum().backward()  # would raise "Inference tensors cannot be saved for backward" pre-fix
+    assert training_inputs.grad is not None
+    assert block_mask_cache_size() == 1
+
+
 @pytest.mark.slow
 def test_compiled_flex_attention_matches_eager_flex() -> None:
     """Compiling FlexAttention directly (not just the outer model) must not change the answer."""
