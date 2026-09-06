@@ -72,6 +72,48 @@ writing, used as markers:
 Each token has an ID number. `<|pad|>` is 0, `<|bos|>` ("beginning of sequence") is 1, and
 so on. **From here on, the model never sees letters again — only lists of ID numbers.**
 
+The tokenizer — turning text into numbers the model can see
+A model cannot read letters. Before anything else happens, every string of text is turned into a list of integer IDs. 
+That conversion is the job of the tokenizer. 
+In this repo it lives in src/minifrontier/tokenizer.py.
+
+Why not just use whole words?
+There are millions of words, plus typos, plus code, plus every other language, plus emoji. 
+A pure word-level vocabulary would either explode in size or leave many strings unrepresentable (the dreaded “unknown token”).
+
+The solution used here is byte-level BPE (Byte Pair Encoding):
+Start with the 256 raw byte values (every possible single byte is already a token).
+Look at a large corpus of text and repeatedly merge the most frequent adjacent pair into a new token.
+Stop when the vocabulary reaches the target size.
+Common pieces such as " the" or "ing" become single tokens. Rare or weird strings fall back to a few smaller pieces. 
+Because every byte is in the alphabet, nothing is ever unrepresentable — there is no unknown-token problem.
+
+How encoding and decoding work
+Pythontokenizer = MiniFrontierTokenizer.from_directory("path/to/tokenizer")
+
+ids = tokenizer.encode("Hello world", add_bos=True, add_eos=True)
+ → [1, \ldots, 2]   (bos + content tokens + eos)
+
+text = tokenizer.decode(ids, skip_special_tokens=True)
+ → "Hello world"
+ 
+ Training a tokenizer (not the same as training the model)
+“Training” a tokenizer is pure counting — no gradients, no loss. The function train_byte_bpe does the following:
+
+1) Guarantee room for the 11 special tokens plus the 256 byte values.
+2) Feed a deterministic stream of texts to a BpeTrainer.
+3) Merge the most frequent pairs until the vocabulary is full.
+4) Wrap the result in MiniFrontierTokenizer and validate the special-token IDs.
+
+The embedding table and the final lm_head are both sized to exactly 16 384 rows. 
+Changing the vocabulary would break every weight file.
+
+Tied embeddings (Edu and Modern both use them) mean the same 16 384 × d_model matrix 
+is used for both “ID → meaning” and “meaning → ID”.
+
+so the tokenizer is a small, carefully frozen contract that sits between human text 
+and the integer sequences the neural network actually understands.
+
 ## 1.2 The chat you see is a lie (a friendly one)
 
 You see a chat window with bubbles. The model sees one long flat string of tokens.
