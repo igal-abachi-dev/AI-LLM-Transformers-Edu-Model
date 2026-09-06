@@ -22,6 +22,7 @@ produced.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import torch
@@ -32,12 +33,55 @@ if TYPE_CHECKING:
     from minifrontier.model import MiniFrontier
 
 
+def _apply_repetition_penalty(
+    logits: torch.Tensor, previous_tokens: torch.Tensor, penalty: float
+) -> torch.Tensor:
+    """CTRL-style: divide positive logits, multiply negative ones, for every
+    token already seen anywhere in that row's history. Discourages drift
+    without an outright ban, unlike no-repeat-ngram below."""
+
+    seen = torch.zeros_like(logits, dtype=torch.bool)
+    seen.scatter_(-1, previous_tokens, True)
+    penalized = torch.where(logits > 0, logits / penalty, logits * penalty)
+    return torch.where(seen, penalized, logits)
+
+
+def _apply_no_repeat_ngram(
+    logits: torch.Tensor, previous_tokens: torch.Tensor, ngram_size: int
+) -> torch.Tensor:
+    """Hard-ban whichever token would complete an n-gram already seen earlier
+    in the same sequence -- the fix for actual loops, as opposed to the softer
+    drift `_apply_repetition_penalty` addresses. Per-row Python loop: batches
+    here are small (interactive generation), and a variable-length n-gram
+    lookup does not vectorize cleanly enough to be worth obscuring this in
+    exchange for it."""
+
+    if previous_tokens.shape[1] < ngram_size - 1:
+        return logits
+    blocked = logits.clone()
+    for row in range(logits.shape[0]):
+        sequence = previous_tokens[row].tolist()
+        prefix = tuple(sequence[-(ngram_size - 1) :]) if ngram_size > 1 else ()
+        banned: set[int] = set()
+        for start in range(len(sequence) - ngram_size + 1):
+            if tuple(sequence[start : start + ngram_size - 1]) == prefix:
+                banned.add(sequence[start + ngram_size - 1])
+        for token_id in banned:
+            blocked[row, token_id] = float("-inf")
+    return blocked
+
+
 def sample_next_token(
     logits: torch.Tensor,
     *,
     temperature: float,
     top_k: int | None,
     top_p: float,
+    min_p: float = 0.0,
+    repetition_penalty: float = 1.0,
+    no_repeat_ngram_size: int | None = None,
+    previous_tokens: torch.Tensor | None = None,
+    suppress_token_ids: Sequence[int] | None = None,
     generator: torch.Generator | None = None,
     validate_logits: bool = False,
 ) -> torch.Tensor:
@@ -51,8 +95,22 @@ def sample_next_token(
     * ``top_p`` -- consider the best candidates whose probabilities sum to p
       ("nucleus" sampling). A small set when the model is confident, a large one
       when it is not, which is why it usually beats a fixed ``top_k``.
+    * ``min_p`` (Nguyen et al., arXiv:2407.01082) -- drop any candidate whose
+      probability is below ``min_p`` times the top candidate's probability.
+      Unlike a fixed ``top_p``, the threshold scales with how confident the
+      model is at this step -- important at this project's scale, where a
+      small model is uncertain far more often than the 1B-123B models the
+      paper evaluated, so a fixed top-p is either too permissive or too strict
+      at almost every step.
+    * ``repetition_penalty``/``no_repeat_ngram_size`` -- need ``previous_tokens``
+      (everything generated so far in that row, ``[batch, seq_so_far]``) to have
+      any effect; see the two module-level helpers above for what each does.
+    * ``suppress_token_ids`` -- forced to ``-inf`` before anything else, so a
+      chat generation can never sample e.g. a reserved role marker mid-response.
+      Applied even under greedy decoding, not just sampling.
 
-    ``top_k`` and ``top_p`` compose, and both run before the final softmax.
+    ``min_p``, ``top_k``, and ``top_p`` compose, and all three run before the
+    final softmax, in that order.
     """
 
     if logits.ndim != 2:
@@ -63,16 +121,39 @@ def sample_next_token(
         raise ValueError("top_k must be positive when provided")
     if not 0.0 < top_p <= 1.0:
         raise ValueError("top_p must be in (0, 1]")
+    if not 0.0 <= min_p <= 1.0:
+        raise ValueError("min_p must be in [0, 1]")
+    if repetition_penalty <= 0:
+        raise ValueError("repetition_penalty must be positive")
+    if no_repeat_ngram_size is not None and no_repeat_ngram_size < 2:
+        raise ValueError("no_repeat_ngram_size must be at least 2 when provided")
     if validate_logits and not torch.isfinite(logits).all():
         raise ValueError("sampling logits contain non-finite values")
+
+    # Never mutate the caller's tensor -- it may be the raw model output.
+    working = logits.clone()
+    if suppress_token_ids:
+        working[:, list(suppress_token_ids)] = float("-inf")
+    if previous_tokens is not None:
+        if repetition_penalty != 1.0:
+            working = _apply_repetition_penalty(working, previous_tokens, repetition_penalty)
+        if no_repeat_ngram_size is not None:
+            working = _apply_no_repeat_ngram(working, previous_tokens, no_repeat_ngram_size)
+
     # Greedy decoding, handled separately: dividing by zero is undefined, and
-    # argmax needs no probabilities at all.
+    # argmax needs no probabilities at all. Suppression/repetition control
+    # above still applies -- greedy plus a repetition penalty is a real,
+    # common combination, not just a sampling-only feature.
     if temperature == 0:
-        return logits.argmax(dim=-1, keepdim=True)
+        return working.argmax(dim=-1, keepdim=True)
 
     # Dividing the scores stretches or squashes the gaps between them, which
     # softmax then turns into a flatter or sharper distribution.
-    filtered = logits.float() / temperature
+    filtered = working.float() / temperature
+    if min_p > 0.0:
+        probabilities_for_floor = torch.softmax(filtered, dim=-1)
+        floor = min_p * probabilities_for_floor.amax(dim=-1, keepdim=True)
+        filtered = filtered.masked_fill(probabilities_for_floor < floor, float("-inf"))
     if top_k is not None and top_k < filtered.shape[-1]:
         # The k-th best score; anything below it is set to -inf, i.e. impossible.
         threshold = torch.topk(filtered, top_k, dim=-1).values[:, -1:]
@@ -106,6 +187,10 @@ def generate(
     temperature: float = 0.0,
     top_k: int | None = None,
     top_p: float = 1.0,
+    min_p: float = 0.0,
+    repetition_penalty: float = 1.0,
+    no_repeat_ngram_size: int | None = None,
+    suppress_token_ids: Sequence[int] | None = None,
     eos_id: int | None = None,
     generator: torch.Generator | None = None,
     validate_logits: bool = False,
@@ -116,6 +201,12 @@ def generate(
     Generation stops early when every sequence in the batch has produced
     ``eos_id``. The model is put in eval mode for the duration and restored
     afterwards, so a caller mid-training does not silently lose its mode.
+
+    ``min_p``/``repetition_penalty``/``no_repeat_ngram_size``/``suppress_token_ids``
+    all pass straight through to ``sample_next_token`` -- see there for what
+    each does. ``repetition_penalty``/``no_repeat_ngram_size`` are computed
+    from everything generated so far (prompt included), not just this run's
+    own continuation.
     """
 
     if prompt.ndim != 2 or prompt.shape[1] == 0:
@@ -165,6 +256,11 @@ def generate(
                 temperature=temperature,
                 top_k=top_k,
                 top_p=top_p,
+                min_p=min_p,
+                repetition_penalty=repetition_penalty,
+                no_repeat_ngram_size=no_repeat_ngram_size,
+                previous_tokens=output[:, :output_length],
+                suppress_token_ids=suppress_token_ids,
                 generator=generator,
                 validate_logits=validate_logits,
             )

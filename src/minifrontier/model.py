@@ -26,6 +26,7 @@ sequence yields 1,023 predictions from one pass.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import torch
@@ -409,6 +410,10 @@ class MiniFrontier(nn.Module):
         generator: torch.Generator | None = None,
         top_k: int | None = None,
         top_p: float = 1.0,
+        min_p: float = 0.0,
+        repetition_penalty: float = 1.0,
+        no_repeat_ngram_size: int | None = None,
+        suppress_token_ids: Sequence[int] | None = None,
         validate_logits: bool = False,
     ) -> torch.Tensor:
         """Generate with the M3 preallocated KV-cache implementation.
@@ -427,6 +432,10 @@ class MiniFrontier(nn.Module):
             temperature=temperature,
             top_k=top_k,
             top_p=top_p,
+            min_p=min_p,
+            repetition_penalty=repetition_penalty,
+            no_repeat_ngram_size=no_repeat_ngram_size,
+            suppress_token_ids=suppress_token_ids,
             eos_id=eos_id,
             generator=generator,
             validate_logits=validate_logits,
