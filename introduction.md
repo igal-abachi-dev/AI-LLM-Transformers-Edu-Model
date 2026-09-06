@@ -57,7 +57,7 @@ A token is usually a common chunk of characters. `" the"` is one token. `" hello
 token. A weird word like `" Bereshit"` might be three or four tokens. A single emoji might
 be two.
 
-This repo's tokenizer (`src/minifrontier/tokenizer.py`) has exactly **16,384 tokens** in its
+This repo's tokenizer (`src/minifrontier/tokenizer.py`) has exactly **32,768 tokens** in its
 vocabulary — that's `VOCAB_SIZE`. Big commercial models use 100,000–200,000, but the idea is
 identical.
 
@@ -192,7 +192,7 @@ Here is the actual loop, from `src/minifrontier/generation.py`:
 ![The autoregressive loop, and how a token is picked](svg/03-guessing-loop.svg)
 
 1. Feed all the tokens so far into the model.
-2. The model outputs a **score for every one of the 16,384 possible next tokens**. These
+2. The model outputs a **score for every one of the 32,768 possible next tokens**. These
    scores are called **logits**.
 3. Turn those scores into percentages (**softmax**): maybe `" 4"` gets 91%, `" four"` gets
    6%, `" the"` gets 0.2%, and so on.
@@ -816,6 +816,8 @@ People use custom Triton kernels when they need an operation that:
 - is not already fused in PyTorch, or
 - can save a large amount of memory or time by doing several steps in one pass.
 
+
+in this code base its optional inside the muon optimizer lab
 ---
 
 
