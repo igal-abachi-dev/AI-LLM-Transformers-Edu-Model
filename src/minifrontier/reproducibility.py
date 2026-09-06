@@ -26,7 +26,18 @@ import torch
 
 
 def seed_everything(seed: int, *, deterministic: bool = False) -> None:
-    """Seed Python, NumPy, and PyTorch without pretending all kernels are deterministic."""
+    """Seed Python, NumPy, and PyTorch without pretending all kernels are deterministic.
+
+    ``torch.use_deterministic_algorithms`` is a global, process-wide flag with no
+    scoped/context-manager equivalent (unlike ``autocast``), so it is always set
+    explicitly here to exactly ``deterministic`` -- never only turned on and left
+    that way. Every real script in this project currently calls this once with one
+    consistent value for its whole run, so this has not caused a real failure, but
+    a future script mixing a CPU-deterministic phase with a later CUDA phase in the
+    same process would otherwise inherit a stuck ``True`` from the first phase --
+    and PyTorch does not silently degrade to nondeterministic in that state, it
+    raises on any op with no deterministic CUDA implementation.
+    """
 
     if seed < 0:
         raise ValueError("seed must be non-negative")
@@ -35,8 +46,12 @@ def seed_everything(seed: int, *, deterministic: bool = False) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+    torch.use_deterministic_algorithms(deterministic)
     if deterministic:
-        torch.use_deterministic_algorithms(True)
+        # CUBLAS_WORKSPACE_CONFIG only takes effect if set before cuBLAS
+        # initializes, so there is no matching "unset" action once a CUDA
+        # context already exists -- setdefault (not overwrite) is deliberate,
+        # to respect a caller who configured this themselves beforehand.
         os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 

@@ -19,6 +19,24 @@ def test_seed_everything_repeats_all_cpu_generators() -> None:
     assert torch.equal(first[2], second[2])
 
 
+def test_seed_everything_deterministic_flag_is_not_sticky_across_calls() -> None:
+    """torch.use_deterministic_algorithms is a global, unscoped flag -- a later
+    call with deterministic=False must actually turn it back off, not just
+    leave whatever an earlier call set. Real risk this guards against: a
+    future script mixing a CPU-deterministic phase with a later CUDA phase in
+    one process would otherwise inherit a stuck True, and PyTorch raises
+    (rather than silently running nondeterministically) on any op with no
+    deterministic CUDA implementation while that flag is on."""
+
+    try:
+        seed_everything(1, deterministic=True)
+        assert torch.are_deterministic_algorithms_enabled()
+        seed_everything(2, deterministic=False)
+        assert not torch.are_deterministic_algorithms_enabled()
+    finally:
+        torch.use_deterministic_algorithms(False)
+
+
 def test_rng_state_round_trip() -> None:
     seed_everything(7)
     state = capture_rng_state()
