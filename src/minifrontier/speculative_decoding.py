@@ -37,6 +37,22 @@ after it:
    append" case), keep the verdict as the real token, and get a new draft from
    its own hidden state.
 
+A real limit, found by design review rather than a crash in production: a
+*local* (ring) layer's ``truncate`` can only undo its most recent append in
+full, not partially -- verified directly (``LayerKVCache.truncate``'s own
+docstring and code, and a minimal repro before this module was trusted). Once
+a ring layer has ever wrapped past its ``local_window`` capacity, asking it to
+keep one of two newly-appended positions and discard the other raises
+``ValueError("cannot truncate committed history after ring-cache wrap")``
+rather than silently corrupting anything -- which is the right failure mode,
+but a genuine gap for a hybrid model's local layers on any generation longer
+than ``local_window`` tokens. `speculative_generate` below watches for this
+and permanently stops proposing new drafts once any local layer is within one
+step of that boundary, falling back to safe plain decoding for the remainder
+-- never a crash, just no further speedup past that point. Fixing this for
+real (teaching a ring layer to undo only the tail of its last append) is
+future work, not attempted here.
+
 For greedy decoding this is an *exact* acceleration, not an approximation: the
 verdict is always what the plain (non-speculative) model would have produced
 at that position, so the final sequence is identical either way -- only the
@@ -68,6 +84,13 @@ class SpeculativeStats:
         if self.proposed == 0:
             return 0.0
         return self.accepted / self.proposed
+
+
+def _speculative_append_is_safe(cache: KVCache) -> bool:
+    """False once a 2-token speculative append could need an unsupported partial
+    undo on any local (ring) layer -- see the module docstring's real-limit note."""
+
+    return not any(layer.ring and cache.length + 2 > layer.capacity for layer in cache.layers)
 
 
 def _greedy(logits: torch.Tensor) -> torch.Tensor:
@@ -154,6 +177,19 @@ def speculative_generate(
             return output[:, :output_length], SpeculativeStats(proposed, accepted)
 
         while output_length < output.shape[1]:
+            if not _speculative_append_is_safe(cache):
+                # Past the point where a local ring layer could safely undo a
+                # partial speculative append (see module docstring) -- fall back
+                # to one plain, un-drafted token rather than risk the
+                # unsupported-partial-truncate crash. Correctness-preserving,
+                # just no speedup for the remainder of this generation.
+                plain = model(real_token, cache=cache, logits_to_keep=1)
+                assert plain.logits is not None
+                real_token = _greedy(plain.logits[:, 0, :])
+                if emit(real_token):
+                    break
+                continue
+
             proposed += 1
             chunk = torch.cat([real_token, draft_token], dim=1)
             step = model(chunk, cache=cache, return_hidden_states=True)
