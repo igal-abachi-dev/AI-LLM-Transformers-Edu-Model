@@ -127,7 +127,9 @@ def test_mtp_heads_round_trip_through_checkpoint_save_and_load(tmp_path) -> None
     expected = {name: value.detach().clone() for name, value in mtp_heads.state_dict().items()}
     loaded_model = MiniFrontier(config)
     loaded_heads = MTPHeads(d_model=config.d_model, vocab_size=config.vocab_size, n_extra_heads=1)
-    load_training_checkpoint(checkpoint, loaded_model, mtp_heads=loaded_heads)
+    load_training_checkpoint(
+        checkpoint, loaded_model, mtp_heads=loaded_heads, trusted_local_state=True
+    )
     for name, value in loaded_heads.state_dict().items():
         assert torch.equal(value, expected[name])
 
