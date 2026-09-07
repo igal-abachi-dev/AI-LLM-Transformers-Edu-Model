@@ -106,7 +106,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--validation-interval-seconds",
+        type=float,
+        default=None,
+        help=(
+            "if set, run validation periodically during training (in addition to the "
+            "final one) and record a curve, not just an endpoint. The time each "
+            "periodic validation costs is excluded from the --seconds training budget "
+            "so it stays a fair matched-training-time comparison, not a matched-"
+            "wall-clock-including-validation one."
+        ),
+    )
     args = parser.parse_args()
+    if args.validation_interval_seconds is not None and args.validation_interval_seconds <= 0:
+        raise ValueError("--validation-interval-seconds must be positive when set")
     labels = [arm.label for arm in args.arms]
     if len(labels) != len(set(labels)):
         raise ValueError(f"--arm labels must be unique, got {labels}")
@@ -148,16 +162,64 @@ def _stack_validation_batch(
     return ValidationBatch(tokens=stacked, utf8_bytes=utf8_bytes)
 
 
+def _free_memory_before_validation(model: MiniFrontier, device: str) -> None:
+    """Gradients from the last completed update are still populated here --
+
+    they are only cleared at the *start* of the next update. Left alone, they
+    (plus AdamW's own FP32 moment buffers, never touched here) sit fully
+    resident right as validation tries to allocate its own tensors, including
+    a [batch, seq, vocab_size] logits tensor at FP32. At this project's larger
+    (32k) vocabulary that combination is enough to OOM an 8GB card on the very
+    next small allocation -- observed for real on this run. Freeing what
+    training no longer needs first is cheap and safe; it does not touch the
+    optimizer's own resumable state.
+    """
+
+    model.zero_grad(set_to_none=True)
+    if device == "cuda":
+        torch.cuda.empty_cache()
+
+
+def _run_validation(
+    model: MiniFrontier,
+    validation_dataset: PackedShardDataset,
+    tokenizer: MiniFrontierTokenizer,
+    torch_device: torch.device,
+) -> dict[str, float]:
+    metrics = evaluate_token_batches(
+        model,
+        _validation_batches(validation_dataset, tokenizer, torch_device),
+        pad_id=tokenizer.pad_id,
+    )
+    return {
+        "cross_entropy": metrics.cross_entropy,
+        "perplexity": metrics.perplexity,
+        "bits_per_byte": metrics.bits_per_byte,
+        "predicted_tokens": metrics.predicted_tokens,
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class ArmTrainingResult:
+    model: MiniFrontier
+    completed_updates: int
+    tokens: int
+    loss: float
+    training_seconds: float
+    validation_series: list[dict[str, object]]
+
+
 def _train_and_checkpoint_arm(
     *,
     label: str,
     config: ModelConfig,
     tokenizer: MiniFrontierTokenizer,
     train_shards: Path,
+    validation_shards: Path,
     checkpoint_dir: Path,
     args: argparse.Namespace,
-) -> tuple[MiniFrontier, int, int, float, float]:
-    """Real training path: returns (model, completed_updates, tokens, loss, wall_seconds)."""
+) -> ArmTrainingResult:
+    """Real training path, with an optional periodic validation curve."""
 
     seed_everything(args.seed, deterministic=args.device == "cpu")
     model = MiniFrontier(config)
@@ -172,10 +234,17 @@ def _train_and_checkpoint_arm(
     optimizer, names = build_adamw(model, training)
     dataset = PackedShardDataset(train_shards)
     provider = ShardBatchProvider(dataset, batch_size=args.batch_size, seed=args.seed)
+    torch_device = torch.device(args.device)
+    validation_dataset = (
+        PackedShardDataset(validation_shards) if args.validation_interval_seconds else None
+    )
 
     schedule = None
     state = None
     started = time.perf_counter()
+    validation_overhead = 0.0
+    last_periodic_validation_at = 0.0
+    validation_series: list[dict[str, object]] = []
     next_stop = UPDATES_PER_TICK
     while True:
         optimizer, schedule, state, _ = train_updates(
@@ -188,31 +257,47 @@ def _train_and_checkpoint_arm(
             state=state,
             stop_after_updates=next_stop,
         )
-        elapsed = time.perf_counter() - started
-        if elapsed >= args.seconds or state.completed_updates >= args.max_updates:
+        # Training-only elapsed time: validation overhead is subtracted out so
+        # --seconds always represents real training compute time, uncontaminated
+        # by however many periodic validation passes ran along the way -- the
+        # same "matched training time, not matched wall-clock-including-
+        # validation" contract the original single-endpoint design already had.
+        training_elapsed = time.perf_counter() - started - validation_overhead
+        if (
+            validation_dataset is not None
+            and training_elapsed - last_periodic_validation_at >= args.validation_interval_seconds
+        ):
+            validation_started = time.perf_counter()
+            _free_memory_before_validation(model, args.device)
+            metrics = _run_validation(model, validation_dataset, tokenizer, torch_device)
+            validation_overhead += time.perf_counter() - validation_started
+            last_periodic_validation_at = training_elapsed
+            validation_series.append(
+                {
+                    "training_elapsed_seconds": training_elapsed,
+                    "completed_updates": state.completed_updates,
+                    "tokens": state.consumed_target_tokens,
+                    **metrics,
+                }
+            )
+            print(
+                f"{label}: t={training_elapsed:.0f}s updates={state.completed_updates} "
+                f"bits_per_byte={metrics['bits_per_byte']:.4f}"
+            )
+        if training_elapsed >= args.seconds or state.completed_updates >= args.max_updates:
             break
         next_stop = min(state.completed_updates + UPDATES_PER_TICK, args.max_updates)
-    elapsed = time.perf_counter() - started
+    training_elapsed = time.perf_counter() - started - validation_overhead
 
-    # Gradients from the last completed update are still populated here --
-    # they are only cleared at the *start* of the next update, and there is no
-    # next one. Left alone, they (plus AdamW's own FP32 moment buffers, never
-    # touched here) sit fully resident right as validation tries to allocate
-    # its own tensors, including a [batch, seq, vocab_size] logits tensor at
-    # FP32. At this project's larger (32k) vocabulary that combination is
-    # enough to OOM an 8GB card on the very next small allocation -- observed
-    # for real on this run. Freeing what training no longer needs first is
-    # cheap and safe; it does not touch the optimizer's own resumable state.
-    model.zero_grad(set_to_none=True)
-    if args.device == "cuda":
-        torch.cuda.empty_cache()
+    _free_memory_before_validation(model, args.device)
 
-    # Saved BEFORE validation, not after: validation is a real, separate
-    # failure point (it OOM'd here once already), and there is no reason a
-    # crash there should also cost the actual trained weights -- the whole
-    # point of this comparison is the training result, not the validation
-    # call. Same atomic-write path as every other checkpoint in this project
-    # (see MF-079), so an interrupted save still can't corrupt this one.
+    # Saved BEFORE the final validation, not after: validation is a real,
+    # separate failure point (it OOM'd here once already), and there is no
+    # reason a crash there should also cost the actual trained weights -- the
+    # whole point of this comparison is the training result, not the
+    # validation call. Same atomic-write path as every other checkpoint in
+    # this project (see MF-079), so an interrupted save still can't corrupt
+    # this one.
     save_training_checkpoint(
         checkpoint_dir,
         model,
@@ -226,7 +311,14 @@ def _train_and_checkpoint_arm(
         },
         data_cursor=provider.state_dict(),
     )
-    return model, state.completed_updates, state.consumed_target_tokens, state.last_loss, elapsed
+    return ArmTrainingResult(
+        model=model,
+        completed_updates=state.completed_updates,
+        tokens=state.consumed_target_tokens,
+        loss=state.last_loss,
+        training_seconds=training_elapsed,
+        validation_series=validation_series,
+    )
 
 
 def _run_arm(
@@ -250,12 +342,15 @@ def _run_arm(
     checkpoint_dir = args.output / arm_name
     torch_device = torch.device(args.device)
     wall_seconds_is_exact = True
+    validation_series: list[dict[str, object]] = []
 
     if (checkpoint_dir / "config.json").exists():
         # Reuse an existing checkpoint from an earlier, partially-completed run
         # instead of retraining -- explicit user choice, since it means
         # wall_seconds below is inferred (the target --seconds budget this arm
         # was run with), not a value this invocation actually measured itself.
+        # There is no periodic validation history for a reused checkpoint --
+        # only its final state is known, so validation_series stays empty.
         print(f"{arm_name}: reusing existing checkpoint at {checkpoint_dir}, skipping training")
         model = MiniFrontier(config)
         saved, _ = load_training_checkpoint(checkpoint_dir, model, trusted_local_state=True)
@@ -267,21 +362,24 @@ def _run_arm(
         elapsed = args.seconds
         wall_seconds_is_exact = False
     else:
-        model, completed_updates, consumed_tokens, last_loss, elapsed = _train_and_checkpoint_arm(
+        result = _train_and_checkpoint_arm(
             label=label,
             config=config,
             tokenizer=tokenizer,
             train_shards=train_shards,
+            validation_shards=validation_shards,
             checkpoint_dir=checkpoint_dir,
             args=args,
         )
+        model = result.model
+        completed_updates = result.completed_updates
+        consumed_tokens = result.tokens
+        last_loss = result.loss
+        elapsed = result.training_seconds
+        validation_series = result.validation_series
 
     validation_dataset = PackedShardDataset(validation_shards)
-    metrics = evaluate_token_batches(
-        model,
-        _validation_batches(validation_dataset, tokenizer, torch_device),
-        pad_id=tokenizer.pad_id,
-    )
+    metrics = _run_validation(model, validation_dataset, tokenizer, torch_device)
 
     return {
         "arm": arm_name,
@@ -295,12 +393,8 @@ def _run_arm(
         "wall_seconds": elapsed,
         "wall_seconds_is_exact": wall_seconds_is_exact,
         "checkpoint": str(checkpoint_dir),
-        "validation": {
-            "cross_entropy": metrics.cross_entropy,
-            "perplexity": metrics.perplexity,
-            "bits_per_byte": metrics.bits_per_byte,
-            "predicted_tokens": metrics.predicted_tokens,
-        },
+        "validation": metrics,
+        "validation_series": validation_series,
     }
 
 
