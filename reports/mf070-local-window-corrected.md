@@ -66,3 +66,17 @@ window restriction — scored validation CE 5.147 / PPL 171.9.
 **Conclusion: `local_window=512` (the frozen default) is not starving quality relative to
 narrower windows, and there is no evidence from this pass to justify changing it before
 MF-070's 350M run.**
+
+## MF-088 confidence caveat (added 2026-09-07)
+
+This report's "well within single-seed noise" claim (line above) was written before this
+project had ever actually measured single-seed noise — it was an assumption, not evidence.
+`reports/mf088-seed-variance.md` now provides a real measurement (same-config, same-budget,
+different-seed): **+0.046% relative CE/BPB**. In those terms, this report's own window-size
+spread is **0.035% (256 vs 128) to 0.126% (512 vs 128) relative CE** — 0.8x to 2.7x the
+measured noise floor. That is genuinely ambiguous territory: not clearly larger than noise
+(as originally claimed), but not clearly explained by noise alone either, given only one
+noise-floor measurement exists (a single seed pair, not a distribution). The qualitative
+conclusion above is unchanged — nothing here argues for moving off `local_window=512` — but
+the confidence behind "no measurable difference" should be read as weaker than the original
+wording implied.

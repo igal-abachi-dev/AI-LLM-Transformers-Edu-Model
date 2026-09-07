@@ -67,3 +67,13 @@ single-seed, 2x-range, 150M-parameter test found no advantage."
 
 **Conclusion: no evidence from this pass supports switching to NoPE for extrapolation
 benefits. RoPE remains the correct, evidence-backed choice for MF-070's 350M run.**
+
+## MF-088 confidence caveat (added 2026-09-07)
+
+`reports/mf088-seed-variance.md` measured a real same-config, different-seed noise floor of
+**+0.046% relative CE**, i.e. an absolute ~0.0025 nats at this project's typical CE scale (~5.4
+nats). This report's own "well within single-seed noise" claim about the ~0.007-nat
+early→late delta difference is in the same ballpark — about 2.8x the measured absolute noise,
+neither clearly above nor safely within it given only one noise-floor measurement exists. The
+qualitative conclusion (no NoPE extrapolation advantage found) is unaffected; the specific
+"well within noise" phrasing should be read as plausible rather than confirmed.

@@ -50,3 +50,12 @@ follow-up, run against these same two checkpoints.
 
 **Conclusion: no evidence from this pass supports enabling NoPE by default. RoPE remains
 the correct choice for MF-070's 350M run.**
+
+## MF-088 confidence caveat (added 2026-09-07)
+
+`reports/mf088-seed-variance.md` measured this project's real same-config, different-seed
+noise floor for the first time: **+0.046% relative CE/BPB**. This report's RoPE-vs-NoPE gap
+(CE 5.145 vs 5.158) is **0.253% relative CE — about 5.5x that noise floor.** This is the one
+report in this annotation pass whose original "small but consistent... real" framing holds up
+best against an actual noise measurement: the effect is real, not an artifact of
+run-to-run seed variance, even though it remains a single-seed, ~10.23M-token result overall.

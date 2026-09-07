@@ -75,3 +75,10 @@ is normalized, so its natural LR scale is unrelated to AdamW's).
 No optimizer-switch decision is made in this report. It supplies the real evidence MF-057
 was always missing; the actual choice for MF-070's 350M run (and beyond) is deferred to a
 follow-up pass that also probes Muon's LR ceiling and speed-optimization options.
+
+## MF-088 confidence caveat (added 2026-09-07)
+
+`reports/mf088-seed-variance.md` measured a real same-config, different-seed noise floor of
++0.046% relative CE/BPB. Every effect size in this report (e.g. PPL 121.9 vs 169.0, a ~28%
+relative difference) is two to three orders of magnitude larger than that noise floor — no
+part of this report's conclusion is at risk of being a noise artifact.

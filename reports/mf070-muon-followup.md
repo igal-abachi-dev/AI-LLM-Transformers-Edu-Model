@@ -159,3 +159,14 @@ AdamW's 5.63 GB) — worth revisiting only if MF-070's actual 350M profiling run
 VRAM-bound rather than time-bound. If Muon is used regardless, `fp32-ns-3e-3`'s configuration
 (FP32 Newton-Schulz, no compile) is the correct base — never `--compile-optimizer-step`, and
 expect `ns_steps=3` to trade real quality for real speed rather than being free.
+
+## MF-088 confidence caveat (added 2026-09-07)
+
+`reports/mf088-seed-variance.md` measured a real same-config, different-seed noise floor of
++0.046% relative CE/BPB. Every headline effect size in this report (LR-ceiling improvements,
+`ns_steps=3`'s ~4% quality cost, FP32-Newton-Schulz's throughput gain, and the decisive
+AdamW-vs-Muon wall-clock-matched result, PPL 90.38 vs 95.86-121.9) is at least one to two
+orders of magnitude larger than that noise floor. The one place in this report that already
+used the phrase "within noise" (the FP32-Newton-Schulz quality-parity check, CE 4.800 vs
+4.803) checks out precisely: that 0.0625% relative difference is only ~1.4x the measured
+noise floor, genuinely indistinguishable from it — the report's own framing there was right.

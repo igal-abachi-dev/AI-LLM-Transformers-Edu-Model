@@ -139,3 +139,17 @@ thin to justify carrying a training-time complexity/cost addition into a real mu
 `scripts/compare_mtp.py`) that can be revisited with a second seed or at larger scale
 (where Gloeckle et al.'s own finding predicts the effect should grow) as independent
 follow-up work — it is not a blocker for MF-070 either way.
+
+### MF-088 confidence caveat (added 2026-09-07)
+
+The "~0.04% relative CE" noise reference cited above was never an actual seed-variance
+measurement — it was the delta between two *different local_window configs* at one seed each
+(see `reports/mf070-local-window-corrected.md`'s own MF-088 caveat), reused informally as a
+proxy. `reports/mf088-seed-variance.md` now provides a real same-config, different-seed
+measurement: **+0.046% relative CE/BPB** — coincidentally almost identical in magnitude to the
+informal number, which is a coincidence, not something that should have been trusted at the
+time. Against this real noise floor, MTP's own effect (CE 5.137 → 5.130, **0.136% relative,
+≈3.0x the measured noise**) holds up as more likely a real small effect than pure noise, same
+conclusion as before, now on firmer footing. The recommendation (MTP stays off for MF-070) is
+unchanged either way, since it was already driven primarily by wall-clock cost, not by doubt
+about whether the quality effect was real.

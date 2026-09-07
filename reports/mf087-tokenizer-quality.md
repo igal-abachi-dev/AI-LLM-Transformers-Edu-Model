@@ -63,3 +63,20 @@ final tokenizer decision is made.
   this bounded scale is not guaranteed to hold (or to have the same sign) at 3B tokens.
 - The 16k arm's `wall_seconds` (1800.0) is the target budget, not an independently re-measured
   value, since that checkpoint was reused rather than retrained (see Command section above).
+
+## MF-088 update (added 2026-09-07): the "single-seed noise" hypothesis is resolved — ruled out
+
+`reports/mf088-seed-variance.md` ran this exact 16k arm a second time (seed 43, otherwise
+identical) and measured a real same-config noise floor of **+0.046% relative CE/BPB**. This
+report's 32k-vs-16k BPB delta (+0.956%) is roughly **20x that noise floor** — a real,
+measurement-distinguishable effect, not run-to-run seed variance. That narrows the "cannot
+distinguish" list above from four candidates to three: vocab-size compute cost, digit-split
+fertility cost, or a short-token-budget Zipf artifact (the larger tied-embedding table's rows
+average far fewer occurrences at this ~7M-token budget than at the 3B-token target — raised
+independently by a third code-review round, not yet directly tested). [[MF-090]]'s fertility
+triage (`artifacts/mf090-tokenizer-fertility/fertility.json`) already argues against the
+digit-split-fertility-cost explanation on its own: the shipped 32k tokenizer is actually
+*more* fertility-efficient than 16k (+5.4%), yet still scored worse trained BPB — so whatever
+is driving this delta is not simply "digit-splitting made the tokenizer worse." Distinguishing
+the remaining candidates is what `compare_tokenizers.py --validation-interval-seconds`'s
+periodic-validation rerun (proposed, not yet run as of this update) is for.
