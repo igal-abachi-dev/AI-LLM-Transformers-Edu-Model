@@ -187,6 +187,7 @@ def main() -> None:
                 "adamw_param_group_names": names,
             },
             data_cursor=provider.state_dict(),
+            mtp_heads=mtp_heads,
         )
         results.append(
             {
