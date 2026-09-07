@@ -115,6 +115,35 @@ def test_interrupted_checkpoint_save_never_corrupts_target(tmp_path, monkeypatch
     assert not any(path.name.startswith(".checkpoint") for path in tmp_path.iterdir())
 
 
+def test_mtp_heads_round_trip_through_checkpoint_save_and_load(tmp_path) -> None:
+    torch.manual_seed(21)
+    config = ModelConfig.tiny_edu()
+    model = MiniFrontier(config)
+    mtp_heads = MTPHeads(d_model=config.d_model, vocab_size=config.vocab_size, n_extra_heads=1)
+    checkpoint = tmp_path / "checkpoint"
+    save_training_checkpoint(checkpoint, model, mtp_heads=mtp_heads)
+    assert (checkpoint / "mtp_heads.safetensors").exists()
+
+    expected = {name: value.detach().clone() for name, value in mtp_heads.state_dict().items()}
+    loaded_model = MiniFrontier(config)
+    loaded_heads = MTPHeads(d_model=config.d_model, vocab_size=config.vocab_size, n_extra_heads=1)
+    load_training_checkpoint(checkpoint, loaded_model, mtp_heads=loaded_heads)
+    for name, value in loaded_heads.state_dict().items():
+        assert torch.equal(value, expected[name])
+
+
+def test_load_training_checkpoint_rejects_missing_mtp_heads_instead_of_silent_reinit(
+    tmp_path,
+) -> None:
+    config = ModelConfig.tiny_edu()
+    model = MiniFrontier(config)
+    checkpoint = tmp_path / "checkpoint"
+    save_training_checkpoint(checkpoint, model)  # no mtp_heads=... passed
+    requesting_heads = MTPHeads(d_model=config.d_model, vocab_size=config.vocab_size, n_extra_heads=1)
+    with pytest.raises(ValueError, match="mtp_heads.safetensors"):
+        load_training_checkpoint(checkpoint, MiniFrontier(config), mtp_heads=requesting_heads)
+
+
 def test_prune_old_checkpoints_keeps_only_most_recent_and_never_touches_final(tmp_path) -> None:
     config = ModelConfig.tiny_edu()
     model = MiniFrontier(config)
