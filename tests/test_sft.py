@@ -7,6 +7,7 @@ from minifrontier.chat import (
     fit_messages_to_context,
     generate_assistant,
     load_system_prompt,
+    non_assistant_special_token_ids,
     render_chat,
     validate_messages,
 )
@@ -171,6 +172,57 @@ def test_template_aware_chat_generation_cpu_smoke(mini_tokenizer) -> None:
         seed=7,
     )
     assert isinstance(result, str)
+
+
+def test_non_assistant_special_token_ids_excludes_only_eos() -> None:
+    ids = non_assistant_special_token_ids()
+    assert SPECIAL_TOKEN_IDS["<|eos|>"] not in ids
+    assert SPECIAL_TOKEN_IDS["<|bos|>"] in ids
+    assert SPECIAL_TOKEN_IDS["<|user|>"] in ids
+    assert len(ids) == len(SPECIAL_TOKEN_IDS) - 1
+
+
+def test_generate_assistant_forwards_sampling_controls_to_model_generate(
+    mini_tokenizer, monkeypatch
+) -> None:
+    """Wiring test: generate_assistant must pass every new sampling knob through
+    to model.generate unchanged. Token-level suppression/min-p/repetition-penalty
+    correctness is already proven against sample_next_token in test_generation.py;
+    this only guards against the parameter silently failing to reach the call."""
+
+    config = ModelConfig.tiny_edu(
+        vocab_size=max(512, mini_tokenizer.vocab_size),
+        max_seq_len=64,
+        n_layers=1,
+        d_model=16,
+        n_heads=2,
+        d_ff=32,
+    )
+    model = MiniFrontier(config).eval()
+    original_generate = model.generate
+    captured: dict[str, object] = {}
+
+    def recording_generate(*args, **kwargs):
+        captured.update(kwargs)
+        return original_generate(*args, **kwargs)
+
+    monkeypatch.setattr(model, "generate", recording_generate)
+    suppress_ids = non_assistant_special_token_ids()
+    generate_assistant(
+        model,
+        mini_tokenizer,
+        [ChatMessage("user", "Hi")],
+        max_new_tokens=2,
+        seed=7,
+        min_p=0.05,
+        repetition_penalty=1.1,
+        no_repeat_ngram_size=3,
+        suppress_token_ids=suppress_ids,
+    )
+    assert captured["min_p"] == 0.05
+    assert captured["repetition_penalty"] == 1.1
+    assert captured["no_repeat_ngram_size"] == 3
+    assert captured["suppress_token_ids"] == suppress_ids
 
 
 @pytest.mark.slow
