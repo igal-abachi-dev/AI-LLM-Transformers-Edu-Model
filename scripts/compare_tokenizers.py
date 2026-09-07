@@ -1,22 +1,27 @@
-"""Wall-clock-matched comparison: the old 16k tokenizer versus the new 32k one."""
+"""Wall-clock-matched comparison across an arbitrary number of tokenizer arms."""
 
-# MF-087's real acceptance test. A larger vocabulary is not automatically a net
-# win just because fertility (bytes/token) improves -- the lm_head projection
-# itself gets more expensive too (verified: ~277 -> ~302 MFLOP/token for this
-# project's 150m-modern config, roughly +9% forward compute, so roughly -8%
-# tokens/second at fixed wall-clock). The only fair comparison is real held-out
-# bits-per-byte (tokenizer-independent by construction) at *matched wall-clock
-# time*, not matched tokens -- the same standard that correctly settled the
-# Muon-vs-AdamW question (reports/mf070-muon-followup.md), for the same reason:
-# whichever tokenizer produces more real learning per second of GPU time wins,
-# regardless of how many tokens that took.
+# MF-087's real acceptance test, generalized for MF-090. A larger vocabulary is
+# not automatically a net win just because fertility (bytes/token) improves --
+# the lm_head projection itself gets more expensive too (verified: ~277 ->
+# ~302 MFLOP/token for this project's 150m-modern config, roughly +9% forward
+# compute, so roughly -8% tokens/second at fixed wall-clock). The only fair
+# comparison is real held-out bits-per-byte (tokenizer-independent by
+# construction) at *matched wall-clock time*, not matched tokens -- the same
+# standard that correctly settled the Muon-vs-AdamW question
+# (reports/mf070-muon-followup.md), for the same reason: whichever tokenizer
+# produces more real learning per second of GPU time wins, regardless of how
+# many tokens that took.
 #
-# Two arms, each with its own tokenizer, packed shards, and ModelConfig (vocab
-# size differs, so the model itself differs -- this is not a matched-parameter
-# comparison, it is a matched-wall-clock-time one, same as the optimizer/Muon
-# precedent). Both run from a fresh model (no shared initial state_dict is
-# possible here, unlike compare_mtp.py/compare_optimizers.py, since the two
-# models have different embedding table shapes).
+# N arms, each with its own tokenizer, packed shards, and ModelConfig (vocab
+# size can differ across arms, so the model itself differs -- this is not a
+# matched-parameter comparison, it is a matched-wall-clock-time one, same as
+# the optimizer/Muon precedent). Every arm runs from a fresh model (no shared
+# initial state_dict is possible here, unlike compare_mtp.py/
+# compare_optimizers.py, since different-vocab arms have different embedding
+# table shapes) unless its checkpoint directory already exists, in which case
+# it is reused rather than retrained (see `_run_arm`'s reuse path) -- MF-090
+# deliberately reuses the two checkpoints MF-087 already trained (16k, 32k
+# no-leading-space) rather than re-running them for a third time.
 
 from __future__ import annotations
 
@@ -24,7 +29,7 @@ import argparse
 import json
 import time
 from collections.abc import Iterator
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import torch
@@ -49,16 +54,51 @@ VALIDATION_BATCH_SIZE = 2
 UPDATES_PER_TICK = 25
 
 
+@dataclass(frozen=True, slots=True)
+class ArmSpec:
+    label: str
+    config_path: Path
+    tokenizer_path: Path
+    train_shards: Path
+    validation_shards: Path
+
+
+def _parse_arm_spec(spec: str) -> ArmSpec:
+    """Parse ``label;config;tokenizer;train_shards;validation_shards``.
+
+    Semicolon-delimited rather than the more common ``=``/``:`` so a Windows
+    drive-letter path (``C:\\...``) in any field can never be misparsed.
+    """
+
+    fields = spec.split(";")
+    if len(fields) != 5:
+        raise ValueError(
+            "--arm must be 'label;config;tokenizer;train_shards;validation_shards', "
+            f"got {len(fields)} field(s): {spec!r}"
+        )
+    label, config_path, tokenizer_path, train_shards, validation_shards = fields
+    if not label:
+        raise ValueError(f"--arm label must be non-empty: {spec!r}")
+    return ArmSpec(
+        label=label,
+        config_path=Path(config_path),
+        tokenizer_path=Path(tokenizer_path),
+        train_shards=Path(train_shards),
+        validation_shards=Path(validation_shards),
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--old-config", type=Path, required=True)
-    parser.add_argument("--old-tokenizer", type=Path, required=True)
-    parser.add_argument("--old-train-shards", type=Path, required=True)
-    parser.add_argument("--old-validation-shards", type=Path, required=True)
-    parser.add_argument("--new-config", type=Path, required=True)
-    parser.add_argument("--new-tokenizer", type=Path, required=True)
-    parser.add_argument("--new-train-shards", type=Path, required=True)
-    parser.add_argument("--new-validation-shards", type=Path, required=True)
+    parser.add_argument(
+        "--arm",
+        action="append",
+        required=True,
+        dest="arms",
+        type=_parse_arm_spec,
+        metavar="LABEL;CONFIG;TOKENIZER;TRAIN_SHARDS;VALIDATION_SHARDS",
+        help="repeatable; one per tokenizer/config/data combination to compare",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seconds", type=float, required=True, help="wall-clock budget per arm")
     parser.add_argument("--max-updates", type=int, default=50_000)
@@ -66,7 +106,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--device", default="cpu")
-    return parser.parse_args()
+    args = parser.parse_args()
+    labels = [arm.label for arm in args.arms]
+    if len(labels) != len(set(labels)):
+        raise ValueError(f"--arm labels must be unique, got {labels}")
+    return args
 
 
 def _validation_batches(
@@ -266,27 +310,20 @@ def main() -> None:
         raise ValueError("seconds, batch-size, and max-updates must be positive")
     args.output.mkdir(parents=True, exist_ok=True)
 
-    old_result = _run_arm(
-        label="16k",
-        config_path=args.old_config,
-        tokenizer_path=args.old_tokenizer,
-        train_shards=args.old_train_shards,
-        validation_shards=args.old_validation_shards,
-        args=args,
-    )
-    new_result = _run_arm(
-        label="32k",
-        config_path=args.new_config,
-        tokenizer_path=args.new_tokenizer,
-        train_shards=args.new_train_shards,
-        validation_shards=args.new_validation_shards,
-        args=args,
-    )
-
-    results = [old_result, new_result]
+    results = [
+        _run_arm(
+            label=arm.label,
+            config_path=arm.config_path,
+            tokenizer_path=arm.tokenizer_path,
+            train_shards=arm.train_shards,
+            validation_shards=arm.validation_shards,
+            args=args,
+        )
+        for arm in args.arms
+    ]
     limitations = [
         "Single seed, single wall-clock budget -- not a sweep.",
-        "The two arms train different-vocabulary-size models, not matched-parameter.",
+        "Arms with different vocab sizes train different models, not matched-parameter.",
         "Bounded token budget, far short of the frozen 3B-token release target.",
     ]
     reused_arms = [result["arm"] for result in results if not result["wall_seconds_is_exact"]]
