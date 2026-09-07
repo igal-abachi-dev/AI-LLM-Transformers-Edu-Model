@@ -38,6 +38,7 @@ from safetensors.torch import load_model, save_model
 
 from minifrontier.config import ModelConfig
 from minifrontier.model import MiniFrontier
+from minifrontier.mtp import MTPHeads
 from minifrontier.reproducibility import capture_rng_state, restore_rng_state
 from minifrontier.tokenizer import MiniFrontierTokenizer
 
@@ -105,6 +106,7 @@ def save_training_checkpoint(
     scheduler: Any | None = None,
     trainer_state: Mapping[str, Any] | None = None,
     data_cursor: Mapping[str, Any] | None = None,
+    mtp_heads: MTPHeads | None = None,
 ) -> None:
     """Write every checkpoint file, then publish them all in one atomic rename.
 
@@ -132,6 +134,13 @@ def save_training_checkpoint(
         json.dumps(model.config.to_dict(), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    if mtp_heads is not None:
+        # Safetensors, matching the model's own weights -- MTP heads are real
+        # trained parameters (linear projection matrices), not local run state
+        # like the optimizer/RNG below. Never part of ModelConfig/model.safetensors
+        # (see mtp.py's own docstring on why), so they need their own file, only
+        # written when a caller actually passes them.
+        save_model(mtp_heads, str(staging / "mtp_heads.safetensors"))
     (staging / "trainer_state.json").write_text(
         json.dumps(dict(trainer_state or {}), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -186,12 +195,24 @@ def load_training_checkpoint(
     scheduler: Any | None = None,
     restore_rng: bool = True,
     trusted_local_state: bool = False,
+    mtp_heads: MTPHeads | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     root = Path(directory)
     saved_config = json.loads((root / "config.json").read_text(encoding="utf-8"))
     if saved_config != model.config.to_dict():
         raise ValueError("checkpoint model configuration does not match the target model")
     load_model(model, str(root / "model.safetensors"), strict=True)
+    if mtp_heads is not None:
+        mtp_heads_path = root / "mtp_heads.safetensors"
+        if not mtp_heads_path.exists():
+            # Loud failure, not a silent reinitialization: a caller that asked
+            # for trained MTP heads and got untrained ones back would produce a
+            # confusing, wrong result with no error to explain it.
+            raise ValueError(
+                f"{root} has no mtp_heads.safetensors -- this checkpoint was not "
+                "saved with MTP heads, so they cannot be loaded"
+            )
+        load_model(mtp_heads, str(mtp_heads_path), strict=True)
     state_path = root / "training_state.pt"
     local_state: dict[str, Any] = {}
     if state_path.exists():

@@ -12,6 +12,7 @@ from minifrontier.checkpoint import (
 )
 from minifrontier.config import ModelConfig
 from minifrontier.model import MiniFrontier
+from minifrontier.mtp import MTPHeads
 
 
 def train_step(model, optimizer, scheduler, tokens) -> float:
