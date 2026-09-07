@@ -27,6 +27,7 @@ class MiniFrontierConfig(PretrainedConfig):
         tie_embeddings: bool = True,
         init_std: float | None = None,
         preset: str = "edu",
+        head_dim_override: int | None = None,
         bos_token_id: int = 1,
         eos_token_id: int = 2,
         pad_token_id: int = 0,
@@ -72,7 +73,8 @@ class MiniFrontierConfig(PretrainedConfig):
         self.tie_embeddings = tie_embeddings
         self.init_std = init_std
         self.preset = preset
-        self.head_dim = d_model // n_heads
+        self.head_dim_override = head_dim_override
+        self.head_dim = head_dim_override if head_dim_override is not None else d_model // n_heads
         self.use_cache = use_cache
         self.sliding_window = local_window
         self.layer_types = [
@@ -94,7 +96,14 @@ class MiniFrontierConfig(PretrainedConfig):
         )
         if min(positive) <= 0:
             raise ValueError("MiniFrontier dimensions must be positive")
-        if self.d_model % self.n_heads or self.n_heads % self.n_kv_heads:
+        if self.head_dim_override is not None and self.head_dim_override <= 0:
+            raise ValueError("head_dim_override must be positive when provided")
+        # Divisibility is only required when head_dim is derived from d_model;
+        # an explicit head_dim_override exists precisely to decouple the two
+        # (see ModelConfig.head_dim_override, which this mirrors exactly).
+        if self.head_dim_override is None and self.d_model % self.n_heads:
+            raise ValueError("invalid MiniFrontier query/KV head divisibility")
+        if self.n_heads % self.n_kv_heads:
             raise ValueError("invalid MiniFrontier query/KV head divisibility")
         if self.head_dim % 2:
             raise ValueError("MiniFrontier RoPE head_dim must be even")

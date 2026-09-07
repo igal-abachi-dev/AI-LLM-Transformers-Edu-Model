@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 
 import pytest
@@ -34,6 +34,13 @@ from minifrontier.model import MiniFrontier
             ModelConfig.tiny_modern(attention_impl="manual"),
             global_position_encoding="none",
         ),
+        # d_model=48 is not divisible by n_heads=5 -- only valid because of
+        # head_dim_override (MF-092). This is the regression case for the real
+        # gap found by a third code-review round: the HF adapter used to
+        # hardcode head_dim = d_model // n_heads and discard the override
+        # entirely, either raising on this exact divisibility or silently
+        # producing wrong-shaped projections.
+        ModelConfig.tiny_edu(d_model=48, n_heads=5, head_dim_override=16, attention_impl="manual"),
     ],
 )
 def test_native_transformers_logits_and_greedy_tokens_match(config, mini_tokenizer) -> None:
@@ -47,6 +54,36 @@ def test_native_transformers_logits_and_greedy_tokens_match(config, mini_tokeniz
     parity = compare_native_transformers(native, hf_model, tokens)
     assert parity["allclose"], parity
     assert parity["argmax_equal"], parity
+
+
+# attention_impl is deliberately dropped by transformers_config (it is a
+# native-only runtime-kernel choice, not an architecture field -- the HF
+# config always sets its own _attn_implementation="eager" separately). Every
+# other ModelConfig field must survive onto MiniFrontierConfig under the same
+# attribute name, or a future field addition silently fails to reach the HF
+# export path the way head_dim_override did (found by a third code-review
+# round: MiniFrontierConfig hardcoded head_dim = d_model // n_heads and
+# discarded the override entirely).
+_FIELDS_NOT_MIRRORED_ONTO_HF_CONFIG = frozenset({"attention_impl"})
+
+
+def test_transformers_config_mirrors_every_modelconfig_field(mini_tokenizer) -> None:
+    config = ModelConfig.tiny_edu(
+        vocab_size=max(512, mini_tokenizer.vocab_size),
+        d_model=48,
+        n_heads=5,
+        head_dim_override=16,
+        attention_impl="manual",
+    )
+    native = MiniFrontier(config)
+    hf_config = transformers_config(native, mini_tokenizer)
+    for field in fields(ModelConfig):
+        if field.name in _FIELDS_NOT_MIRRORED_ONTO_HF_CONFIG:
+            continue
+        assert hasattr(hf_config, field.name), f"{field.name} missing from MiniFrontierConfig"
+        expected = getattr(config, field.name)
+        actual = getattr(hf_config, field.name)
+        assert actual == expected, f"{field.name}: ModelConfig={expected!r}, HF config={actual!r}"
 
 
 def test_transformers_cached_generation_matches_full_forward(mini_tokenizer) -> None:
