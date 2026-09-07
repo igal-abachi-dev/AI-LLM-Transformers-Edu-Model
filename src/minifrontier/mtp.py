@@ -99,6 +99,21 @@ class MTPHeads(nn.Module):
         for head in self.heads:
             nn.init.normal_(head.weight, mean=0.0, std=resolved_std)
 
+    def predict(self, hidden_state: torch.Tensor, *, head_index: int = 0) -> torch.Tensor:
+        """Draft logits from head ``head_index`` for inference-time use (MF-093).
+
+        Given the hidden state at position ``p``, returns logits for position
+        ``p + 2 + head_index`` -- the same offset convention as
+        ``loss_sum_and_count``, just without the training-time loss machinery.
+        This is the only inference entry point MTP heads need: a real training
+        run never calls this, and a real self-speculative-decoding caller never
+        needs the loss.
+        """
+
+        if not 0 <= head_index < self.n_extra_heads:
+            raise ValueError(f"head_index must be in [0, {self.n_extra_heads}), got {head_index}")
+        return self.heads[head_index](hidden_state)
+
     def loss_sum_and_count(
         self,
         hidden_states: torch.Tensor,
