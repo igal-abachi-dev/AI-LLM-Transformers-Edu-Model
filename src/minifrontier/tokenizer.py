@@ -55,8 +55,14 @@ VOCAB_SIZE: Final = 32_768
 # "123456" pre-tokenizes as "123" + "456" rather than merging into one token
 # the way GPT-2's regex would. `Sequence` runs this first; ByteLevel then
 # further splits whatever's left exactly as before, so this changes nothing
-# about non-digit text.
-_DIGIT_SPLIT_PATTERN: Final = Regex(r"\d{1,3}")
+# about non-digit text. Frozen default is "no_leading_space" -- provisional
+# pending MF-090's real comparison against "leading_space" and "none", which
+# is why `train_byte_bpe` accepts `digit_split` rather than hardcoding this.
+_DIGIT_SPLIT_PATTERNS: Final[dict[str, Regex]] = {
+    "no_leading_space": Regex(r"\d{1,3}"),
+    "leading_space": Regex(r" ?\d{1,3}"),
+}
+DIGIT_SPLIT_MODE: Final = "no_leading_space"
 TOKENIZER_VERSION: Final = 1
 SPECIAL_TOKENS: Final[tuple[str, ...]] = (
     "<|pad|>",
@@ -197,6 +203,7 @@ def train_byte_bpe(
     *,
     vocab_size: int = VOCAB_SIZE,
     min_frequency: int = 2,
+    digit_split: str = DIGIT_SPLIT_MODE,
 ) -> MiniFrontierTokenizer:
     """Train deterministic byte-BPE from an already deterministic text stream.
 
@@ -207,6 +214,14 @@ def train_byte_bpe(
     The order of ``texts`` affects the merge counts, so the caller is responsible
     for handing over a stream that is already deterministic; otherwise two "same"
     tokenizers would disagree about token IDs.
+
+    ``digit_split`` selects the pre-tokenizer's digit-isolation rule: the frozen
+    default ``"no_leading_space"``, the ``"leading_space"`` variant (``" ?\\d{1,3}"``,
+    which avoids wasting a lone-space token before a number), or ``"none"`` (no
+    digit isolation at all, GPT-2-style long digit runs merge freely). Only the
+    default is used by any real training run; the other two exist for MF-090's
+    real tokenizer comparison and must never silently become the default without
+    a recorded decision.
     """
 
     # Every one of the 256 byte values needs a slot, plus the 11 markers, or some
@@ -216,15 +231,19 @@ def train_byte_bpe(
         raise ValueError(f"vocab_size must be at least {minimum_vocab} for byte coverage")
     if min_frequency <= 0:
         raise ValueError("min_frequency must be positive")
+    if digit_split != "none" and digit_split not in _DIGIT_SPLIT_PATTERNS:
+        allowed = sorted(_DIGIT_SPLIT_PATTERNS)
+        raise ValueError(f"digit_split must be 'none' or one of {allowed}, got {digit_split!r}")
     # unk_token=None: with full byte coverage there is no such thing as an unknown
     # character, so an "unknown" token would only ever hide a bug.
     backend = Tokenizer(BPE(unk_token=None))
-    backend.pre_tokenizer = Sequence(
-        [
-            Split(_DIGIT_SPLIT_PATTERN, behavior="isolated"),
-            ByteLevel(add_prefix_space=False, use_regex=True),
-        ]
-    )
+    byte_level = ByteLevel(add_prefix_space=False, use_regex=True)
+    if digit_split == "none":
+        backend.pre_tokenizer = byte_level
+    else:
+        backend.pre_tokenizer = Sequence(
+            [Split(_DIGIT_SPLIT_PATTERNS[digit_split], behavior="isolated"), byte_level]
+        )
     backend.decoder = ByteLevelDecoder()
     trainer = BpeTrainer(
         vocab_size=vocab_size,

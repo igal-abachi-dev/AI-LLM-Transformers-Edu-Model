@@ -21,7 +21,7 @@ import json
 from collections.abc import Iterator
 from pathlib import Path
 
-from minifrontier.tokenizer import VOCAB_SIZE, train_byte_bpe
+from minifrontier.tokenizer import DIGIT_SPLIT_MODE, VOCAB_SIZE, train_byte_bpe
 
 
 def iter_input_text(paths: list[Path], *, jsonl_field: str) -> Iterator[str]:
@@ -47,6 +47,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vocab-size", type=int, default=VOCAB_SIZE)
     parser.add_argument("--min-frequency", type=int, default=2)
     parser.add_argument("--jsonl-field", default="text")
+    parser.add_argument(
+        "--digit-split",
+        choices=("none", "no_leading_space", "leading_space"),
+        default=DIGIT_SPLIT_MODE,
+        help="digit pre-tokenization rule; the default is the only one used by real training",
+    )
     return parser.parse_args()
 
 
@@ -56,6 +62,7 @@ def main() -> None:
         iter_input_text(args.inputs, jsonl_field=args.jsonl_field),
         vocab_size=args.vocab_size,
         min_frequency=args.min_frequency,
+        digit_split=args.digit_split,
     )
     tokenizer.save(args.output)
     print(f"saved tokenizer with {tokenizer.vocab_size:,} entries to {args.output}")

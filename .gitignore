@@ -233,3 +233,6 @@ data/*
 !data/.gitignore
 tmp/
 ai-LLM*.zip
+
+# Downloaded eval datasets (e.g. lm-eval GPQA cache) -- never commit corpora, per AGENTS.md.
+/gpqa-diamond/

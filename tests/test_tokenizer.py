@@ -72,3 +72,33 @@ def test_loader_rejects_changed_tokenizer_hash(tokenizer_dir) -> None:
 def test_contract_contains_all_expected_reserved_tokens() -> None:
     assert len(SPECIAL_TOKENS) == 11
     assert SPECIAL_TOKENS[0:3] == ("<|pad|>", "<|bos|>", "<|eos|>")
+
+
+def _pretokenize(tokenizer: MiniFrontierTokenizer, text: str) -> list[str]:
+    return [piece for piece, _ in tokenizer.backend.pre_tokenizer.pre_tokenize_str(text)]
+
+
+def test_digit_split_none_never_isolates_digit_runs() -> None:
+    corpus = ["the year 2026 was great " * 5, "digits 123456789 and more " * 5]
+    tokenizer = train_byte_bpe(corpus, vocab_size=300, min_frequency=1, digit_split="none")
+    assert _pretokenize(tokenizer, " 2026") == ["Ġ2026"]
+
+
+def test_digit_split_default_matches_no_leading_space_and_wastes_a_lone_space_token() -> None:
+    corpus = ["the year 2026 was great " * 5, "digits 123456789 and more " * 5]
+    tokenizer = train_byte_bpe(corpus, vocab_size=300, min_frequency=1)
+    # Frozen default: digits split into groups of <=3, but the leading space is
+    # its own separate piece -- the exact fertility cost MF-090 exists to weigh
+    # against the leading_space variant below.
+    assert _pretokenize(tokenizer, " 2026") == ["Ġ", "202", "6"]
+
+
+def test_digit_split_leading_space_keeps_the_space_attached_to_the_digit_group() -> None:
+    corpus = ["the year 2026 was great " * 5, "digits 123456789 and more " * 5]
+    tokenizer = train_byte_bpe(corpus, vocab_size=300, min_frequency=1, digit_split="leading_space")
+    assert _pretokenize(tokenizer, " 2026") == ["Ġ202", "6"]
+
+
+def test_train_byte_bpe_rejects_unknown_digit_split_mode() -> None:
+    with pytest.raises(ValueError, match="digit_split"):
+        train_byte_bpe(["abc"], vocab_size=280, min_frequency=1, digit_split="bogus")
