@@ -263,8 +263,8 @@ def chunked_next_token_loss_stats(
     # Small on purpose: the loop's peak is now ~1x one chunk's [chunk_size,
     # vocab_size] tensor (see _ChunkedCrossEntropy), so a larger chunk buys
     # fewer kernel launches at the direct cost of that peak -- at 256 and
-    # vocab_size=32768, one chunk is ~34MB in FP32; at the old default of
-    # 1024 it was ~134MB. The launch-count difference is noise next to a
+    # vocab_size=16384, one chunk is ~17MB in FP32; at the old default of
+    # 1024 it was ~67MB. The launch-count difference is noise next to a
     # vocab-sized matmul either way.
     chunk_size: int = 256,
     z_loss_weight: float = 0.0,

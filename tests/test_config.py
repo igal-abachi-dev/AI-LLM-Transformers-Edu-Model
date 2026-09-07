@@ -18,7 +18,7 @@ def expected_edu_parameters(config: ModelConfig) -> int:
 
 @pytest.mark.parametrize(
     ("filename", "expected"),
-    [("50m-edu.toml", 61_749_760), ("150m-edu.toml", 166_755_072)],
+    [("50m-edu.toml", 53_361_152), ("150m-edu.toml", 154_172_160)],
 )
 def test_frozen_edu_parameter_targets(filename: str, expected: int) -> None:
     config = ModelConfig.from_toml(ROOT / "configs" / filename)

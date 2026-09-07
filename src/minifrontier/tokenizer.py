@@ -13,16 +13,24 @@ adjacent pair into a new token. Common words like " the" end up as one token;
 something unusual falls back to a few pieces; and because every byte is in the
 alphabet, *nothing is ever unrepresentable* -- there is no "unknown token".
 
-This project freezes one 32,768-token vocabulary for every model size, so a
-tokenizer trained once can be compared across experiments (revised from an
-original 16,384 -- see `docs/IMPLEMENTATION_DECISIONS.md`, 2026-09-06: vocabulary
-size should scale with model size, and 16,384 under-provisioned this project's
-~138M-parameter non-vocab scale). Digits are also split before the ordinary
-byte-level pass (Llama 3/Qwen-style, groups of at most 3 -- see
-``train_byte_bpe``'s pre-tokenizer), rather than GPT-2's convention of letting
-long digit runs merge into single tokens, which measurably hurts arithmetic at
-this scale. The first eleven IDs are reserved for markers that never appear in
-ordinary text::
+This project freezes one 16,384-token vocabulary for every model size, so a
+tokenizer trained once can be compared across experiments. Briefly raised to
+32,768 (2026-09-06) on Tao et al.'s (arXiv:2407.13623) vocabulary-scaling
+theory, then reverted (2026-09-08, see `docs/IMPLEMENTATION_DECISIONS.md`)
+after real matched-wall-clock training evidence: a bounded comparison found a
+reproducible ~1% BPB regression at 32k across three independent retrains, a
+periodic-validation curve showing the gap *widening* rather than closing
+across the training budget (the opposite of what a short-budget-recovery
+explanation predicts), and a fertility check ruling out tokenizer inefficiency
+as the cause (32k was actually *more* fertility-efficient, not less). Digit-
+splitting pre-tokenization (Llama 3/Qwen-style, groups of at most 3 -- see
+``train_byte_bpe``'s ``digit_split`` parameter) was evaluated alongside the
+32k vocabulary but never adopted: it measured as a real fertility *cost*, and
+its actual purpose (arithmetic capability) was never evaluated at all, so
+turning it on for the 16k vocabulary now would be an untested combination.
+The parameter remains available for a future, properly isolated test. The
+first eleven IDs are reserved for markers that never appear in ordinary
+text::
 
     <|pad|> <|bos|> <|eos|> <|system|> <|user|> <|assistant|>
     <|fim_prefix|> <|fim_suffix|> <|fim_middle|> <|tool_call|> <|tool_result|>
@@ -50,19 +58,21 @@ from tokenizers.trainers import BpeTrainer
 
 # Frozen for the whole project. Commercial models use 100k-200k; the idea is the
 # same, and a smaller vocabulary keeps the tied embedding table affordable here.
-VOCAB_SIZE: Final = 32_768
+VOCAB_SIZE: Final = 16_384
 # Isolate runs of at most 3 digits before the ordinary byte-level pass, so
 # "123456" pre-tokenizes as "123" + "456" rather than merging into one token
 # the way GPT-2's regex would. `Sequence` runs this first; ByteLevel then
 # further splits whatever's left exactly as before, so this changes nothing
-# about non-digit text. Frozen default is "no_leading_space" -- provisional
-# pending MF-090's real comparison against "leading_space" and "none", which
-# is why `train_byte_bpe` accepts `digit_split` rather than hardcoding this.
+# about non-digit text. Real MF-090 evidence (see this module's docstring)
+# found only a fertility *cost* from this, never tested for a trained-quality
+# benefit, so it stays off by default -- `train_byte_bpe` still accepts
+# `digit_split` for a future properly isolated test, rather than hardcoding
+# this away entirely.
 _DIGIT_SPLIT_PATTERNS: Final[dict[str, Regex]] = {
     "no_leading_space": Regex(r"\d{1,3}"),
     "leading_space": Regex(r" ?\d{1,3}"),
 }
-DIGIT_SPLIT_MODE: Final = "no_leading_space"
+DIGIT_SPLIT_MODE: Final = "none"
 TOKENIZER_VERSION: Final = 1
 SPECIAL_TOKENS: Final[tuple[str, ...]] = (
     "<|pad|>",
@@ -216,12 +226,15 @@ def train_byte_bpe(
     tokenizers would disagree about token IDs.
 
     ``digit_split`` selects the pre-tokenizer's digit-isolation rule: the frozen
-    default ``"no_leading_space"``, the ``"leading_space"`` variant (``" ?\\d{1,3}"``,
-    which avoids wasting a lone-space token before a number), or ``"none"`` (no
-    digit isolation at all, GPT-2-style long digit runs merge freely). Only the
-    default is used by any real training run; the other two exist for MF-090's
-    real tokenizer comparison and must never silently become the default without
-    a recorded decision.
+    default ``"none"`` (no digit isolation at all, GPT-2-style long digit runs
+    merge freely -- what every real checkpoint this project has trained uses),
+    or two evaluated-but-not-adopted variants, ``"no_leading_space"``
+    (``"\\d{1,3}"``) and ``"leading_space"`` (``" ?\\d{1,3}"``, which avoids
+    wasting a lone-space token before a number). MF-090's real comparison found
+    both variants cost fertility relative to no digit-splitting, and neither
+    was ever tested for a trained-quality effect (digit-splitting's actual
+    purpose is arithmetic capability, not fertility) -- they remain available
+    for a future properly isolated test, not for casual use.
     """
 
     # Every one of the 256 byte values needs a slot, plus the 11 markers, or some

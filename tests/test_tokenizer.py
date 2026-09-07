@@ -84,12 +84,24 @@ def test_digit_split_none_never_isolates_digit_runs() -> None:
     assert _pretokenize(tokenizer, " 2026") == ["Ġ2026"]
 
 
-def test_digit_split_default_matches_no_leading_space_and_wastes_a_lone_space_token() -> None:
+def test_train_byte_bpe_default_never_isolates_digit_runs() -> None:
+    # Frozen default is "none" (reverted 2026-09-08, see tokenizer.py's docstring):
+    # digit-splitting measured only a fertility cost and was never combined with
+    # the 16k vocabulary, so callers who don't pass digit_split explicitly must
+    # get the same behavior as the real production tokenizer.
     corpus = ["the year 2026 was great " * 5, "digits 123456789 and more " * 5]
     tokenizer = train_byte_bpe(corpus, vocab_size=300, min_frequency=1)
-    # Frozen default: digits split into groups of <=3, but the leading space is
-    # its own separate piece -- the exact fertility cost MF-090 exists to weigh
-    # against the leading_space variant below.
+    assert _pretokenize(tokenizer, " 2026") == ["Ġ2026"]
+
+
+def test_digit_split_no_leading_space_wastes_a_lone_space_token() -> None:
+    corpus = ["the year 2026 was great " * 5, "digits 123456789 and more " * 5]
+    tokenizer = train_byte_bpe(
+        corpus, vocab_size=300, min_frequency=1, digit_split="no_leading_space"
+    )
+    # Digits split into groups of <=3, but the leading space is its own
+    # separate piece -- the exact fertility cost MF-090 measured against the
+    # leading_space variant below.
     assert _pretokenize(tokenizer, " 2026") == ["Ġ", "202", "6"]
 
 

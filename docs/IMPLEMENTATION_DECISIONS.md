@@ -280,3 +280,33 @@ independently re-checked against the actual source before any action.
   ran the more relevant, decisive test (`reports/mf070-muon-followup.md`): at *wall-clock-matched*
   budgets, AdamW beats every tested Muon configuration on this hardware. Muon stays an experiment,
   not the default.
+- **Tokenizer vocabulary reverted to 16,384** (2026-09-08, user-approved): the 2026-09-06 raise to
+  32,768 (above) is undone. Real evidence accumulated across three tasks, in order:
+  (1) **MF-087's own real comparison** (`reports/mf087-tokenizer-quality.md`) found the opposite of
+  the predicted direction — 32k scored *worse* held-out bits-per-byte than 16k at matched
+  wall-clock time (1.8039 → 1.8212, +0.956%), with two unresolved confounds (digit-splitting,
+  single-seed noise). (2) **MF-088's seed-variance calibration** (`reports/mf088-seed-variance.md`)
+  measured this project's first real same-config noise floor (+0.046% relative CE/BPB, seed 42 vs
+  43) and showed the 0.956% delta is ~20x that — a real, reproducible effect, not noise.
+  (3) **MF-090's investigation** closed the remaining confounds: a no-GPU fertility triage
+  (`artifacts/mf090-tokenizer-fertility/fertility.json`) found the shipped 32k tokenizer was
+  actually *more* fertility-efficient than 16k (+5.4%), ruling out raw tokenization inefficiency or
+  digit-splitting as the cause; a periodic-validation rerun
+  (`reports/mf090-periodic-validation-curve.md`) showed 32k starting *ahead* on BPB early in
+  training, crossing over, and 16k's lead *widening* for the rest of the bounded budget — the
+  opposite of the pattern a short-token-budget recovery would produce, and cross-entropy diverged
+  monotonically throughout. Taken together: the regression is real (not noise), not explained by
+  tokenization efficiency or digit-splitting, and does not resolve itself within the tested
+  ~7-8M-token budget by continuing to train the same way. This does not prove 32k would still lose
+  at the full compute-optimal 3B-token target Tao et al.'s theory was calibrated for (this bounded
+  test covers only ~0.26% of that budget) — but absent any evidence in 32k's favor at any tested
+  scale, and given a real, reproducible cost measured three independent times, the frozen
+  vocabulary reverts to 16,384 rather than carrying an unproven bet into the real release run.
+  **Digit-splitting is reverted alongside it, not combined with 16,384 instead**: "16k +
+  digit-split" was never trained or tested in any form — adopting it now would repeat exactly the
+  "merged in blind" mistake MF-090 existed to prevent. `train_byte_bpe`'s `digit_split` parameter
+  (added during this investigation) remains available, off by default, for a future test that
+  isolates digit-splitting's actual purpose (arithmetic capability) rather than only measuring its
+  fertility cost. Migration cost is low: no real production-scale checkpoint was ever trained under
+  32k (only the bounded ~7-8M-token comparison arms above); the original 16,384-tokenizer
+  checkpoints this project already has (MF-063/064/065, `v0.1.0`) remain exactly what they were.

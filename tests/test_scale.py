@@ -27,7 +27,7 @@ def test_meta_parameter_count_matches_real_tiny_model() -> None:
 def test_scale_estimates_label_lower_bounds_and_bounded_cache_savings() -> None:
     config = ModelConfig.from_toml("configs/350m-modern.toml")
     estimates = estimate_scale(config, batch_size=1)
-    assert estimates.parameter_count == 349_237_760
+    assert estimates.parameter_count == 332_460_544
     assert estimates.training_lower_bound_bytes == estimates.parameter_count * 12
     assert estimates.bounded_local_kv_bytes < estimates.full_history_kv_bytes
     assert any("lower bounds" in value for value in estimates.assumptions)

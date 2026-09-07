@@ -154,9 +154,7 @@ def test_generate_never_emits_a_suppressed_token(monkeypatch) -> None:
         return output
 
     monkeypatch.setattr(model, "forward", biased_forward)
-    result = model.generate(
-        torch.tensor([[1, 2]]), max_new_tokens=4, suppress_token_ids=[5]
-    )
+    result = model.generate(torch.tensor([[1, 2]]), max_new_tokens=4, suppress_token_ids=[5])
     assert 5 not in result[:, 2:].tolist()[0]
 
 

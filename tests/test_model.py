@@ -126,4 +126,4 @@ def test_model_rejects_long_or_non_integer_tokens() -> None:
 def test_50m_edu_instantiates_at_frozen_parameter_count() -> None:
     config = ModelConfig.from_toml(ROOT / "configs" / "50m-edu.toml")
     model = MiniFrontier(config)
-    assert model.parameter_count() == 61_749_760
+    assert model.parameter_count() == 53_361_152

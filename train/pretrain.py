@@ -102,9 +102,9 @@ def parse_args() -> argparse.Namespace:
             "Compute the primary loss over sequence chunks of this size instead of "
             "materializing full [batch, sequence, vocab_size] logits (see "
             "loss.chunked_next_token_loss_stats, MF-084). Omit to keep the original "
-            "unfused path -- required at this project's 32,768 vocabulary to avoid the "
-            "OOM risk that motivated adding this in the first place; not on by default "
-            "since it is a memory/perf tradeoff, not a correctness fix."
+            "unfused path; a real memory/perf tradeoff worth enabling at large batch "
+            "sizes/context lengths or a larger vocabulary, not a correctness fix, so "
+            "not on by default."
         ),
     )
     parser.add_argument(
