@@ -139,8 +139,10 @@ def test_load_training_checkpoint_rejects_missing_mtp_heads_instead_of_silent_re
     model = MiniFrontier(config)
     checkpoint = tmp_path / "checkpoint"
     save_training_checkpoint(checkpoint, model)  # no mtp_heads=... passed
-    requesting_heads = MTPHeads(d_model=config.d_model, vocab_size=config.vocab_size, n_extra_heads=1)
-    with pytest.raises(ValueError, match="mtp_heads.safetensors"):
+    requesting_heads = MTPHeads(
+        d_model=config.d_model, vocab_size=config.vocab_size, n_extra_heads=1
+    )
+    with pytest.raises(ValueError, match=r"mtp_heads\.safetensors"):
         load_training_checkpoint(checkpoint, MiniFrontier(config), mtp_heads=requesting_heads)
 
 
