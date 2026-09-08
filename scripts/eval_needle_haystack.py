@@ -63,7 +63,8 @@ def main() -> None:
             "trials": by_length,
             "retrieval_rate_by_context_length": summary,
         }
-        args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        serialized = json.dumps(report, indent=2, sort_keys=True) + "\n"
+        args.output.write_text(serialized, encoding="utf-8")
         print(f"wrote {args.output}")
 
 
