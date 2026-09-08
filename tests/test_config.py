@@ -96,6 +96,36 @@ def test_config_rejects_edu_gated_attention() -> None:
         replace(ModelConfig.tiny_edu(), gated_attention=True)
 
 
+def test_config_rejects_edu_partial_rope() -> None:
+    with pytest.raises(ValueError, match="Modern-only"):
+        replace(ModelConfig.tiny_edu(), rope_fraction=0.5)
+
+
+def test_rotated_dim_defaults_to_head_dim() -> None:
+    config = ModelConfig.tiny_modern()
+    assert config.rope_fraction == 1.0
+    assert config.rotated_dim == config.head_dim
+
+
+def test_rotated_dim_can_be_a_fraction_of_head_dim() -> None:
+    config = replace(ModelConfig.tiny_modern(d_model=32, n_heads=4), rope_fraction=0.5)
+    assert config.head_dim == 8
+    assert config.rotated_dim == 4
+
+
+def test_rope_fraction_rejects_out_of_range_values() -> None:
+    with pytest.raises(ValueError, match="rope_fraction must be in"):
+        replace(ModelConfig.tiny_modern(), rope_fraction=0.0)
+    with pytest.raises(ValueError, match="rope_fraction must be in"):
+        replace(ModelConfig.tiny_modern(), rope_fraction=1.5)
+
+
+def test_rope_fraction_rejects_an_odd_rotated_dimension() -> None:
+    # head_dim=8 (d_model=32, n_heads=4); rope_fraction=0.375 -> rotated_dim=3, odd.
+    with pytest.raises(ValueError, match="positive even rotated dimension"):
+        replace(ModelConfig.tiny_modern(d_model=32, n_heads=4), rope_fraction=0.375)
+
+
 def test_swiglu_clamp_allowed_on_edu_and_rejects_non_positive() -> None:
     # MF-106: a numerical-safety net, not a Modern-only architectural item.
     config = replace(ModelConfig.tiny_edu(), swiglu_clamp=10.0)

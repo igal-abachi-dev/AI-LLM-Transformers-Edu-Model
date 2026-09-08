@@ -76,6 +76,19 @@ class ModelConfig:
     # Edu's single full-attention layer type has no local/global split to
     # separate a theta for.
     global_rope_theta: float | None = None
+    # Fraction of head_dim that RoPE actually rotates, applied uniformly to
+    # every layer (unlike global_rope_theta, this is not a local/global
+    # distinction). 1.0 (the default) rotates every dimension -- the
+    # unmodified, current behavior. A smaller fraction rotates only the
+    # LAST `rotated_dim` dimensions (see the `rotated_dim` property),
+    # leaving the rest of Q/K completely untouched, position-independent
+    # content -- GPT-NeoX/Phi-3/every DeepSeek generation since V2 use some
+    # form of this (MF-107, bounded test pending; see tasks/backlog.md for
+    # why "last 64 dimensions," DeepSeek-V4's own literal number, is NOT
+    # copied here -- it is specific to their own differently-shaped
+    # attention, not a confirmed universal fraction). Modern-only, like
+    # MF-081's other bounded-ablation items: Edu keeps full RoPE.
+    rope_fraction: float = 1.0
     # RMSNorm on Q and K before they are compared. Modern only; see attention.py.
     qk_norm: bool = False
     # "full" = every layer sees all history. "hybrid" = 3 short-sighted layers
@@ -185,6 +198,10 @@ class ModelConfig:
             raise ValueError("swiglu_clamp must be positive when provided")
         if self.global_rope_theta is not None and self.attention_pattern != "hybrid":
             raise ValueError("global_rope_theta only applies to hybrid attention")
+        if not 0.0 < self.rope_fraction <= 1.0:
+            raise ValueError("rope_fraction must be in (0, 1]")
+        if self.rotated_dim <= 0 or self.rotated_dim % 2 != 0:
+            raise ValueError("rope_fraction must yield a positive even rotated dimension")
         if self.init_std is not None and self.init_std <= 0:
             raise ValueError("init_std must be positive when provided")
         if not 0.0 <= self.dropout < 1.0:
@@ -202,20 +219,23 @@ class ModelConfig:
                 raise ValueError("Edu uses full attention in every layer")
             if self.global_position_encoding != "rope":
                 raise ValueError("Edu uses RoPE in every layer")
-            # MF-081/082/083's techniques are reserved for Modern (2026-09-08,
-            # user decision): Edu stays exactly the classic architecture it has
-            # always been, so it remains simple enough to fully explain to a
-            # beginner regardless of which experimental techniques Modern ends
-            # up adopting after their own bounded tests. GQA-ratio changes and
-            # a non-default global_rope_theta are already impossible on Edu
-            # via the guards above (MHA-only, full-attention-only); these two
-            # are the ones with no other structural barrier.
+            # MF-081/082/083/107's techniques are reserved for Modern
+            # (2026-09-08, user decision): Edu stays exactly the classic
+            # architecture it has always been, so it remains simple enough to
+            # fully explain to a beginner regardless of which experimental
+            # techniques Modern ends up adopting after their own bounded
+            # tests. GQA-ratio changes and a non-default global_rope_theta
+            # are already impossible on Edu via the guards above (MHA-only,
+            # full-attention-only); the four checks below are the ones with
+            # no other structural barrier.
             if self.layer_norm_scaling:
                 raise ValueError("Edu does not use layer_norm_scaling; that is Modern-only")
             if self.value_residual:
                 raise ValueError("Edu does not use value_residual; that is Modern-only")
             if self.gated_attention:
                 raise ValueError("Edu does not use gated_attention; that is Modern-only")
+            if self.rope_fraction != 1.0:
+                raise ValueError("Edu does not use partial RoPE; that is Modern-only")
         if self.preset == "modern" and self.n_kv_heads >= self.n_heads:
             raise ValueError("Modern must use fewer KV heads than query heads")
         # NoPE means "this layer gets no position stamp at all". That is only a
@@ -250,6 +270,17 @@ class ModelConfig:
             if self.head_dim_override is not None
             else (self.d_model // self.n_heads)
         )
+
+    @property
+    def rotated_dim(self) -> int:
+        """How many of head_dim's numbers RoPE actually rotates.
+
+        Rounds `head_dim * rope_fraction`; validated in `__post_init__` to be
+        a positive even number, since RoPE pairs features up into 2-D arrows.
+        Equals `head_dim` exactly at the default `rope_fraction=1.0`.
+        """
+
+        return round(self.head_dim * self.rope_fraction)
 
     @property
     def queries_per_kv(self) -> int:

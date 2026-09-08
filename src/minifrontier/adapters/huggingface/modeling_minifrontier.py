@@ -36,7 +36,9 @@ def rotate_half(inputs: torch.Tensor) -> torch.Tensor:
 class MiniFrontierRoPE(nn.Module):
     def __init__(self, config: MiniFrontierConfig, theta: float) -> None:
         super().__init__()
-        self.head_dim = config.head_dim
+        # Sized to rotated_dim, not head_dim (MF-107): equal at the default
+        # rope_fraction=1.0, narrower when only part of each head rotates.
+        self.head_dim = config.rotated_dim
         self.rope_theta = theta
 
     def forward(
@@ -112,6 +114,7 @@ class MiniFrontierAttention(nn.Module):
         self.config = config
         self.layer_idx = layer_index
         self.head_dim = config.head_dim
+        self.rotated_dim = config.rotated_dim
         self.scaling = self.head_dim**-0.5
         self.num_key_value_groups = config.n_heads // config.n_kv_heads
         self.is_local = config.is_local_layer(layer_index)
@@ -167,8 +170,26 @@ class MiniFrontierAttention(nn.Module):
             query = self.q_norm(query)
             key = self.k_norm(key)
         if self.config.uses_rope(self.layer_idx):
-            query = apply_rotary(query, cosine, sine)
-            key = apply_rotary(key, cosine, sine)
+            if self.rotated_dim < self.head_dim:
+                # Partial RoPE (MF-107): mirrors the native model exactly --
+                # rotate only the LAST rotated_dim numbers of each head.
+                query = torch.cat(
+                    (
+                        query[..., : -self.rotated_dim],
+                        apply_rotary(query[..., -self.rotated_dim :], cosine, sine),
+                    ),
+                    dim=-1,
+                )
+                key = torch.cat(
+                    (
+                        key[..., : -self.rotated_dim],
+                        apply_rotary(key[..., -self.rotated_dim :], cosine, sine),
+                    ),
+                    dim=-1,
+                )
+            else:
+                query = apply_rotary(query, cosine, sine)
+                key = apply_rotary(key, cosine, sine)
         if self.value_residual_gate is not None:
             # Mixed in BEFORE caching, matching the native model exactly.
             if first_layer_value is None:

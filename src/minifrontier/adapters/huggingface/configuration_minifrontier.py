@@ -20,6 +20,7 @@ class MiniFrontierConfig(PretrainedConfig):
         norm_eps: float = 1e-6,
         rope_theta: float = 10_000.0,
         global_rope_theta: float | None = None,
+        rope_fraction: float = 1.0,
         qk_norm: bool = False,
         attention_pattern: str = "full",
         local_window: int = 512,
@@ -72,6 +73,7 @@ class MiniFrontierConfig(PretrainedConfig):
         self.rms_norm_eps = norm_eps
         self.rope_theta = rope_theta
         self.global_rope_theta = global_rope_theta
+        self.rope_fraction = rope_fraction
         self.qk_norm = qk_norm
         self.attention_pattern = attention_pattern
         self.local_window = local_window
@@ -87,6 +89,7 @@ class MiniFrontierConfig(PretrainedConfig):
         self.gated_attention = gated_attention
         self.swiglu_clamp = swiglu_clamp
         self.head_dim = head_dim_override if head_dim_override is not None else d_model // n_heads
+        self.rotated_dim = round(self.head_dim * rope_fraction)
         self.use_cache = use_cache
         self.sliding_window = local_window
         self.layer_types = [
@@ -121,6 +124,10 @@ class MiniFrontierConfig(PretrainedConfig):
             raise ValueError("invalid MiniFrontier query/KV head divisibility")
         if self.head_dim % 2:
             raise ValueError("MiniFrontier RoPE head_dim must be even")
+        if not 0.0 < self.rope_fraction <= 1.0:
+            raise ValueError("rope_fraction must be in (0, 1]")
+        if self.rotated_dim <= 0 or self.rotated_dim % 2:
+            raise ValueError("rope_fraction must yield a positive even rotated dimension")
         if self.local_window > self.max_seq_len:
             raise ValueError("local_window cannot exceed max_seq_len")
         if self.preset not in ("edu", "modern"):
@@ -137,6 +144,7 @@ class MiniFrontierConfig(PretrainedConfig):
             or self.layer_norm_scaling
             or self.value_residual
             or self.gated_attention
+            or self.rope_fraction != 1.0
         ):
             raise ValueError("Edu configuration violates the frozen architecture")
         if self.preset == "modern" and self.n_kv_heads >= self.n_heads:

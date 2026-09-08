@@ -294,6 +294,7 @@ class CausalSelfAttention(nn.Module):
         self.config = config
         self.layer_index = layer_index
         self.head_dim = config.head_dim
+        self.rotated_dim = config.rotated_dim
         self.is_local = config.is_local_layer(layer_index)
         self.position_encoding = config.position_encoding_for_layer(layer_index)
         # The three roles, one matrix each, all reading the same input. Q gets one
@@ -399,8 +400,29 @@ class CausalSelfAttention(nn.Module):
         # Position stamps go on Q and K only, never on V. A global layer running
         # the NoPE experiment skips this entirely and sees an unordered pile.
         if self.position_encoding == "rope":
-            query = apply_rotary(query, cosine, sine)
-            key = apply_rotary(key, cosine, sine)
+            if self.rotated_dim < self.head_dim:
+                # Partial RoPE (MF-107): rotate only the LAST `rotated_dim`
+                # numbers of each head, leaving the first `head_dim -
+                # rotated_dim` completely untouched, position-independent
+                # content. `cosine`/`sine` are already sized to `rotated_dim`
+                # (see model.py), so this is exactly what apply_rotary needs.
+                query = torch.cat(
+                    (
+                        query[..., : -self.rotated_dim],
+                        apply_rotary(query[..., -self.rotated_dim :], cosine, sine),
+                    ),
+                    dim=-1,
+                )
+                key = torch.cat(
+                    (
+                        key[..., : -self.rotated_dim],
+                        apply_rotary(key[..., -self.rotated_dim :], cosine, sine),
+                    ),
+                    dim=-1,
+                )
+            else:
+                query = apply_rotary(query, cosine, sine)
+                key = apply_rotary(key, cosine, sine)
         key_start = 0
         if cache is not None:
             # Returns the whole visible history, not just this chunk: the new K/V

@@ -159,11 +159,15 @@ class MiniFrontier(nn.Module):
         # `global_rope` is literally the same module as `local_rope` -- no
         # extra parameters, no extra forward compute, identical to the single
         # shared table this model used before the split existed.
-        self.local_rope = RoPE(config.head_dim, config.max_seq_len, config.rope_theta)
+        # Sized to `rotated_dim`, not `head_dim` (MF-107): equal at the
+        # default `rope_fraction=1.0`, narrower when only part of each head
+        # gets rotated -- `apply_rotary` in attention.py only ever sees the
+        # rotated slice, never the untouched passthrough dimensions.
+        self.local_rope = RoPE(config.rotated_dim, config.max_seq_len, config.rope_theta)
         self.global_rope = (
             self.local_rope
             if config.resolved_global_rope_theta == config.rope_theta
-            else RoPE(config.head_dim, config.max_seq_len, config.resolved_global_rope_theta)
+            else RoPE(config.rotated_dim, config.max_seq_len, config.resolved_global_rope_theta)
         )
         # `layer_index` is passed down because in the Modern preset a layer's
         # behaviour (local or global, RoPE or NoPE, Flex or SDPA) depends on it.

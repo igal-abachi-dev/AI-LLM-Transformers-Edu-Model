@@ -161,6 +161,109 @@ def test_global_rope_theta_unset_shares_one_rope_module() -> None:
     assert model.global_rope is model.local_rope
 
 
+def test_partial_rope_full_fraction_matches_default_exactly() -> None:
+    """MF-107 acceptance: rope_fraction=1.0 is bit-for-bit identical to the
+    unmodified path -- verified as real model output equality, not a claim."""
+
+    torch.manual_seed(37)
+    config = ModelConfig.tiny_modern(
+        n_layers=4, d_model=32, n_heads=4, n_kv_heads=2, d_ff=96, attention_impl="sdpa"
+    )
+    unset = MiniFrontier(config).eval()
+    torch.manual_seed(37)
+    explicit = MiniFrontier(replace(config, rope_fraction=1.0)).eval()
+    tokens = torch.randint(0, config.vocab_size, (2, 9))
+    assert torch.equal(unset(tokens).logits, explicit(tokens).logits)
+    for block in explicit.blocks:
+        assert block.attention.rotated_dim == block.attention.head_dim
+
+
+def test_partial_rope_rotates_only_the_last_rotated_dim_slice(monkeypatch) -> None:
+    torch.manual_seed(38)
+    config = replace(
+        ModelConfig.tiny_modern(
+            n_layers=4, d_model=32, n_heads=4, n_kv_heads=2, d_ff=96, attention_impl="sdpa"
+        ),
+        rope_fraction=0.5,
+    )
+    attention = CausalSelfAttention(config, layer_index=3).eval()  # global layer
+    assert attention.rotated_dim == attention.head_dim // 2
+    sequence_length = 5
+    inputs = torch.randn(1, sequence_length, config.d_model)
+    rope = RoPE(config.rotated_dim, config.max_seq_len, config.rope_theta)
+    cosine, sine = rope(torch.arange(sequence_length), dtype=inputs.dtype, device=inputs.device)
+
+    with torch.no_grad():
+        raw_query = (
+            attention.q_proj(inputs)
+            .view(1, sequence_length, config.n_heads, config.head_dim)
+            .transpose(1, 2)
+        )
+        raw_key = (
+            attention.k_proj(inputs)
+            .view(1, sequence_length, config.n_kv_heads, config.head_dim)
+            .transpose(1, 2)
+        )
+        # tiny_modern defaults to qk_norm=True: the real forward path
+        # normalizes BEFORE rotating (see attention.py's own ordering
+        # comment), so the reference must match that order too.
+        if attention.q_norm is not None and attention.k_norm is not None:
+            raw_query = attention.q_norm(raw_query)
+            raw_key = attention.k_norm(raw_key)
+
+    captured: list[torch.Tensor] = []
+    original = attention_module.apply_rotary
+
+    def recording_rotary(tensor, cos, sin):
+        captured.append(tensor)
+        return original(tensor, cos, sin)
+
+    monkeypatch.setattr(attention_module, "apply_rotary", recording_rotary)
+    attention(inputs, cosine, sine)
+    assert len(captured) == 2  # once for query, once for key
+    rotated = config.rotated_dim
+    assert captured[0].shape[-1] == rotated
+    assert captured[1].shape[-1] == rotated
+    assert torch.equal(captured[0], raw_query[..., -rotated:])
+    assert torch.equal(captured[1], raw_key[..., -rotated:])
+
+
+def test_partial_rope_cached_and_uncached_logits_match() -> None:
+    torch.manual_seed(39)
+    config = replace(
+        ModelConfig.tiny_modern(
+            max_seq_len=16,
+            local_window=4,
+            d_model=32,
+            n_heads=4,
+            n_kv_heads=2,
+            d_ff=96,
+            attention_impl="sdpa",
+        ),
+        rope_fraction=0.5,
+    )
+    model = MiniFrontier(config).eval()
+    tokens = torch.randint(0, config.vocab_size, (1, 11))
+    full = model(tokens).logits
+    cache = KVCache.allocate(
+        config,
+        batch_size=1,
+        device="cpu",
+        dtype=model.token_embedding.weight.dtype,
+        capacity=11,
+    )
+    cached = torch.cat(
+        (
+            model(tokens[:, :3], cache=cache).logits,
+            model(tokens[:, 3:7], cache=cache).logits,
+            model(tokens[:, 7:], cache=cache).logits,
+        ),
+        dim=1,
+    )
+    assert torch.allclose(full, cached, atol=2e-5)
+    assert torch.equal(full.argmax(dim=-1), cached.argmax(dim=-1))
+
+
 def test_flex_local_gqa_matches_manual_and_reuses_block_mask() -> None:
     torch.manual_seed(22)
     clear_block_mask_cache()
