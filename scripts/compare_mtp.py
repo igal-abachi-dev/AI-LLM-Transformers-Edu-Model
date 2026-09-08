@@ -59,6 +59,14 @@ def parse_args() -> argparse.Namespace:
         "reported and quality_claim stays False, matching compare_optimizers.py.",
     )
     parser.add_argument("--tokenizer", type=Path, default=Path("data/tokenizer"))
+    parser.add_argument(
+        "--arms",
+        nargs="+",
+        choices=("baseline", "mtp"),
+        default=["baseline", "mtp"],
+        help="which arm(s) to run -- e.g. '--arms mtp' to retry just the mtp arm "
+        "after an interrupted run already produced a real 'baseline' checkpoint",
+    )
     return parser.parse_args()
 
 
@@ -115,7 +123,8 @@ def main() -> None:
     seed_everything(args.seed, deterministic=args.device == "cpu")
     initial = MiniFrontier(config).state_dict()
 
-    arms = [("baseline", 0, 0.0), ("mtp", args.mtp_extra_heads, args.mtp_loss_weight)]
+    all_arms = {"baseline": (0, 0.0), "mtp": (args.mtp_extra_heads, args.mtp_loss_weight)}
+    arms = [(label, *all_arms[label]) for label in args.arms]
     results: list[dict[str, object]] = []
     for label, mtp_extra_heads, mtp_loss_weight in arms:
         seed_everything(args.seed, deterministic=args.device == "cpu")
