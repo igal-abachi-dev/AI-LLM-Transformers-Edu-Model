@@ -10,6 +10,8 @@ import argparse
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 from minifrontier.data import Document
 from minifrontier.shards import TokenShardWriter
 
@@ -192,3 +194,68 @@ def test_mtp_extra_heads_flag_reaches_real_training(tmp_path, mini_tokenizer) ->
     )
     assert state.completed_updates == 2
     assert state.last_loss is not None and state.last_loss == state.last_loss  # not NaN
+
+
+def test_mixture_flag_reaches_real_training_and_checkpoint_reloads(
+    tmp_path, mini_tokenizer
+) -> None:
+    """Real end-to-end wiring: --mixture -> real training -> a real checkpoint
+    whose mixture cursor state round-trips. MixtureBatchProvider's own exact-
+    resume-continues-not-restarts guarantee is unit-tested directly against the
+    class in test_shards.py; pretrain.py's CLI has no way to run a real partial-
+    then-resume-to-completion scenario (each invocation always runs to its full
+    `--updates` in one call), so this test verifies the wiring, not the resume
+    algorithm itself."""
+
+    web_shards = _build_shards(tmp_path / "web-src", mini_tokenizer)
+    code_shards = _build_shards(tmp_path / "code-src", mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    output = tmp_path / "mixture-run"
+    mixture = [f"web;{web_shards};0.7", f"code;{code_shards};0.3"]
+
+    state, _ = pretrain.run(
+        _args(
+            config_path,
+            None,
+            output,
+            train_shards=None,
+            mixture=mixture,
+            no_checkpoint=False,
+        )
+    )
+    assert state.completed_updates == 2
+    assert state.last_loss is not None and state.last_loss == state.last_loss  # not NaN
+
+    # Loading the real checkpoint back (same config, same mixture) must succeed --
+    # this is what --resume actually does, exercised for real rather than assumed.
+    reloaded_state, _ = pretrain.run(
+        _args(
+            config_path,
+            None,
+            tmp_path / "mixture-reload",
+            train_shards=None,
+            mixture=mixture,
+            resume=output / "final",
+            no_checkpoint=True,
+        )
+    )
+    assert reloaded_state.completed_updates == 2  # already at max_updates=2, correctly a no-op
+
+
+def test_mixture_and_train_shards_are_mutually_exclusive(tmp_path, mini_tokenizer) -> None:
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    with pytest.raises(ValueError, match="exactly one"):
+        pretrain.run(
+            _args(
+                config_path,
+                shards_path,
+                tmp_path / "out",
+                mixture=[f"web;{shards_path};1.0"],
+                no_checkpoint=True,
+            )
+        )
+    with pytest.raises(ValueError, match="exactly one"):
+        pretrain.run(
+            _args(config_path, None, tmp_path / "out", train_shards=None, no_checkpoint=True)
+        )
