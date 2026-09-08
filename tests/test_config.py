@@ -91,6 +91,11 @@ def test_config_rejects_edu_value_residual() -> None:
         replace(ModelConfig.tiny_edu(), value_residual=True)
 
 
+def test_config_rejects_edu_gated_attention() -> None:
+    with pytest.raises(ValueError, match="Modern-only"):
+        replace(ModelConfig.tiny_edu(), gated_attention=True)
+
+
 def test_hybrid_flex_dropout_contract_fails_at_configuration_time() -> None:
     config = ModelConfig.tiny_modern(attention_impl="auto")
     with pytest.raises(ValueError, match="FlexAttention requires dropout=0"):

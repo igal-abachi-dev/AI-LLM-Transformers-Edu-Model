@@ -200,6 +200,88 @@ def test_value_residual_cached_and_uncached_logits_match() -> None:
     assert torch.equal(full.argmax(dim=-1), cached.argmax(dim=-1))
 
 
+def test_gated_attention_disabled_has_no_gate_proj() -> None:
+    config = ModelConfig.tiny_modern(n_layers=4)
+    model = MiniFrontier(config)
+    assert all(block.attention.gate_proj is None for block in model.blocks)
+
+
+def test_gated_attention_starts_near_open_and_input_independent() -> None:
+    """Zero weight + bias=4.0: the gate must be sigmoid(4.0) EXACTLY,
+    regardless of input, until training moves the weight away from zero."""
+
+    config = replace(
+        ModelConfig.tiny_modern(n_layers=4, d_model=32, n_heads=4, n_kv_heads=2, d_ff=96),
+        gated_attention=True,
+    )
+    model = MiniFrontier(config)
+    expected = torch.sigmoid(torch.tensor(4.0))
+    for block in model.blocks:
+        assert torch.equal(
+            block.attention.gate_proj.weight, torch.zeros_like(block.attention.gate_proj.weight)
+        )
+        for _ in range(3):
+            probe = torch.randn(2, 5, config.d_model)
+            gate = torch.sigmoid(block.attention.gate_proj(probe))
+            assert torch.allclose(gate, expected.expand_as(gate))
+
+
+def test_gated_attention_nonzero_weight_changes_forward_output() -> None:
+    torch.manual_seed(35)
+    config = replace(
+        ModelConfig.tiny_modern(
+            n_layers=4, d_model=32, n_heads=4, n_kv_heads=2, d_ff=96, attention_impl="sdpa"
+        ),
+        gated_attention=True,
+    )
+    model = MiniFrontier(config).eval()
+    tokens = torch.randint(0, config.vocab_size, (2, 9))
+    init_logits = model(tokens).logits
+    with torch.no_grad():
+        model.blocks[2].attention.gate_proj.weight.normal_(mean=0.0, std=0.5)
+    perturbed_logits = model(tokens).logits
+    assert not torch.allclose(init_logits, perturbed_logits)
+
+
+def test_gated_attention_cached_and_uncached_logits_match() -> None:
+    torch.manual_seed(36)
+    config = replace(
+        ModelConfig.tiny_modern(
+            max_seq_len=16,
+            local_window=4,
+            d_model=32,
+            n_heads=4,
+            n_kv_heads=2,
+            d_ff=96,
+            attention_impl="sdpa",
+        ),
+        gated_attention=True,
+    )
+    model = MiniFrontier(config).eval()
+    with torch.no_grad():
+        for block in model.blocks:
+            block.attention.gate_proj.weight.normal_(mean=0.0, std=0.5)
+    tokens = torch.randint(0, config.vocab_size, (1, 11))
+    full = model(tokens).logits
+    cache = KVCache.allocate(
+        config,
+        batch_size=1,
+        device="cpu",
+        dtype=model.token_embedding.weight.dtype,
+        capacity=11,
+    )
+    cached = torch.cat(
+        (
+            model(tokens[:, :3], cache=cache).logits,
+            model(tokens[:, 3:7], cache=cache).logits,
+            model(tokens[:, 7:], cache=cache).logits,
+        ),
+        dim=1,
+    )
+    assert torch.allclose(full, cached, atol=2e-5)
+    assert torch.equal(full.argmax(dim=-1), cached.argmax(dim=-1))
+
+
 def test_hidden_states_are_none_by_default_and_populated_when_requested() -> None:
     torch.manual_seed(9)
     config = ModelConfig.tiny_edu()

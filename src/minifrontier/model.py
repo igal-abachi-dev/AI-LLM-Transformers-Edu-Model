@@ -189,6 +189,14 @@ class MiniFrontier(nn.Module):
             for block in self.blocks:
                 nn.init.normal_(block.attention.out_proj.weight, mean=0.0, std=residual_std)
                 nn.init.normal_(block.feed_forward.down_proj.weight, mean=0.0, std=residual_std)
+        # Per-head gated attention (MF-082): `_initialize` above already
+        # overwrote gate_proj.weight with the generic random init, so zero it
+        # a SECOND time here -- the gate must start near-input-independent
+        # (see attention.py's own comment) or the "opens near 1 regardless of
+        # input" claim would be false the moment training begins.
+        if config.gated_attention:
+            for block in self.blocks:
+                nn.init.zeros_(block.attention.gate_proj.weight)
         # Tied embeddings: the input table and the output scoreboard become the
         # exact same tensor -- "ID -> meaning" on the way in, "meaning -> ID" on
         # the way out. This is an assignment, not a copy, so one gradient update

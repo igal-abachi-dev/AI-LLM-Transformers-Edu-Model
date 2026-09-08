@@ -1,4 +1,7 @@
-"""MF-086: run the real synthetic needle-in-haystack retrieval eval against a release."""
+"""MF-086: run the real synthetic needle-in-haystack retrieval eval against a
+release, or (MF-082) directly against a raw training checkpoint from a bounded
+comparison run -- going through a full `export_release` just to evaluate a
+throwaway 5,000-update comparison arm would be needless ceremony."""
 
 from __future__ import annotations
 
@@ -6,13 +9,29 @@ import argparse
 import json
 from pathlib import Path
 
-from minifrontier.checkpoint import load_release
+from minifrontier.checkpoint import load_release, load_training_checkpoint
+from minifrontier.config import ModelConfig
 from minifrontier.evaluation.retrieval import run_needle_haystack_eval
+from minifrontier.model import MiniFrontier
+from minifrontier.tokenizer import MiniFrontierTokenizer
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--release", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--release", type=Path, help="a published release directory")
+    source.add_argument(
+        "--checkpoint",
+        type=Path,
+        help="a raw train/pretrain.py checkpoint directory (e.g. .../final), "
+        "for bounded comparisons that never go through export_release",
+    )
+    parser.add_argument(
+        "--tokenizer",
+        type=Path,
+        default=Path("data/tokenizer"),
+        help="only used with --checkpoint; --release carries its own tokenizer",
+    )
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--context-lengths", type=int, nargs="+", default=[512, 1024, 2048])
     parser.add_argument(
@@ -24,9 +43,21 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _load_model(args: argparse.Namespace) -> tuple[MiniFrontier, MiniFrontierTokenizer]:
+    if args.release is not None:
+        return load_release(args.release, device=args.device)
+    config = ModelConfig(
+        **json.loads((args.checkpoint / "config.json").read_text(encoding="utf-8"))
+    )
+    model = MiniFrontier(config).to(args.device).eval()
+    load_training_checkpoint(args.checkpoint, model, trusted_local_state=False)
+    tokenizer = MiniFrontierTokenizer.from_directory(args.tokenizer)
+    return model, tokenizer
+
+
 def main() -> None:
     args = parse_args()
-    model, tokenizer = load_release(args.release, device=args.device)
+    model, tokenizer = _load_model(args)
     trials = run_needle_haystack_eval(
         model,
         tokenizer,

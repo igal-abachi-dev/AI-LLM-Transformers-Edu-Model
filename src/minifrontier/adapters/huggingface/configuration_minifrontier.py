@@ -32,6 +32,7 @@ class MiniFrontierConfig(PretrainedConfig):
         layer_norm_scaling: bool = False,
         value_residual: bool = False,
         residual_std_damping: bool = True,
+        gated_attention: bool = False,
         bos_token_id: int = 1,
         eos_token_id: int = 2,
         pad_token_id: int = 0,
@@ -82,6 +83,7 @@ class MiniFrontierConfig(PretrainedConfig):
         self.layer_norm_scaling = layer_norm_scaling
         self.value_residual = value_residual
         self.residual_std_damping = residual_std_damping
+        self.gated_attention = gated_attention
         self.head_dim = head_dim_override if head_dim_override is not None else d_model // n_heads
         self.use_cache = use_cache
         self.sliding_window = local_window
@@ -130,6 +132,7 @@ class MiniFrontierConfig(PretrainedConfig):
             or self.global_position_encoding != "rope"
             or self.layer_norm_scaling
             or self.value_residual
+            or self.gated_attention
         ):
             raise ValueError("Edu configuration violates the frozen architecture")
         if self.preset == "modern" and self.n_kv_heads >= self.n_heads:

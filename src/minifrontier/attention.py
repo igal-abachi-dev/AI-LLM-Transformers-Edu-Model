@@ -320,6 +320,23 @@ class CausalSelfAttention(nn.Module):
         self.value_residual_gate = (
             nn.Parameter(torch.zeros(1)) if config.value_residual and layer_index != 0 else None
         )
+        # Per-head gated attention (MF-082, off by default): a per-head,
+        # per-token, INPUT-dependent sigmoid gate on the attention output,
+        # before out_proj -- unlike value_residual_gate's single learned
+        # scalar, this reads `inputs` itself (Qiu et al., arXiv:2505.06708,
+        # shipped in Qwen3-Next). Its weight is zeroed a SECOND time by
+        # MiniFrontier.__init__, after the generic `self.apply(self._initialize)`
+        # pass would otherwise overwrite it -- the same two-pass pattern
+        # out_proj/down_proj already use for their own depth-scaled init.
+        # Bias starts the gate near-OPEN (sigmoid(4.0)~=0.982): not exactly
+        # 1.0 the way value_residual_gate's zero-init is an exact no-op (a
+        # sigmoid gate cannot reach exactly 1), so this is a small,
+        # deliberate, near-identity start rather than a bit-exact one.
+        self.gate_proj = (
+            nn.Linear(config.d_model, config.n_heads, bias=True) if config.gated_attention else None
+        )
+        if self.gate_proj is not None:
+            nn.init.constant_(self.gate_proj.bias, 4.0)
 
     def resolved_implementation(
         self,
@@ -485,6 +502,16 @@ class CausalSelfAttention(nn.Module):
             )
         else:
             raise ValueError(f"unknown attention implementation: {selected}")
+
+        if self.gate_proj is not None:
+            # Per-head gated attention (MF-082): one INPUT-dependent sigmoid
+            # value per (position, head), read from the same normed residual-
+            # stream vector that produced Q/K/V -- not from `attended` itself,
+            # so a head can learn to suppress its own output for a given
+            # token without that decision depending on what it just attended
+            # to. [B, S, H] -> [B, H, S, 1] to broadcast over head_dim.
+            gate = torch.sigmoid(self.gate_proj(inputs)).transpose(1, 2).unsqueeze(-1)
+            attended = attended * gate.to(dtype=attended.dtype)
 
         # Glue the heads' separate answers back into one vector per token.
         # [B, H, S, D] -> [B, S, H, D] -> [B, S, d_model]. `contiguous()` is needed

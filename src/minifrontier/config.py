@@ -125,6 +125,14 @@ class ModelConfig:
     # only; `layer_norm_scaling` damps every forward pass) instead of always
     # measuring them combined. Every frozen preset leaves this at `True`.
     residual_std_damping: bool = True
+    # Off by default; MF-082's chosen attention-sink fix, real bounded test
+    # pending. A per-head, per-token, input-dependent sigmoid gate on the
+    # attention output before out_proj (Qiu et al., arXiv:2505.06708,
+    # shipped in Qwen3-Next) -- lets a head learn to suppress its own output
+    # for a given token, which is a plausible mechanism for both the classic
+    # attention-sink failure mode and (per Muse Glimmer's design) a more
+    # general quality/efficiency technique. See attention.py's `gate_proj`.
+    gated_attention: bool = False
 
     def __post_init__(self) -> None:
         # Fail here, loudly, with a message that names the offending field --
@@ -195,6 +203,8 @@ class ModelConfig:
                 raise ValueError("Edu does not use layer_norm_scaling; that is Modern-only")
             if self.value_residual:
                 raise ValueError("Edu does not use value_residual; that is Modern-only")
+            if self.gated_attention:
+                raise ValueError("Edu does not use gated_attention; that is Modern-only")
         if self.preset == "modern" and self.n_kv_heads >= self.n_heads:
             raise ValueError("Modern must use fewer KV heads than query heads")
         # NoPE means "this layer gets no position stamp at all". That is only a

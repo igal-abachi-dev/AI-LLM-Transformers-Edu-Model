@@ -130,6 +130,14 @@ class MiniFrontierAttention(nn.Module):
         self.value_residual_gate = (
             nn.Parameter(torch.zeros(1)) if config.value_residual and layer_index != 0 else None
         )
+        # Mirrors the native model's gate_proj exactly (MF-082). Its own
+        # init values here are never actually used: this module only ever
+        # receives real weights via load_native_weights_into_transformers,
+        # which copies the native model's (correctly two-pass-initialized)
+        # values wholesale before any forward pass runs.
+        self.gate_proj = (
+            nn.Linear(config.d_model, config.n_heads, bias=True) if config.gated_attention else None
+        )
 
     def forward(
         self,
@@ -192,6 +200,14 @@ class MiniFrontierAttention(nn.Module):
             dropout=self.config.dropout if self.training else 0.0,
             **kwargs,
         )
+        if self.gate_proj is not None:
+            # Mirrors the native model's gate application exactly (MF-082),
+            # adjusted for this module's [B, S, H, D] layout at this point
+            # (the native model gates while still [B, H, S, D] -- see its
+            # own comment for why the gate reads `hidden_states`, not
+            # `attended`).
+            gate = torch.sigmoid(self.gate_proj(hidden_states)).unsqueeze(-1)
+            attended = attended * gate.to(dtype=attended.dtype)
         attended = attended.reshape(batch, sequence, -1)
         return self.out_proj(attended), weights if output_attentions else None
 

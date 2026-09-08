@@ -46,6 +46,8 @@ from minifrontier.model import MiniFrontier
         # export path with real end-to-end parity, not just field mirroring.
         replace(ModelConfig.tiny_modern(attention_impl="manual"), layer_norm_scaling=True),
         replace(ModelConfig.tiny_modern(attention_impl="manual"), value_residual=True),
+        # MF-082: per-head gated attention must also reach the HF export path.
+        replace(ModelConfig.tiny_modern(attention_impl="manual"), gated_attention=True),
         # d_model=48 is not divisible by n_heads=5 -- only valid because of
         # head_dim_override (MF-092). This is the regression case for the real
         # gap found by a third code-review round: the HF adapter used to
@@ -66,6 +68,16 @@ def test_native_transformers_logits_and_greedy_tokens_match(config, mini_tokeniz
         with torch.no_grad():
             for block in native.blocks[1:]:
                 block.attention.value_residual_gate.fill_(0.5)
+    if config.gated_attention:
+        # At init gate_proj.weight is zero, making the gate a spatially
+        # UNIFORM constant -- a wrong axis alignment (e.g. swapped head/
+        # sequence axes) would be invisible against a uniform multiplier.
+        # Perturb the weight so the gate is genuinely input- and head-
+        # dependent, the scenario that would actually expose such a bug.
+        torch.manual_seed(17)
+        with torch.no_grad():
+            for block in native.blocks:
+                block.attention.gate_proj.weight.normal_(mean=0.0, std=0.5)
     hf_config = transformers_config(native, mini_tokenizer)
     hf_model = MiniFrontierForCausalLM(hf_config).eval()
     load_native_weights_into_transformers(native, hf_model)
