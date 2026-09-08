@@ -80,3 +80,34 @@ digit-split-fertility-cost explanation on its own: the shipped 32k tokenizer is 
 is driving this delta is not simply "digit-splitting made the tokenizer worse." Distinguishing
 the remaining candidates is what `compare_tokenizers.py --validation-interval-seconds`'s
 periodic-validation rerun (proposed, not yet run as of this update) is for.
+
+## Two more candidate mechanisms, recorded but not tested (2026-09-08)
+
+The tokenizer was reverted to 16,384 before either of these was tested (see [[MF-087]]'s final
+resolution in `tasks/backlog.md`) — recorded here as open questions this report cannot answer,
+per a fourth round of external feedback, each verified via `WebSearch` before being written down:
+
+- **Tied embeddings may be the actual mechanism, not vocabulary size itself.** The
+  Over-Tokenized Transformer paper (arXiv:2501.16975, ICML 2025, real and verified) finds that
+  scaling the *input* vocabulary alone helps models of every size, while scaling the *output*
+  vocabulary specifically hurts small models — and this project's `tie_embeddings=true` forces
+  both to scale together, so this comparison could never have isolated which side was
+  responsible. See [[MF-102]] for the real, bounded follow-up test this implies (untied
+  embeddings, input-only vocabulary scaling) — a materially more specific and better-evidenced
+  candidate than the Zipf/short-budget-artifact hypothesis above.
+- **SuperBPE's "undertrained tokens" mechanism is a real, complementary hypothesis, not
+  independently tested.** SuperBPE (arXiv:2503.13423, real and verified: at 200k vocabulary,
+  8B-scale models trained with it beat a BPE baseline by +4.0% average across 30 tasks, +8.2% on
+  MMLU, at 27% less inference compute) diagnoses plain BPE's large-vocabulary weakness as
+  exhausting genuinely useful words and filling remaining vocabulary slots with increasingly
+  rare, undertrained subwords. This is a real, plausible additional explanation for why this
+  project's own 32k arm may have lost — not because 32k tokens is inherently too many at this
+  scale, but because plain byte-level BPE spent its extra slots on low-value entries a
+  smarter tokenizer would have used differently. SuperBPE's own reported gains are explicitly
+  scale-dependent (its advantage comes from filling vocabulary past the point plain BPE
+  plateaus near average word length, roughly 4.45 bytes/token in its own reported numbers — at
+  this project's 16,384 vocabulary that plateau is not reached, so most of SuperBPE's own
+  benefit would not be available here). Not worth a dedicated tokenizer bake-off before the
+  real 3B-token run on its own; recorded as the most interesting open mechanism this
+  investigation leaves unresolved, should vocabulary size be revisited at meaningfully larger
+  scale.
