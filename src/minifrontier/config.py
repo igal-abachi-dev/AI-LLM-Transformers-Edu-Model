@@ -133,6 +133,15 @@ class ModelConfig:
     # attention-sink failure mode and (per Muse Glimmer's design) a more
     # general quality/efficiency technique. See attention.py's `gate_proj`.
     gated_attention: bool = False
+    # Off by default; MF-106, "zero cost, well-attested, adopt without
+    # ablation" (same bucket as z-loss and split RoPE theta) -- unlike the
+    # items above, NOT Modern-only: SwiGLU is shared by both frozen presets,
+    # and this is a numerical-safety net, not a competing architectural
+    # identity. Bounds SwiGLU.forward's gate/up branches to
+    # [-swiglu_clamp, swiglu_clamp]/[..., swiglu_clamp] before they combine,
+    # preventing an activation spike from ever reaching the residual stream.
+    # See layers.py's SwiGLU for the exact clamp shape and citation.
+    swiglu_clamp: float | None = None
 
     def __post_init__(self) -> None:
         # Fail here, loudly, with a message that names the offending field --
@@ -172,6 +181,8 @@ class ModelConfig:
             raise ValueError("rope_theta must be positive")
         if self.global_rope_theta is not None and self.global_rope_theta <= 0:
             raise ValueError("global_rope_theta must be positive when provided")
+        if self.swiglu_clamp is not None and self.swiglu_clamp <= 0:
+            raise ValueError("swiglu_clamp must be positive when provided")
         if self.global_rope_theta is not None and self.attention_pattern != "hybrid":
             raise ValueError("global_rope_theta only applies to hybrid attention")
         if self.init_std is not None and self.init_std <= 0:

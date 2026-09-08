@@ -84,17 +84,36 @@ class SwiGLU(nn.Module):
     cost parameters and buy essentially nothing.
     """
 
-    def __init__(self, d_model: int, d_ff: int) -> None:
+    def __init__(self, d_model: int, d_ff: int, *, clamp_value: float | None = None) -> None:
         super().__init__()
         if d_model <= 0 or d_ff <= 0:
             raise ValueError("d_model and d_ff must be positive")
+        if clamp_value is not None and clamp_value <= 0:
+            raise ValueError("clamp_value must be positive when provided")
         self.gate_proj = nn.Linear(d_model, d_ff, bias=False)
         self.up_proj = nn.Linear(d_model, d_ff, bias=False)
         self.down_proj = nn.Linear(d_ff, d_model, bias=False)
+        self.clamp_value = clamp_value
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         # Both projections read the SAME input; this is a fork, not a pipeline.
+        gate = self.gate_proj(inputs)
+        up = self.up_proj(inputs)
+        if self.clamp_value is not None:
+            # MF-106, off by default: bound both branches before they can
+            # combine into an extreme activation. Two-sided on the gate
+            # (it feeds SiLU, which is well-behaved on the negative side
+            # too) and upper-only on `up` (matching DeepSeek-V4's own
+            # SwiGLU-clamping description, arXiv 2606.19348 -- see
+            # docs/IMPLEMENTATION_DECISIONS.md for the exact citation and
+            # what could/couldn't be confirmed from the primary source).
+            # Real, not just plausible, on this project's own hardware:
+            # FP16 (this project's non-native-BF16 training precision, see
+            # AGENTS.md) has far less dynamic-range headroom than the
+            # BF16/FP8 DeepSeek trains in.
+            gate = gate.clamp(min=-self.clamp_value, max=self.clamp_value)
+            up = up.clamp(max=self.clamp_value)
         # silu(x) = x * sigmoid(x): like ReLU but smooth, and slightly negative for
         # small negative x, which lets the gate subtract as well as pass through.
         # [B, S, d_model] -> [B, S, d_ff] -> [B, S, d_model]
-        return self.down_proj(F.silu(self.gate_proj(inputs)) * self.up_proj(inputs))
+        return self.down_proj(F.silu(gate) * up)

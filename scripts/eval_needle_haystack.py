@@ -50,7 +50,10 @@ def _load_model(args: argparse.Namespace) -> tuple[MiniFrontier, MiniFrontierTok
         **json.loads((args.checkpoint / "config.json").read_text(encoding="utf-8"))
     )
     model = MiniFrontier(config).to(args.device).eval()
-    load_training_checkpoint(args.checkpoint, model, trusted_local_state=False)
+    # trusted_local_state=True: this is always your own train/pretrain.py
+    # output, produced in this same trusted environment -- never a
+    # downloaded artifact (see load_training_checkpoint's own docstring).
+    load_training_checkpoint(args.checkpoint, model, trusted_local_state=True)
     tokenizer = MiniFrontierTokenizer.from_directory(args.tokenizer)
     return model, tokenizer
 
@@ -87,7 +90,7 @@ def main() -> None:
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         report = {
-            "release": str(args.release),
+            "release": str(args.release) if args.release is not None else str(args.checkpoint),
             "context_lengths": args.context_lengths,
             "needle_fractions": args.needle_fractions,
             "seed": args.seed,

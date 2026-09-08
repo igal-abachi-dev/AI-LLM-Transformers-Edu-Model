@@ -94,7 +94,7 @@ class TransformerBlock(nn.Module):
         self.attention_norm = RMSNorm(config.d_model, eps=config.norm_eps)
         self.attention = CausalSelfAttention(config, layer_index)
         self.ffn_norm = RMSNorm(config.d_model, eps=config.norm_eps)
-        self.feed_forward = SwiGLU(config.d_model, config.d_ff)
+        self.feed_forward = SwiGLU(config.d_model, config.d_ff, clamp_value=config.swiglu_clamp)
         # LayerNorm scaling (MF-081, off by default): a fixed, non-learned
         # 1/sqrt(depth) factor applied to both norms' OUTPUT, damping how much
         # a deeper sublayer can add to the residual stream. `layer_index` is

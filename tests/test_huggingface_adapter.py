@@ -48,6 +48,12 @@ from minifrontier.model import MiniFrontier
         replace(ModelConfig.tiny_modern(attention_impl="manual"), value_residual=True),
         # MF-082: per-head gated attention must also reach the HF export path.
         replace(ModelConfig.tiny_modern(attention_impl="manual"), gated_attention=True),
+        # MF-106: SwiGLU clamping, on Edu -- unlike the items above, this one
+        # is NOT Modern-only, so this is also real coverage that the Edu
+        # guard change didn't accidentally over-restrict it. A small clamp
+        # value so it actually binds against real activations, not just
+        # exists as an inert field.
+        replace(ModelConfig.tiny_edu(attention_impl="manual"), swiglu_clamp=0.05),
         # d_model=48 is not divisible by n_heads=5 -- only valid because of
         # head_dim_override (MF-092). This is the regression case for the real
         # gap found by a third code-review round: the HF adapter used to

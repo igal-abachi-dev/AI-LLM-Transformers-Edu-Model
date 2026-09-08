@@ -33,6 +33,7 @@ class MiniFrontierConfig(PretrainedConfig):
         value_residual: bool = False,
         residual_std_damping: bool = True,
         gated_attention: bool = False,
+        swiglu_clamp: float | None = None,
         bos_token_id: int = 1,
         eos_token_id: int = 2,
         pad_token_id: int = 0,
@@ -84,6 +85,7 @@ class MiniFrontierConfig(PretrainedConfig):
         self.value_residual = value_residual
         self.residual_std_damping = residual_std_damping
         self.gated_attention = gated_attention
+        self.swiglu_clamp = swiglu_clamp
         self.head_dim = head_dim_override if head_dim_override is not None else d_model // n_heads
         self.use_cache = use_cache
         self.sliding_window = local_window
@@ -108,6 +110,8 @@ class MiniFrontierConfig(PretrainedConfig):
             raise ValueError("MiniFrontier dimensions must be positive")
         if self.head_dim_override is not None and self.head_dim_override <= 0:
             raise ValueError("head_dim_override must be positive when provided")
+        if self.swiglu_clamp is not None and self.swiglu_clamp <= 0:
+            raise ValueError("swiglu_clamp must be positive when provided")
         # Divisibility is only required when head_dim is derived from d_model;
         # an explicit head_dim_override exists precisely to decouple the two
         # (see ModelConfig.head_dim_override, which this mirrors exactly).

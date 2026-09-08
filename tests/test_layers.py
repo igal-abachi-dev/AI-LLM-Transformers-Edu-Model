@@ -1,3 +1,4 @@
+import pytest
 import torch
 from torch.nn import functional as F
 
@@ -54,3 +55,59 @@ def test_swiglu_matches_explicit_formula_and_gradients() -> None:
     expected.sum().backward()
     assert torch.allclose(inputs.grad, reference_inputs.grad)
     assert all(module.bias is None for module in (layer.gate_proj, layer.up_proj, layer.down_proj))
+
+
+def test_swiglu_clamp_disabled_matches_unclamped_default() -> None:
+    torch.manual_seed(3)
+    inputs = torch.randn(2, 3, 8)
+    torch.manual_seed(1)
+    unclamped = SwiGLU(8, 16)
+    torch.manual_seed(1)
+    explicit_none = SwiGLU(8, 16, clamp_value=None)
+    assert torch.equal(unclamped(inputs), explicit_none(inputs))
+
+
+def test_swiglu_clamp_rejects_non_positive_values() -> None:
+    with pytest.raises(ValueError, match="clamp_value must be positive"):
+        SwiGLU(8, 16, clamp_value=0.0)
+
+
+def test_swiglu_clamp_bounds_extreme_activations() -> None:
+    torch.manual_seed(4)
+    clamp_value = 2.0
+    layer = SwiGLU(4, 4, clamp_value=clamp_value)
+    with torch.no_grad():
+        # Force large pre-activation values regardless of the random input.
+        layer.gate_proj.weight.fill_(50.0)
+        layer.up_proj.weight.fill_(50.0)
+    inputs = torch.ones(1, 1, 4)
+    gate_raw = layer.gate_proj(inputs)
+    up_raw = layer.up_proj(inputs)
+    assert gate_raw.abs().max() > clamp_value
+    assert up_raw.abs().max() > clamp_value
+    unclamped_pre_down = F.silu(gate_raw) * up_raw
+
+    output = layer(inputs)
+    assert torch.isfinite(output).all()
+    # The clamped gate*up product before down_proj must be bounded by what
+    # the clamp values allow (silu on [-clamp, clamp] times a clamp-capped
+    # up), and therefore far smaller in magnitude than the unclamped product
+    # this same huge weight would otherwise produce.
+    clamped_gate = gate_raw.clamp(min=-clamp_value, max=clamp_value)
+    clamped_up = up_raw.clamp(max=clamp_value)
+    clamped_pre_down = F.silu(clamped_gate) * clamped_up
+    assert clamped_pre_down.abs().max() < unclamped_pre_down.abs().max()
+    assert clamped_pre_down.abs().max() <= F.silu(torch.tensor(clamp_value)) * clamp_value + 1e-4
+
+
+def test_swiglu_clamp_still_produces_finite_gradients() -> None:
+    torch.manual_seed(5)
+    layer = SwiGLU(4, 4, clamp_value=1.0)
+    with torch.no_grad():
+        layer.gate_proj.weight.fill_(100.0)
+        layer.up_proj.weight.fill_(100.0)
+    inputs = torch.randn(1, 2, 4, requires_grad=True)
+    output = layer(inputs)
+    output.sum().backward()
+    assert torch.isfinite(output).all()
+    assert inputs.grad is not None and torch.isfinite(inputs.grad).all()

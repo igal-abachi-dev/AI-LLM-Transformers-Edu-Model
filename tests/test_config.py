@@ -96,6 +96,14 @@ def test_config_rejects_edu_gated_attention() -> None:
         replace(ModelConfig.tiny_edu(), gated_attention=True)
 
 
+def test_swiglu_clamp_allowed_on_edu_and_rejects_non_positive() -> None:
+    # MF-106: a numerical-safety net, not a Modern-only architectural item.
+    config = replace(ModelConfig.tiny_edu(), swiglu_clamp=10.0)
+    assert config.swiglu_clamp == 10.0
+    with pytest.raises(ValueError, match="swiglu_clamp must be positive"):
+        replace(ModelConfig.tiny_edu(), swiglu_clamp=0.0)
+
+
 def test_hybrid_flex_dropout_contract_fails_at_configuration_time() -> None:
     config = ModelConfig.tiny_modern(attention_impl="auto")
     with pytest.raises(ValueError, match="FlexAttention requires dropout=0"):
