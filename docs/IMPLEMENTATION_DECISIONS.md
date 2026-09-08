@@ -310,3 +310,53 @@ independently re-checked against the actual source before any action.
   fertility cost. Migration cost is low: no real production-scale checkpoint was ever trained under
   32k (only the bounded ~7-8M-token comparison arms above); the original 16,384-tokenizer
   checkpoints this project already has (MF-063/064/065, `v0.1.0`) remain exactly what they were.
+
+## 2026-09-08 — MF-081/082/083/106 architecture surface: Modern-only scope split, and one direct adoption
+
+- **Every architecture-level item introduced by MF-081/082's bounded ablations is Modern-only**
+  (user-directed): LayerNorm scaling, value residuals, split local/global RoPE theta, GQA-ratio
+  changes, and per-head gated attention. Edu must stay exactly the classic architecture
+  (`AGENTS.md`'s own Frozen V1 list) so it remains simple enough to fully explain to a beginner
+  regardless of what Modern's bounded ablations end up adopting. `ModelConfig.__post_init__` now
+  rejects `layer_norm_scaling`/`value_residual`/`gated_attention` on `preset="edu"`; GQA-ratio
+  changes and a non-default `global_rope_theta` were already structurally impossible on Edu via its
+  existing MHA-only/full-attention-only guards. Mirrored into the HF export adapter's own Edu guard.
+  MF-083's two training-recipe items split further, since neither is a `ModelConfig` field and
+  `TrainingConfig` has no preset awareness to validate against: WSD is an operational safeguard
+  against an interrupted multi-day run, not a quality technique, so it applies to *both* Edu's and
+  Modern's real release runs (user-confirmed); cautious weight decay is a real quality technique
+  gated on its own bounded test, so it stays Modern-only like the architecture items above.
+- **Split local/global RoPE theta (MF-081) is adopted directly** (no bounded ablation needed, per
+  this project's own "zero cost, well-attested, can't plausibly hurt" rule already used for z-loss):
+  `ModelConfig.global_rope_theta`, defaulting to `None` (= same as `rope_theta`, so every existing
+  config/checkpoint/test is unaffected). No frozen preset sets a non-default value; the mechanism
+  exists and is tested, not yet applied to any real release config.
+- **SwiGLU clamping (MF-106) is adopted directly**, same rule, and — unlike the MF-081/082 items
+  above — is *not* Modern-only: it is a numerical-safety net shared by both frozen presets, not a
+  competing architectural identity. Raised from a real, verified read of the DeepSeek-V4 technical
+  report (arXiv 2606.19348, confirmed real via `WebSearch` + a direct primary-source fetch of
+  `arxiv.org/html/2606.19348v1`, not taken on faith from secondary summaries — see MF-106/MF-107 in
+  `tasks/backlog.md` for the full verification trail, including a real correction: the paper's own
+  cited "64 dimensions" for its partial-RoPE feature is DeepSeek's own absolute dimension count for
+  a differently-shaped attention mechanism, not a literal "50%" this project could copy). Section
+  4.2.3, "Mitigating Training Instability," confirmed present with a "SwiGLU Clamping" subsection;
+  its exact numeric clamp values could not be confirmed from the primary source text itself (only a
+  secondary, unverified source claims `[-10, 10]`/cap-10) — `ModelConfig.swiglu_clamp: float | None
+  = None` therefore ships as a mechanism with no project-chosen default value, not a citation-grade
+  number. Real, not hypothetical, for this project specifically: DeepSeek trains in BF16/FP8 (wide
+  dynamic range); this project's own documented precision policy trains in FP16 with gradient
+  scaling on non-native-BF16 hardware (`AGENTS.md`, `reports/mf049-rtx2070s-checkpointing-benchmark.md`),
+  where an activation spike is a genuinely bigger risk, not a smaller one.
+- **DeepSeek's own real attention-sink mechanism was found and recorded, but the fix already chosen
+  and built for MF-082 (per-head gated attention) was not replaced.** V4's real mechanism (confirmed
+  from the primary source): one learnable scalar `z'_h` per head, added as an `Exp(z'_h)` term
+  inside the softmax denominator, letting a head's total attention weight sum to less than one. This
+  is the same shape as the "gpt-oss-style learned per-head sink logits" alternative MF-082's own
+  task description already named but did not choose — recorded as a precisely-specified fallback
+  candidate for later, not acted on now, since swapping out already-implemented, already-tested code
+  without evidence it underperforms would repeat the mistake this project's own bounded-comparison
+  discipline exists to prevent.
+- **DeepSeek V4.1 Flash** (a separate, unrelated announcement in the same feedback batch) was
+  checked and found to carry no technical content: a two-day internal API beta with a speed
+  benchmark and a marketing claim of a new multimodal architecture, no technical report, weights,
+  config, or architecture disclosure. Reviewed, not acted on.
