@@ -19,6 +19,7 @@ class MiniFrontierConfig(PretrainedConfig):
         d_ff: int = 2_048,
         norm_eps: float = 1e-6,
         rope_theta: float = 10_000.0,
+        global_rope_theta: float | None = None,
         qk_norm: bool = False,
         attention_pattern: str = "full",
         local_window: int = 512,
@@ -28,6 +29,9 @@ class MiniFrontierConfig(PretrainedConfig):
         init_std: float | None = None,
         preset: str = "edu",
         head_dim_override: int | None = None,
+        layer_norm_scaling: bool = False,
+        value_residual: bool = False,
+        residual_std_damping: bool = True,
         bos_token_id: int = 1,
         eos_token_id: int = 2,
         pad_token_id: int = 0,
@@ -65,6 +69,7 @@ class MiniFrontierConfig(PretrainedConfig):
         self.norm_eps = norm_eps
         self.rms_norm_eps = norm_eps
         self.rope_theta = rope_theta
+        self.global_rope_theta = global_rope_theta
         self.qk_norm = qk_norm
         self.attention_pattern = attention_pattern
         self.local_window = local_window
@@ -74,6 +79,9 @@ class MiniFrontierConfig(PretrainedConfig):
         self.init_std = init_std
         self.preset = preset
         self.head_dim_override = head_dim_override
+        self.layer_norm_scaling = layer_norm_scaling
+        self.value_residual = value_residual
+        self.residual_std_damping = residual_std_damping
         self.head_dim = head_dim_override if head_dim_override is not None else d_model // n_heads
         self.use_cache = use_cache
         self.sliding_window = local_window
@@ -124,6 +132,16 @@ class MiniFrontierConfig(PretrainedConfig):
             raise ValueError("Edu configuration violates the frozen architecture")
         if self.preset == "modern" and self.n_kv_heads >= self.n_heads:
             raise ValueError("Modern requires fewer KV heads than query heads")
+        if self.global_rope_theta is not None and self.global_rope_theta <= 0:
+            raise ValueError("global_rope_theta must be positive when provided")
+        if self.global_rope_theta is not None and self.attention_pattern != "hybrid":
+            raise ValueError("global_rope_theta only applies to hybrid attention")
+
+    @property
+    def resolved_global_rope_theta(self) -> float:
+        """Global-layer RoPE theta, defaulting to `rope_theta` when unset."""
+
+        return self.global_rope_theta if self.global_rope_theta is not None else self.rope_theta
 
     def is_local_layer(self, layer_index: int) -> bool:
         return self.attention_pattern == "hybrid" and (layer_index + 1) % 4 != 0

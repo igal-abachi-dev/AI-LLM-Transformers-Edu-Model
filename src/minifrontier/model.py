@@ -95,6 +95,13 @@ class TransformerBlock(nn.Module):
         self.attention = CausalSelfAttention(config, layer_index)
         self.ffn_norm = RMSNorm(config.d_model, eps=config.norm_eps)
         self.feed_forward = SwiGLU(config.d_model, config.d_ff)
+        # LayerNorm scaling (MF-081, off by default): a fixed, non-learned
+        # 1/sqrt(depth) factor applied to both norms' OUTPUT, damping how much
+        # a deeper sublayer can add to the residual stream. `layer_index` is
+        # made 1-based here to match the paper's own l=1 (first layer), not
+        # l=0. `None` when disabled, so the forward-pass hot path skips the
+        # multiply entirely rather than multiplying by a stored 1.0.
+        self.layer_norm_scale = (layer_index + 1) ** -0.5 if config.layer_norm_scaling else None
 
     def forward(
         self,
@@ -106,21 +113,29 @@ class TransformerBlock(nn.Module):
         attention_mask: torch.Tensor | None = None,
         cache: LayerKVCache | None = None,
         start_pos: int = 0,
+        first_layer_value: torch.Tensor | None = None,
     ) -> torch.Tensor:
         # Sublayer 1 -- gather across tokens. Note that `inputs` on the right of
         # the `+` is the untouched original: the norm feeds attention only, it
         # never edits the residual stream itself.
+        attention_input = self.attention_norm(inputs)
+        if self.layer_norm_scale is not None:
+            attention_input = attention_input * self.layer_norm_scale
         inputs = inputs + self.attention(
-            self.attention_norm(inputs),
+            attention_input,
             cosine,
             sine,
             implementation=attention_impl,
             attention_mask=attention_mask,
             cache=cache,
             start_pos=start_pos,
+            first_layer_value=first_layer_value,
         )
         # Sublayer 2 -- think about each token on its own, same add-back shape.
-        return inputs + self.feed_forward(self.ffn_norm(inputs))
+        feed_forward_input = self.ffn_norm(inputs)
+        if self.layer_norm_scale is not None:
+            feed_forward_input = feed_forward_input * self.layer_norm_scale
+        return inputs + self.feed_forward(feed_forward_input)
 
 
 class MiniFrontier(nn.Module):
@@ -138,7 +153,18 @@ class MiniFrontier(nn.Module):
         self.token_embedding = nn.Embedding(config.vocab_size, config.d_model)
         # Position tables live on the model rather than inside each layer: they
         # depend only on position, so all n_layers layers can share one copy.
-        self.rope = RoPE(config.head_dim, config.max_seq_len, config.rope_theta)
+        # Local and global layers may use independently tuned rotation speeds
+        # (MF-081): when unset (the default, and the only legal value outside
+        # "hybrid"), `resolved_global_rope_theta` equals `rope_theta`, so
+        # `global_rope` is literally the same module as `local_rope` -- no
+        # extra parameters, no extra forward compute, identical to the single
+        # shared table this model used before the split existed.
+        self.local_rope = RoPE(config.head_dim, config.max_seq_len, config.rope_theta)
+        self.global_rope = (
+            self.local_rope
+            if config.resolved_global_rope_theta == config.rope_theta
+            else RoPE(config.head_dim, config.max_seq_len, config.resolved_global_rope_theta)
+        )
         # `layer_index` is passed down because in the Modern preset a layer's
         # behaviour (local or global, RoPE or NoPE, Flex or SDPA) depends on it.
         self.blocks = nn.ModuleList(
@@ -154,11 +180,15 @@ class MiniFrontier(nn.Module):
         # variance would grow by a factor of ~2L. Shrinking the two projections
         # that actually write into the stream by 1/sqrt(2L) keeps the stream about
         # the same size at the top as at the bottom. This is the GPT-2 trick, and
-        # it matters more the deeper the model gets.
-        residual_std = config.resolved_init_std / math.sqrt(2 * config.n_layers)
-        for block in self.blocks:
-            nn.init.normal_(block.attention.out_proj.weight, mean=0.0, std=residual_std)
-            nn.init.normal_(block.feed_forward.down_proj.weight, mean=0.0, std=residual_std)
+        # it matters more the deeper the model gets. Always on except inside
+        # MF-081's own bounded ablation, which needs to isolate this init-time
+        # damping from `layer_norm_scaling`'s forward-pass damping -- every
+        # frozen preset leaves `residual_std_damping` at its default `True`.
+        if config.residual_std_damping:
+            residual_std = config.resolved_init_std / math.sqrt(2 * config.n_layers)
+            for block in self.blocks:
+                nn.init.normal_(block.attention.out_proj.weight, mean=0.0, std=residual_std)
+                nn.init.normal_(block.feed_forward.down_proj.weight, mean=0.0, std=residual_std)
         # Tied embeddings: the input table and the output scoreboard become the
         # exact same tensor -- "ID -> meaning" on the way in, "meaning -> ID" on
         # the way out. This is an assignment, not a copy, so one gradient update
@@ -276,7 +306,35 @@ class MiniFrontier(nn.Module):
         # table already rounded to BF16 here would throw away the precision that
         # fix is trying to preserve. Only the rotated Q/K are cast back down.
         positions = torch.arange(start_pos, end_pos, device=tokens.device)
-        cosine, sine = self.rope(positions, dtype=torch.float32, device=hidden.device)
+        local_cosine, local_sine = self.local_rope(
+            positions, dtype=torch.float32, device=hidden.device
+        )
+        if self.global_rope is self.local_rope:
+            global_cosine, global_sine = local_cosine, local_sine
+        else:
+            global_cosine, global_sine = self.global_rope(
+                positions, dtype=torch.float32, device=hidden.device
+            )
+        # Value residual (MF-081, off by default): every layer but the first
+        # mixes layer 1's value vectors into its own. Computed once here,
+        # from the SAME residual-stream state and the SAME norm/scale/v_proj
+        # block 0's own forward pass below will independently apply to
+        # itself -- deterministic and bit-identical, so this is a small,
+        # redundant recompute of block 0's v_proj (skipped entirely, at zero
+        # cost, whenever the feature is off).
+        first_layer_value = None
+        if self.config.value_residual:
+            first_block = self.blocks[0]
+            first_attention_input = first_block.attention_norm(hidden)
+            if first_block.layer_norm_scale is not None:
+                first_attention_input = first_attention_input * first_block.layer_norm_scale
+            first_layer_value = (
+                first_block.attention.v_proj(first_attention_input)
+                .view(
+                    hidden.shape[0], hidden.shape[1], self.config.n_kv_heads, self.config.head_dim
+                )
+                .transpose(1, 2)
+            )
         # Masks are built lazily and at most once each. Many layers want the same
         # grid, and several kernel paths need no explicit mask at all -- so this
         # avoids allocating a [Sq, Sk] tensor nobody ends up reading.
@@ -337,20 +395,32 @@ class MiniFrontier(nn.Module):
                 # `full_mask` -- and usually `None`, because plain causal SDPA
                 # builds its own.
                 selected_mask = local_mask if block.attention.is_local else full_mask
+                # Each layer rotates by its own theta's table (MF-081): local
+                # layers always use the local table, global layers the global
+                # one -- identical tables whenever `global_rope_theta` is unset.
+                cosine, sine = (
+                    (local_cosine, local_sine)
+                    if block.attention.is_local
+                    else (global_cosine, global_sine)
+                )
                 if activation_checkpointing:
 
                     def block_forward(
                         value: torch.Tensor,
                         current_block: TransformerBlock = block,
                         current_mask: torch.Tensor | None = selected_mask,
+                        current_cosine: torch.Tensor = cosine,
+                        current_sine: torch.Tensor = sine,
+                        current_first_layer_value: torch.Tensor | None = first_layer_value,
                     ) -> torch.Tensor:
                         return current_block(
                             value,
-                            cosine,
-                            sine,
+                            current_cosine,
+                            current_sine,
                             attention_impl=attention_impl,
                             attention_mask=current_mask,
                             start_pos=start_pos,
+                            first_layer_value=current_first_layer_value,
                         )
 
                     # Run the block without storing its intermediate activations,
@@ -367,6 +437,7 @@ class MiniFrontier(nn.Module):
                         attention_mask=selected_mask,
                         cache=layer_cache,
                         start_pos=start_pos,
+                        first_layer_value=first_layer_value,
                     )
             # Out of the last block; one final volume adjustment before scoring.
             normalized = self.final_norm(hidden)

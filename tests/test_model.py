@@ -1,8 +1,10 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 import torch
 
+from minifrontier.cache import KVCache
 from minifrontier.config import ModelConfig
 from minifrontier.model import MiniFrontier
 
@@ -68,6 +70,130 @@ def test_depth_scaled_residual_initialization() -> None:
     assert model.blocks[0].feed_forward.down_proj.weight.std().item() == pytest.approx(
         residual_expected, rel=0.08
     )
+
+
+def test_residual_std_damping_can_be_disabled_for_the_layer_norm_scaling_ablation() -> None:
+    torch.manual_seed(30)
+    config = ModelConfig.tiny_edu(n_layers=4, d_model=64, n_heads=4, d_ff=256)
+    config = replace(config, residual_std_damping=False)
+    model = MiniFrontier(config)
+    base_expected = config.d_model**-0.5
+    # Without the depth-scaled init damping, out_proj/down_proj get the same
+    # plain init as every other Linear -- no 1/sqrt(2*n_layers) shrink.
+    assert model.blocks[0].attention.out_proj.weight.std().item() == pytest.approx(
+        base_expected, rel=0.08
+    )
+    assert model.blocks[0].feed_forward.down_proj.weight.std().item() == pytest.approx(
+        base_expected, rel=0.08
+    )
+
+
+def test_layer_norm_scaling_disabled_by_default() -> None:
+    config = ModelConfig.tiny_edu(n_layers=3)
+    model = MiniFrontier(config)
+    assert all(block.layer_norm_scale is None for block in model.blocks)
+
+
+def test_layer_norm_scaling_uses_one_indexed_inverse_sqrt_depth() -> None:
+    config = ModelConfig.tiny_edu(n_layers=4)
+    config = replace(config, layer_norm_scaling=True)
+    model = MiniFrontier(config)
+    for layer_index, block in enumerate(model.blocks):
+        assert block.layer_norm_scale == pytest.approx((layer_index + 1) ** -0.5)
+
+
+def test_layer_norm_scaling_changes_forward_output() -> None:
+    torch.manual_seed(31)
+    config = ModelConfig.tiny_edu(n_layers=4, d_model=64, n_heads=4, d_ff=256)
+    baseline = MiniFrontier(config).eval()
+    torch.manual_seed(31)
+    scaled = MiniFrontier(replace(config, layer_norm_scaling=True)).eval()
+    tokens = torch.randint(0, config.vocab_size, (2, 9))
+    assert not torch.allclose(baseline(tokens).logits, scaled(tokens).logits)
+
+
+def test_value_residual_disabled_has_no_gates() -> None:
+    config = ModelConfig.tiny_modern(n_layers=4)
+    model = MiniFrontier(config)
+    assert all(block.attention.value_residual_gate is None for block in model.blocks)
+
+
+def test_value_residual_first_layer_never_gets_a_gate() -> None:
+    config = replace(ModelConfig.tiny_modern(n_layers=4), value_residual=True)
+    model = MiniFrontier(config)
+    assert model.blocks[0].attention.value_residual_gate is None
+    assert all(block.attention.value_residual_gate is not None for block in model.blocks[1:])
+
+
+def test_value_residual_zero_initialized_gate_matches_disabled_forward() -> None:
+    """The zero-init claim: enabling the flag must not change forward output
+    until a gate actually learns something away from zero."""
+
+    torch.manual_seed(32)
+    config = ModelConfig.tiny_modern(
+        n_layers=4, d_model=32, n_heads=4, n_kv_heads=2, d_ff=96, attention_impl="sdpa"
+    )
+    baseline = MiniFrontier(config).eval()
+    torch.manual_seed(32)
+    gated = MiniFrontier(replace(config, value_residual=True)).eval()
+    tokens = torch.randint(0, config.vocab_size, (2, 9))
+    assert torch.equal(baseline(tokens).logits, gated(tokens).logits)
+
+
+def test_value_residual_nonzero_gate_changes_forward_output() -> None:
+    torch.manual_seed(33)
+    config = replace(
+        ModelConfig.tiny_modern(
+            n_layers=4, d_model=32, n_heads=4, n_kv_heads=2, d_ff=96, attention_impl="sdpa"
+        ),
+        value_residual=True,
+    )
+    model = MiniFrontier(config).eval()
+    tokens = torch.randint(0, config.vocab_size, (2, 9))
+    zero_gate_logits = model(tokens).logits
+    with torch.no_grad():
+        model.blocks[2].attention.value_residual_gate.fill_(1.0)
+    nonzero_gate_logits = model(tokens).logits
+    assert not torch.allclose(zero_gate_logits, nonzero_gate_logits)
+
+
+def test_value_residual_cached_and_uncached_logits_match() -> None:
+    torch.manual_seed(34)
+    config = replace(
+        ModelConfig.tiny_modern(
+            max_seq_len=16,
+            local_window=4,
+            d_model=32,
+            n_heads=4,
+            n_kv_heads=2,
+            d_ff=96,
+            attention_impl="sdpa",
+        ),
+        value_residual=True,
+    )
+    model = MiniFrontier(config).eval()
+    with torch.no_grad():
+        for block in model.blocks[1:]:
+            block.attention.value_residual_gate.fill_(0.5)
+    tokens = torch.randint(0, config.vocab_size, (1, 11))
+    full = model(tokens).logits
+    cache = KVCache.allocate(
+        config,
+        batch_size=1,
+        device="cpu",
+        dtype=model.token_embedding.weight.dtype,
+        capacity=11,
+    )
+    cached = torch.cat(
+        (
+            model(tokens[:, :3], cache=cache).logits,
+            model(tokens[:, 3:7], cache=cache).logits,
+            model(tokens[:, 7:], cache=cache).logits,
+        ),
+        dim=1,
+    )
+    assert torch.allclose(full, cached, atol=2e-5)
+    assert torch.equal(full.argmax(dim=-1), cached.argmax(dim=-1))
 
 
 def test_hidden_states_are_none_by_default_and_populated_when_requested() -> None:

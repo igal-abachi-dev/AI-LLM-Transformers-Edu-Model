@@ -62,7 +62,20 @@ class ModelConfig:
     # Numerical floor inside RMSNorm so an all-zero token cannot divide by zero.
     norm_eps: float = 1e-6
     # RoPE base frequency. Larger = slower rotations = longer positional reach.
+    # Used by every layer in Edu, and by LOCAL layers in Modern's hybrid schedule.
     rope_theta: float = 10_000.0
+    # RoPE base frequency for GLOBAL layers only. None (the default) means "same
+    # as rope_theta" -- every existing config, checkpoint, and test is unaffected
+    # until this is explicitly set. Adopted directly without a bounded ablation
+    # (MF-081, 2026-09-08): a local layer's short window already only ever needs
+    # to distinguish nearby positions, so its rope_theta can stay tuned for
+    # fine-grained recent-token resolution, while a global layer's job (spanning
+    # the whole context) can be tuned independently for longer positional
+    # reach -- zero added parameters and no extra FLOPs, so there is nothing an
+    # ablation would be protecting against. Only meaningful under "hybrid":
+    # Edu's single full-attention layer type has no local/global split to
+    # separate a theta for.
+    global_rope_theta: float | None = None
     # RMSNorm on Q and K before they are compared. Modern only; see attention.py.
     qk_norm: bool = False
     # "full" = every layer sees all history. "hybrid" = 3 short-sighted layers
@@ -90,6 +103,28 @@ class ModelConfig:
     # project to n_heads * head_dim regardless of d_model, and out_proj maps
     # back down, so the two are only linked by this override when one is given.
     head_dim_override: int | None = None
+    # Off by default; bounded-tested before becoming a default (MF-081). Scales
+    # each pre-attention/pre-FFN RMSNorm's OUTPUT by 1/sqrt(layer_index + 1)
+    # ("The Curse of Depth in LLMs", arXiv:2502.05795): counteracts residual-
+    # stream variance growth with depth by damping every sublayer's own
+    # contribution, on top of (not instead of) the existing init-time damping
+    # in model.py's `residual_std`. The two are not assumed compatible without
+    # a real comparison -- see the bounded test this flag exists for.
+    layer_norm_scaling: bool = False
+    # Off by default; bounded test explicitly deferred until effect sizes this
+    # small are known to be measurable on this hardware (MF-088, MF-081).
+    # Mixes layer 1's value vectors into every later layer's own value vectors
+    # through a per-layer learned gate, initialized to zero so training starts
+    # identical to the current architecture and only drifts if the gate proves
+    # useful. See attention.py's `value_residual_gate` for the mechanism.
+    value_residual: bool = False
+    # On by default -- this is the pre-existing GPT-2-style 1/sqrt(2*n_layers)
+    # init-time damping in model.py, always applied until MF-081 needed a way
+    # to switch it off. Exists solely so MF-081's bounded LayerNorm-scaling
+    # ablation can isolate the two mechanisms (this one damps at init time
+    # only; `layer_norm_scaling` damps every forward pass) instead of always
+    # measuring them combined. Every frozen preset leaves this at `True`.
+    residual_std_damping: bool = True
 
     def __post_init__(self) -> None:
         # Fail here, loudly, with a message that names the offending field --
@@ -127,6 +162,10 @@ class ModelConfig:
             raise ValueError("norm_eps must be positive")
         if self.rope_theta <= 0:
             raise ValueError("rope_theta must be positive")
+        if self.global_rope_theta is not None and self.global_rope_theta <= 0:
+            raise ValueError("global_rope_theta must be positive when provided")
+        if self.global_rope_theta is not None and self.attention_pattern != "hybrid":
+            raise ValueError("global_rope_theta only applies to hybrid attention")
         if self.init_std is not None and self.init_std <= 0:
             raise ValueError("init_std must be positive when provided")
         if not 0.0 <= self.dropout < 1.0:
@@ -196,6 +235,12 @@ class ModelConfig:
         """
 
         return self.init_std if self.init_std is not None else self.d_model**-0.5
+
+    @property
+    def resolved_global_rope_theta(self) -> float:
+        """Global-layer RoPE theta, defaulting to `rope_theta` when unset."""
+
+        return self.global_rope_theta if self.global_rope_theta is not None else self.rope_theta
 
     def is_local_layer(self, layer_index: int) -> bool:
         """Return True for a short-sighted (sliding-window) layer.

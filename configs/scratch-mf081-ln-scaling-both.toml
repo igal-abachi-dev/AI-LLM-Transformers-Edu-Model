@@ -1,0 +1,24 @@
+preset = "modern"
+vocab_size = 16384
+max_seq_len = 2048
+n_layers = 20
+d_model = 768
+n_heads = 12
+n_kv_heads = 4
+d_ff = 2048
+norm_eps = 1e-6
+rope_theta = 10000.0
+qk_norm = true
+attention_pattern = "hybrid"
+local_window = 512
+global_position_encoding = "rope"
+dropout = 0.0
+tie_embeddings = true
+attention_impl = "auto"
+# MF-081 arm (c): LayerNorm scaling COMBINED with the pre-existing init-time
+# residual damping (residual_std_damping defaults to true, so this is the
+# outcome of naively flipping layer_norm_scaling on top of the unmodified
+# baseline). Compare against 150m-modern.toml (arm a) and
+# scratch-mf081-ln-scaling-alone.toml (arm b) to see whether the two
+# mechanisms compound or fight each other.
+layer_norm_scaling = true

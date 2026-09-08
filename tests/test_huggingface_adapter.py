@@ -34,6 +34,18 @@ from minifrontier.model import MiniFrontier
             ModelConfig.tiny_modern(attention_impl="manual"),
             global_position_encoding="none",
         ),
+        # MF-081: split local/global RoPE theta must reach the HF export path
+        # the same way head_dim_override did (see the case below) -- exercised
+        # with a theta divergent enough that a missed wiring bug would produce
+        # very different (not just numerically-close) logits.
+        replace(
+            ModelConfig.tiny_modern(attention_impl="manual"),
+            global_rope_theta=1_000_000.0,
+        ),
+        # MF-081: LayerNorm scaling and value residual must also reach the HF
+        # export path with real end-to-end parity, not just field mirroring.
+        replace(ModelConfig.tiny_modern(attention_impl="manual"), layer_norm_scaling=True),
+        replace(ModelConfig.tiny_modern(attention_impl="manual"), value_residual=True),
         # d_model=48 is not divisible by n_heads=5 -- only valid because of
         # head_dim_override (MF-092). This is the regression case for the real
         # gap found by a third code-review round: the HF adapter used to
@@ -47,6 +59,13 @@ def test_native_transformers_logits_and_greedy_tokens_match(config, mini_tokeniz
     config = replace(config, vocab_size=max(512, mini_tokenizer.vocab_size))
     torch.manual_seed(9)
     native = MiniFrontier(config).eval()
+    if config.value_residual:
+        # A zero gate is a no-op regardless of whether the mixing arithmetic
+        # is wired correctly -- perturb it so a real wiring bug would produce
+        # a genuine logit mismatch, not a false-positive pass.
+        with torch.no_grad():
+            for block in native.blocks[1:]:
+                block.attention.value_residual_gate.fill_(0.5)
     hf_config = transformers_config(native, mini_tokenizer)
     hf_model = MiniFrontierForCausalLM(hf_config).eval()
     load_native_weights_into_transformers(native, hf_model)

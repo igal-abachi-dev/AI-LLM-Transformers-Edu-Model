@@ -21,7 +21,6 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from collections.abc import Iterator
 from dataclasses import asdict
 from pathlib import Path
 
@@ -29,7 +28,7 @@ import torch
 
 from minifrontier.checkpoint import save_training_checkpoint
 from minifrontier.config import ModelConfig
-from minifrontier.evaluation.validation import ValidationBatch, evaluate_token_batches
+from minifrontier.evaluation.validation import batches_from_packed_shards, evaluate_token_batches
 from minifrontier.model import MiniFrontier
 from minifrontier.mtp import MTPHeads
 from minifrontier.reproducibility import seed_everything
@@ -68,41 +67,6 @@ def parse_args() -> argparse.Namespace:
         "after an interrupted run already produced a real 'baseline' checkpoint",
     )
     return parser.parse_args()
-
-
-def _validation_batches(
-    dataset: PackedShardDataset, tokenizer: MiniFrontierTokenizer, device: torch.device
-) -> Iterator[ValidationBatch]:
-    """Real held-out validation batches, decoded back to UTF-8 for bits-per-byte.
-
-    Mirrors this project's own established validation recipe (see the MF-070
-    pre-work reports) rather than inventing a new one: pack ``VALIDATION_BATCH_SIZE``
-    sequences at a time, decode each back to text (skipping padding) purely to
-    count real UTF-8 bytes -- bits-per-byte is the one metric comparable across
-    tokenizers, so it is worth the decode cost.
-    """
-
-    pad_id = tokenizer.pad_id
-    buffer: list[torch.Tensor] = []
-    for index in range(len(dataset)):
-        tokens, _ = dataset[index]
-        buffer.append(tokens)
-        if len(buffer) == VALIDATION_BATCH_SIZE:
-            yield _stack_validation_batch(buffer, tokenizer, pad_id, device)
-            buffer = []
-    if buffer:
-        yield _stack_validation_batch(buffer, tokenizer, pad_id, device)
-
-
-def _stack_validation_batch(
-    buffer: list[torch.Tensor], tokenizer: MiniFrontierTokenizer, pad_id: int, device: torch.device
-) -> ValidationBatch:
-    stacked = torch.stack(buffer, dim=0).to(device)
-    utf8_bytes = 0
-    for row in buffer:
-        ids = [int(value) for value in row.tolist() if int(value) != pad_id]
-        utf8_bytes += len(tokenizer.decode(ids, skip_special_tokens=True).encode("utf-8"))
-    return ValidationBatch(tokens=stacked, utf8_bytes=utf8_bytes)
 
 
 def main() -> None:
@@ -173,7 +137,12 @@ def main() -> None:
             validation_dataset = PackedShardDataset(args.validation_shards)
             metrics = evaluate_token_batches(
                 model,
-                _validation_batches(validation_dataset, tokenizer, torch_device),
+                batches_from_packed_shards(
+                    validation_dataset,
+                    tokenizer,
+                    batch_size=VALIDATION_BATCH_SIZE,
+                    device=torch_device,
+                ),
                 pad_id=tokenizer.pad_id,
             )
             validation = {

@@ -23,13 +23,14 @@ batches.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
 import torch
 from torch.nn import functional as F
 
 from minifrontier.model import MiniFrontier
+from minifrontier.shards import PackedShardDataset
 from minifrontier.tokenizer import MiniFrontierTokenizer
 
 
@@ -116,6 +117,48 @@ def evaluate_token_batches(
     if accumulator is None:
         raise ValueError("validation batches cannot be empty")
     return accumulator.compute()
+
+
+def batches_from_packed_shards(
+    dataset: PackedShardDataset,
+    tokenizer: MiniFrontierTokenizer,
+    *,
+    batch_size: int,
+    device: torch.device | str = "cpu",
+) -> Iterator[ValidationBatch]:
+    """Real held-out validation batches from an already-packed shard pool,
+    decoded back to UTF-8 for bits-per-byte (MF-086).
+
+    This is the one standing, reusable path for the tokenizer-agnostic
+    bits-per-byte recipe this project has used, ad hoc and duplicated, in
+    several one-off comparison scripts (`compare_tokenizers.py`,
+    `compare_mtp.py`) -- decode each packed sequence back to text (skipping
+    padding) purely to count real UTF-8 bytes, since bits-per-byte (unlike
+    token-level cross-entropy/perplexity) is comparable even between
+    checkpoints trained under *different* tokenizers.
+    """
+
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    pad_id = tokenizer.pad_id
+    buffer: list[torch.Tensor] = []
+
+    def stack(rows: list[torch.Tensor]) -> ValidationBatch:
+        stacked = torch.stack(rows, dim=0).to(device)
+        utf8_bytes = 0
+        for row in rows:
+            ids = [int(value) for value in row.tolist() if int(value) != pad_id]
+            utf8_bytes += len(tokenizer.decode(ids, skip_special_tokens=True).encode("utf-8"))
+        return ValidationBatch(tokens=stacked, utf8_bytes=utf8_bytes)
+
+    for index in range(len(dataset)):
+        tokens, _ = dataset[index]
+        buffer.append(tokens)
+        if len(buffer) == batch_size:
+            yield stack(buffer)
+            buffer = []
+    if buffer:
+        yield stack(buffer)
 
 
 def batches_from_texts(

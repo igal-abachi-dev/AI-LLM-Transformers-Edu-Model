@@ -34,10 +34,10 @@ def rotate_half(inputs: torch.Tensor) -> torch.Tensor:
 
 
 class MiniFrontierRoPE(nn.Module):
-    def __init__(self, config: MiniFrontierConfig) -> None:
+    def __init__(self, config: MiniFrontierConfig, theta: float) -> None:
         super().__init__()
         self.head_dim = config.head_dim
-        self.rope_theta = config.rope_theta
+        self.rope_theta = theta
 
     def forward(
         self, position_ids: torch.Tensor, *, dtype: torch.dtype
@@ -125,6 +125,11 @@ class MiniFrontierAttention(nn.Module):
         self.k_norm = (
             MiniFrontierRMSNorm(self.head_dim, config.norm_eps) if config.qk_norm else None
         )
+        # Mirrors the native model's value_residual_gate exactly (MF-081):
+        # every layer but the first gets one learned scalar, zero-initialized.
+        self.value_residual_gate = (
+            nn.Parameter(torch.zeros(1)) if config.value_residual and layer_index != 0 else None
+        )
 
     def forward(
         self,
@@ -136,6 +141,7 @@ class MiniFrontierAttention(nn.Module):
         past_key_values: Cache | None,
         cache_position: torch.Tensor,
         output_attentions: bool,
+        first_layer_value: torch.Tensor | None = None,
         **kwargs: Any,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         batch, sequence, _ = hidden_states.shape
@@ -155,6 +161,11 @@ class MiniFrontierAttention(nn.Module):
         if self.config.uses_rope(self.layer_idx):
             query = apply_rotary(query, cosine, sine)
             key = apply_rotary(key, cosine, sine)
+        if self.value_residual_gate is not None:
+            # Mixed in BEFORE caching, matching the native model exactly.
+            if first_layer_value is None:
+                raise ValueError("value_residual requires first_layer_value from layer 0")
+            value = value + self.value_residual_gate * first_layer_value
         if past_key_values is not None:
             key, value = past_key_values.update(key, value, self.layer_idx)
         if self.config._attn_implementation == "vllm":
@@ -203,11 +214,19 @@ class MiniFrontierDecoderLayer(nn.Module):
         self.attention = MiniFrontierAttention(config, layer_index)
         self.ffn_norm = MiniFrontierRMSNorm(config.d_model, config.norm_eps)
         self.feed_forward = MiniFrontierSwiGLU(config)
+        # Mirrors the native model's LayerNorm scaling exactly (MF-081).
+        self.layer_norm_scale = (layer_index + 1) ** -0.5 if config.layer_norm_scaling else None
 
     def forward(self, hidden_states: torch.Tensor, *args: Any, **kwargs: Any) -> tuple[Any, ...]:
-        attended, weights = self.attention(self.attention_norm(hidden_states), *args, **kwargs)
+        attention_input = self.attention_norm(hidden_states)
+        if self.layer_norm_scale is not None:
+            attention_input = attention_input * self.layer_norm_scale
+        attended, weights = self.attention(attention_input, *args, **kwargs)
         hidden_states = hidden_states + attended
-        hidden_states = hidden_states + self.feed_forward(self.ffn_norm(hidden_states))
+        feed_forward_input = self.ffn_norm(hidden_states)
+        if self.layer_norm_scale is not None:
+            feed_forward_input = feed_forward_input * self.layer_norm_scale
+        hidden_states = hidden_states + self.feed_forward(feed_forward_input)
         return hidden_states, weights
 
 
@@ -229,7 +248,15 @@ class MiniFrontierModel(MiniFrontierPreTrainedModel):
     def __init__(self, config: MiniFrontierConfig) -> None:
         super().__init__(config)
         self.token_embedding = nn.Embedding(config.vocab_size, config.d_model)
-        self.rope = MiniFrontierRoPE(config)
+        # Local and global layers may rotate at independently tuned speeds
+        # (MF-081), mirroring the native model's local_rope/global_rope split:
+        # identical modules whenever global_rope_theta is unset.
+        self.local_rope = MiniFrontierRoPE(config, config.rope_theta)
+        self.global_rope = (
+            self.local_rope
+            if config.resolved_global_rope_theta == config.rope_theta
+            else MiniFrontierRoPE(config, config.resolved_global_rope_theta)
+        )
         self.blocks = nn.ModuleList(
             MiniFrontierDecoderLayer(config, index) for index in range(config.n_layers)
         )
@@ -274,12 +301,40 @@ class MiniFrontierModel(MiniFrontierPreTrainedModel):
             )
         if position_ids is None:
             position_ids = cache_position.unsqueeze(0).expand(hidden_states.shape[0], -1)
-        cosine, sine = self.rope(position_ids, dtype=hidden_states.dtype)
+        local_cosine, local_sine = self.local_rope(position_ids, dtype=hidden_states.dtype)
+        if self.global_rope is self.local_rope:
+            global_cosine, global_sine = local_cosine, local_sine
+        else:
+            global_cosine, global_sine = self.global_rope(position_ids, dtype=hidden_states.dtype)
+        # Value residual (MF-081, off by default): mirrors the native model's
+        # own precompute exactly -- same norm/scale/v_proj block 0 will
+        # independently apply to itself inside the loop below.
+        first_layer_value = None
+        if self.config.value_residual:
+            first_block = self.blocks[0]
+            first_attention_input = first_block.attention_norm(hidden_states)
+            if first_block.layer_norm_scale is not None:
+                first_attention_input = first_attention_input * first_block.layer_norm_scale
+            first_layer_value = (
+                first_block.attention.v_proj(first_attention_input)
+                .view(
+                    hidden_states.shape[0],
+                    hidden_states.shape[1],
+                    self.config.n_kv_heads,
+                    self.config.head_dim,
+                )
+                .transpose(1, 2)
+            )
         all_hidden = [] if output_hidden_states else None
         all_attentions = [] if output_attentions else None
         for block in self.blocks:
             if all_hidden is not None:
                 all_hidden.append(hidden_states)
+            cosine, sine = (
+                (local_cosine, local_sine)
+                if block.attention.is_local
+                else (global_cosine, global_sine)
+            )
             hidden_states, weights = block(
                 hidden_states,
                 cosine,
@@ -288,6 +343,7 @@ class MiniFrontierModel(MiniFrontierPreTrainedModel):
                 past_key_values=past_key_values,
                 cache_position=cache_position,
                 output_attentions=output_attentions,
+                first_layer_value=first_layer_value,
                 **kwargs,
             )
             if all_attentions is not None:

@@ -111,3 +111,25 @@ def test_hybrid_schedule_is_three_local_then_global() -> None:
         True,
         False,
     ]
+
+
+def test_global_rope_theta_defaults_to_rope_theta() -> None:
+    config = ModelConfig.tiny_modern()
+    assert config.global_rope_theta is None
+    assert config.resolved_global_rope_theta == config.rope_theta
+
+
+def test_global_rope_theta_can_diverge_from_rope_theta() -> None:
+    config = replace(ModelConfig.tiny_modern(), global_rope_theta=1_000_000.0)
+    assert config.resolved_global_rope_theta == 1_000_000.0
+    assert config.resolved_global_rope_theta != config.rope_theta
+
+
+def test_global_rope_theta_rejects_non_positive_values() -> None:
+    with pytest.raises(ValueError, match="global_rope_theta must be positive"):
+        replace(ModelConfig.tiny_modern(), global_rope_theta=0.0)
+
+
+def test_global_rope_theta_rejects_full_attention() -> None:
+    with pytest.raises(ValueError, match="global_rope_theta only applies to hybrid"):
+        replace(ModelConfig.tiny_edu(), global_rope_theta=500_000.0)

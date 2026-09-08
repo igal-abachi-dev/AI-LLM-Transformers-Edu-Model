@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 import torch
 from torch.nn import functional as F
@@ -102,6 +104,61 @@ def test_global_nope_skips_only_global_rope() -> None:
         global_attention(inputs, cos_a, sin_a),
         global_attention(inputs, cos_b, sin_b),
     )
+
+
+def test_split_local_global_rope_theta_routes_the_correct_table_per_layer() -> None:
+    """MF-081: each layer type must rotate by its own configured theta."""
+
+    torch.manual_seed(23)
+    config = ModelConfig.tiny_modern(
+        n_layers=8, local_window=4, global_position_encoding="rope", attention_impl="sdpa"
+    )
+    config = replace(config, global_rope_theta=1_000_000.0)
+    assert config.resolved_global_rope_theta != config.rope_theta
+    model = MiniFrontier(config).eval()
+
+    sequence_length = 6
+    positions = torch.arange(sequence_length)
+    expected_local_cosine, _ = RoPE(config.head_dim, config.max_seq_len, config.rope_theta)(
+        positions, dtype=torch.float32, device=positions.device
+    )
+    expected_global_cosine, _ = RoPE(
+        config.head_dim, config.max_seq_len, config.resolved_global_rope_theta
+    )(positions, dtype=torch.float32, device=positions.device)
+    assert not torch.equal(expected_local_cosine, expected_global_cosine)
+
+    captured: dict[int, torch.Tensor] = {}
+
+    def make_hook(layer_index: int):
+        def hook(module, args):
+            captured[layer_index] = args[1]  # (inputs, cosine, sine)
+
+        return hook
+
+    handles = [
+        block.attention.register_forward_pre_hook(make_hook(index))
+        for index, block in enumerate(model.blocks)
+    ]
+    try:
+        model(torch.randint(0, config.vocab_size, (1, sequence_length)))
+    finally:
+        for handle in handles:
+            handle.remove()
+
+    assert len(captured) == config.n_layers
+    for layer_index, cosine in captured.items():
+        if config.is_local_layer(layer_index):
+            assert torch.equal(cosine, expected_local_cosine)
+        else:
+            assert torch.equal(cosine, expected_global_cosine)
+
+
+def test_global_rope_theta_unset_shares_one_rope_module() -> None:
+    """The zero-cost path: unset global_rope_theta reuses the local table object."""
+
+    config = ModelConfig.tiny_modern()
+    model = MiniFrontier(config)
+    assert model.global_rope is model.local_rope
 
 
 def test_flex_local_gqa_matches_manual_and_reuses_block_mask() -> None:

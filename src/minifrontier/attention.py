@@ -312,6 +312,14 @@ class CausalSelfAttention(nn.Module):
         # kill big training runs. Both are None on Edu.
         self.q_norm = RMSNorm(self.head_dim, eps=config.norm_eps) if config.qk_norm else None
         self.k_norm = RMSNorm(self.head_dim, eps=config.norm_eps) if config.qk_norm else None
+        # Value residual (MF-081, bounded test deferred -- see ModelConfig):
+        # every layer but the first gets one learned scalar gate, zero-
+        # initialized so training starts identical to the ungated model. The
+        # first layer has nothing earlier to mix in, so it gets no gate at
+        # all -- `is None` doubles as "am I the mixing target" below.
+        self.value_residual_gate = (
+            nn.Parameter(torch.zeros(1)) if config.value_residual and layer_index != 0 else None
+        )
 
     def resolved_implementation(
         self,
@@ -344,6 +352,7 @@ class CausalSelfAttention(nn.Module):
         attention_mask: torch.Tensor | None = None,
         cache: LayerKVCache | None = None,
         start_pos: int = 0,
+        first_layer_value: torch.Tensor | None = None,
     ) -> torch.Tensor:
         batch, sequence, _ = inputs.shape
         # One matmul per role, then split the flat output width into heads.
@@ -356,6 +365,14 @@ class CausalSelfAttention(nn.Module):
         query = query.transpose(1, 2)  # [B, Hq, S, D]
         key = key.transpose(1, 2)  # [B, Hkv, S, D]
         value = value.transpose(1, 2)
+        if self.value_residual_gate is not None:
+            # Mixed in BEFORE caching, so whatever gets stored for this
+            # position is already the final, gated value -- a later call
+            # reading this position back out of the cache needs no special
+            # handling, and cached/uncached forward passes stay identical.
+            if first_layer_value is None:
+                raise ValueError("value_residual requires first_layer_value from layer 0")
+            value = value + self.value_residual_gate * first_layer_value
         # Order matters here and is easy to get backwards on a whiteboard: this
         # codebase normalizes FIRST and rotates SECOND. Some papers do the
         # reverse. The tests pin this order; follow the code, not the diagram.

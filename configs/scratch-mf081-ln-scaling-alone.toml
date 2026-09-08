@@ -1,0 +1,24 @@
+preset = "modern"
+vocab_size = 16384
+max_seq_len = 2048
+n_layers = 20
+d_model = 768
+n_heads = 12
+n_kv_heads = 4
+d_ff = 2048
+norm_eps = 1e-6
+rope_theta = 10000.0
+qk_norm = true
+attention_pattern = "hybrid"
+local_window = 512
+global_position_encoding = "rope"
+dropout = 0.0
+tie_embeddings = true
+attention_impl = "auto"
+# MF-081 arm (b): LayerNorm scaling ALONE, with the pre-existing init-time
+# residual damping switched off so this arm isolates the forward-pass
+# mechanism from the init-time one. Compare against the unmodified
+# 150m-modern.toml (arm a, baseline) and scratch-mf081-ln-scaling-both.toml
+# (arm c, both mechanisms together).
+layer_norm_scaling = true
+residual_std_damping = false

@@ -1,0 +1,119 @@
+{
+  "context_lengths": [
+    512,
+    1024,
+    2032
+  ],
+  "needle_fractions": [
+    0.0,
+    0.25,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "release": "artifacts\\mf065-150m-modern-1b-release",
+  "retrieval_rate_by_context_length": {
+    "512": 1.0,
+    "1024": 0.4,
+    "2032": 0.0
+  },
+  "seed": 0,
+  "trials": {
+    "512": [
+      {
+        "code": "014458",
+        "completion": " 014458. The grass is green and the sky",
+        "found": true,
+        "needle_fraction": 0.0
+      },
+      {
+        "code": "225924",
+        "completion": " 225924. The secret code for today is 2",
+        "found": true,
+        "needle_fraction": 0.25
+      },
+      {
+        "code": "242630",
+        "completion": " 242630. The secret code for today is 2426",
+        "found": true,
+        "needle_fraction": 0.5
+      },
+      {
+        "code": "686190",
+        "completion": " 686190. The secret code for today is 6",
+        "found": true,
+        "needle_fraction": 0.75
+      },
+      {
+        "code": "875920",
+        "completion": " 875920.\nThe secret code for today is",
+        "found": true,
+        "needle_fraction": 1.0
+      }
+    ],
+    "1024": [
+      {
+        "code": "045205",
+        "completion": " the secret code for today. The secret code for today is",
+        "found": false,
+        "needle_fraction": 0.0
+      },
+      {
+        "code": "776434",
+        "completion": " the secret code for today. The secret code for today is",
+        "found": false,
+        "needle_fraction": 0.25
+      },
+      {
+        "code": "732121",
+        "completion": " the code for today. The secret code for today is the",
+        "found": false,
+        "needle_fraction": 0.5
+      },
+      {
+        "code": "032099",
+        "completion": " 032099. The secret code for today is 0",
+        "found": true,
+        "needle_fraction": 0.75
+      },
+      {
+        "code": "513521",
+        "completion": " 513521.\nWhat is the secret code for",
+        "found": true,
+        "needle_fraction": 1.0
+      }
+    ],
+    "2032": [
+      {
+        "code": "355537",
+        "completion": " the secret code for today. The secret code for today is",
+        "found": false,
+        "needle_fraction": 0.0
+      },
+      {
+        "code": "876098",
+        "completion": " the code for today. The secret code for today is the",
+        "found": false,
+        "needle_fraction": 0.25
+      },
+      {
+        "code": "423566",
+        "completion": " the code for today. The secret code for today is the",
+        "found": false,
+        "needle_fraction": 0.5
+      },
+      {
+        "code": "585681",
+        "completion": " the code for today. The secret code for today is the",
+        "found": false,
+        "needle_fraction": 0.75
+      },
+      {
+        "code": "721039",
+        "completion": " the secret code for today. The secret code for today is",
+        "found": false,
+        "needle_fraction": 1.0
+      }
+    ]
+  }
+}
