@@ -43,10 +43,11 @@ from minifrontier.reproducibility import seed_everything
 from minifrontier.run_metadata import RunMetadata
 from minifrontier.shards import MixtureBatchProvider, PackedShardDataset, ShardBatchProvider
 from minifrontier.training import (
+    LearningRateSchedule,
     TrainingConfig,
     TrainingState,
-    WarmupCosineSchedule,
     build_adamw,
+    build_schedule,
     train_updates,
 )
 
@@ -140,6 +141,25 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--mtp-loss-weight", type=float, default=0.0)
+    parser.add_argument(
+        "--schedule",
+        choices=("cosine", "wsd"),
+        default="cosine",
+        help=(
+            "cosine (default): warmup then one continuous cosine decay across the whole "
+            "run. wsd (MF-083): warmup, flat at the peak rate, then a short cosine-shaped "
+            "decay near the end -- adopted for the real release run on operational "
+            "grounds (an interrupted multi-day run resumes in the flat phase with no "
+            "schedule-shape change), not because it measures better than cosine."
+        ),
+    )
+    parser.add_argument(
+        "--wsd-decay-fraction",
+        type=float,
+        default=0.2,
+        help="Only meaningful with --schedule wsd: fraction of --updates spent in the "
+        "final decay phase.",
+    )
     return parser.parse_args()
 
 
@@ -199,6 +219,8 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         z_loss_weight=args.z_loss_weight,
         mtp_extra_heads=args.mtp_extra_heads,
         mtp_loss_weight=args.mtp_loss_weight,
+        schedule=args.schedule,
+        wsd_decay_fraction=args.wsd_decay_fraction,
     )
     device = torch.device(args.device)
     seed_everything(args.seed)
@@ -217,7 +239,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         optimizer.add_param_group(
             {"params": list(mtp_heads.parameters()), "weight_decay": train_config.weight_decay}
         )
-    schedule = WarmupCosineSchedule(train_config)
+    schedule = build_schedule(train_config)
     state = TrainingState()
     if args.resume is not None:
         trainer_values, cursor = load_training_checkpoint(
@@ -248,7 +270,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
     def checkpoint_callback(
         current_model: MiniFrontier,
         current_optimizer: torch.optim.Optimizer,
-        current_schedule: WarmupCosineSchedule,
+        current_schedule: LearningRateSchedule,
         current_state: TrainingState,
     ) -> None:
         if current_state.completed_updates % args.checkpoint_interval:

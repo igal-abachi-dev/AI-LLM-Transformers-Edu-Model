@@ -19,9 +19,14 @@ one batch. With ``gradient_accumulation_steps = 8`` the loop processes eight
 batches, adds up their gradients, and only then updates -- which simulates a big
 batch on a GPU that could not hold one.
 
-The learning rate is not constant. ``WarmupCosineSchedule`` starts it near zero
-(large steps on a freshly randomized model are destructive), ramps up over the
-first ``warmup_updates``, then eases back down along a cosine curve.
+The learning rate is not constant. Both schedules start it near zero (large
+steps on a freshly randomized model are destructive) and ramp up over the
+first ``warmup_updates``. ``WarmupCosineSchedule`` (the default) then eases
+back down along one continuous cosine curve; ``WarmupStableDecaySchedule``
+(MF-083, ``TrainingConfig.schedule="wsd"``) instead holds flat at the peak
+rate until a short cosine-shaped decay near the very end -- see that class's
+own docstring for why a real multi-day run prefers this shape. ``build_schedule``
+is the one place that turns a ``TrainingConfig`` into the schedule it selects.
 
 Everything with a ``state_dict`` in this file exists so a run can be interrupted
 and resumed at exactly the token it stopped on -- see ``checkpoint.py``.
@@ -33,7 +38,7 @@ import hashlib
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 import torch
 
@@ -99,6 +104,22 @@ class TrainingConfig:
     # Only available alongside loss_chunk_size, since it is computed from the same
     # per-chunk log-sum-exp chunked cross-entropy already needs.
     z_loss_weight: float = 0.0
+    # Which learning-rate curve `build_schedule` returns. "cosine" (the
+    # default, unchanged) is `WarmupCosineSchedule`. "wsd" is
+    # `WarmupStableDecaySchedule` (MF-083): warmup, then flat at the peak
+    # rate, then a short decay near the end -- adopted for the real release
+    # run on OPERATIONAL grounds (an interrupted multi-day run can resume
+    # and keep training in the stable phase with no schedule-shape change,
+    # unlike cosine, whose curve is hard-coupled to `max_updates`), not
+    # because it measures better than cosine (published results put the two
+    # roughly level at a similar decay fraction).
+    schedule: Literal["cosine", "wsd"] = "cosine"
+    # Only meaningful when schedule="wsd": the fraction of max_updates spent
+    # in the final decay phase (cosine-shaped, same curve WarmupCosineSchedule
+    # uses for its own tail). 0.2 matches the published result this project
+    # is relying on (Hägele et al., arXiv:2405.18392) -- roughly matches
+    # cosine's own quality, not a project-specific tuned value.
+    wsd_decay_fraction: float = 0.2
 
     def __post_init__(self) -> None:
         if self.max_updates <= 0:
@@ -131,6 +152,10 @@ class TrainingConfig:
             raise ValueError("z_loss_weight cannot be negative")
         if self.z_loss_weight > 0 and self.loss_chunk_size is None:
             raise ValueError("z_loss_weight requires loss_chunk_size to be set")
+        if self.schedule not in ("cosine", "wsd"):
+            raise ValueError(f"unknown schedule: {self.schedule}")
+        if not 0.0 < self.wsd_decay_fraction <= 1.0:
+            raise ValueError("wsd_decay_fraction must be in (0, 1]")
 
 
 @dataclass(slots=True)
@@ -335,6 +360,24 @@ class TrainingState:
         return cls(**values)
 
 
+class LearningRateSchedule(Protocol):
+    """Anything that maps an update index to a learning rate, exactly-resumably.
+
+    `train_updates` only ever calls these three members -- `WarmupCosineSchedule`
+    and `WarmupStableDecaySchedule` (MF-083) both satisfy this without either
+    one knowing the other exists, the same duck-typed pattern `BatchProvider`
+    already uses for the data-loading side of this file.
+    """
+
+    completed_updates: int
+
+    def learning_rate_for_update(self, update_index: int) -> float: ...
+
+    def state_dict(self) -> Mapping[str, Any]: ...
+
+    def load_state_dict(self, state: Mapping[str, Any]) -> None: ...
+
+
 class WarmupCosineSchedule:
     """Update-indexed warmup/cosine schedule with explicit serializable state.
 
@@ -388,6 +431,91 @@ class WarmupCosineSchedule:
         if not 0 <= completed <= self.config.max_updates:
             raise ValueError("invalid completed scheduler update count")
         self.completed_updates = completed
+
+
+class WarmupStableDecaySchedule:
+    """Warmup, then flat at the peak rate, then a short cosine-shaped decay.
+
+    The learning rate over a run, in three phases (MF-083)::
+
+        lr
+         |      _____________
+         |    /               \\
+         |  /                  \\___
+         |/
+         +------------------------------ update
+          warmup    stable       decay
+
+    Adopted for the real release run on OPERATIONAL grounds, not because it
+    measures better than ``WarmupCosineSchedule`` (published results put the
+    two roughly level at a well-chosen decay fraction -- Hägele et al.,
+    arXiv:2405.18392). The real reason: a multi-day run interrupted partway
+    through the stable phase can simply resume and keep training at the flat
+    rate -- the eventual decay's shape never has to change to account for how
+    long the stable phase ran. Cosine cannot do this: its curve is a function
+    of ``max_updates``, so training past an interruption changes the whole
+    shape, including everything already trained under the old one.
+
+    Same update-indexed, exactly-resumable design as ``WarmupCosineSchedule``:
+    a pure function of the update number, so resuming from a checkpoint
+    reproduces the identical schedule.
+    """
+
+    def __init__(self, config: TrainingConfig, completed_updates: int = 0) -> None:
+        if not 0 <= completed_updates <= config.max_updates:
+            raise ValueError("completed_updates is outside the configured schedule")
+        self.config = config
+        self.completed_updates = completed_updates
+
+    def learning_rate_for_update(self, update_index: int) -> float:
+        if not 0 <= update_index < self.config.max_updates:
+            raise IndexError("update index is outside the configured schedule")
+        # Warmup: identical to WarmupCosineSchedule's own ramp.
+        if self.config.warmup_updates and update_index < self.config.warmup_updates:
+            return self.config.learning_rate * (update_index + 1) / self.config.warmup_updates
+        # The decay window is the LAST `wsd_decay_fraction` of the whole run,
+        # not of the post-warmup remainder -- so a larger warmup does not
+        # silently shrink how many updates the decay phase actually gets.
+        decay_updates = max(1, round(self.config.max_updates * self.config.wsd_decay_fraction))
+        decay_start = max(self.config.warmup_updates, self.config.max_updates - decay_updates)
+        if update_index < decay_start:
+            # Stable phase: flat at the peak rate.
+            return self.config.learning_rate
+        # Decay phase: the same cosine-shaped fall WarmupCosineSchedule uses
+        # for its own tail, just compressed into the last `decay_updates`
+        # updates instead of spanning the whole post-warmup run.
+        decay_index = update_index - decay_start
+        remaining_decay_updates = self.config.max_updates - decay_start
+        progress = (
+            1.0 if remaining_decay_updates <= 1 else decay_index / (remaining_decay_updates - 1)
+        )
+        cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+        return self.config.min_learning_rate + cosine * (
+            self.config.learning_rate - self.config.min_learning_rate
+        )
+
+    def state_dict(self) -> dict[str, int]:
+        return {"completed_updates": self.completed_updates}
+
+    def load_state_dict(self, state: Mapping[str, Any]) -> None:
+        completed = int(state["completed_updates"])
+        if not 0 <= completed <= self.config.max_updates:
+            raise ValueError("invalid completed scheduler update count")
+        self.completed_updates = completed
+
+
+def build_schedule(config: TrainingConfig, completed_updates: int = 0) -> LearningRateSchedule:
+    """Construct whichever schedule `config.schedule` selects.
+
+    The one place callers (CLI entry points, tests) should go to build a
+    schedule from a `TrainingConfig` rather than hardcoding
+    `WarmupCosineSchedule` -- MF-083 exists precisely so `config.schedule`
+    actually controls what a real training run uses.
+    """
+
+    if config.schedule == "cosine":
+        return WarmupCosineSchedule(config, completed_updates)
+    return WarmupStableDecaySchedule(config, completed_updates)
 
 
 def _parameter_groups(
@@ -488,18 +616,18 @@ def train_updates(
     *,
     device: torch.device | str = "cpu",
     optimizer: torch.optim.Optimizer | CombinedOptimizer | None = None,
-    schedule: WarmupCosineSchedule | None = None,
+    schedule: LearningRateSchedule | None = None,
     state: TrainingState | None = None,
     validation_fn: Callable[[MiniFrontier, TrainingState], None] | None = None,
     update_callback: Callable[
-        [MiniFrontier, torch.optim.Optimizer, WarmupCosineSchedule, TrainingState], None
+        [MiniFrontier, torch.optim.Optimizer, LearningRateSchedule, TrainingState], None
     ]
     | None = None,
     forward_model: torch.nn.Module | None = None,
     stop_after_updates: int | None = None,
     mtp_heads: torch.nn.Module | None = None,
 ) -> tuple[
-    torch.optim.Optimizer | CombinedOptimizer, WarmupCosineSchedule, TrainingState, PrecisionPolicy
+    torch.optim.Optimizer | CombinedOptimizer, LearningRateSchedule, TrainingState, PrecisionPolicy
 ]:
     """Run explicit optimizer updates without assuming an in-memory corpus.
 
@@ -527,7 +655,7 @@ def train_updates(
     torch_device = torch.device(device)
     policy = resolve_precision(config.precision, torch_device)
     optimizer = optimizer or build_adamw(model, config)[0]
-    schedule = schedule or WarmupCosineSchedule(config)
+    schedule = schedule or build_schedule(config)
     state = state or TrainingState()
     # Disabled (the BF16/FP32 case) makes every scaler call below a transparent
     # no-op: .scale() returns its input unchanged, .step() just calls

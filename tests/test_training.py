@@ -19,7 +19,9 @@ from minifrontier.training import (
     TrainingConfig,
     TrainingState,
     WarmupCosineSchedule,
+    WarmupStableDecaySchedule,
     build_adamw,
+    build_schedule,
     train_updates,
     validate_cpu_batch,
 )
@@ -44,6 +46,85 @@ def test_warmup_cosine_schedule_boundaries_and_state() -> None:
     restored = WarmupCosineSchedule(config)
     restored.load_state_dict(schedule.state_dict())
     assert restored.completed_updates == 3
+
+
+def test_warmup_stable_decay_schedule_boundaries_and_state() -> None:
+    config = TrainingConfig(
+        max_updates=10,
+        learning_rate=1.0,
+        min_learning_rate=0.1,
+        warmup_updates=2,
+        schedule="wsd",
+        wsd_decay_fraction=0.3,
+    )
+    schedule = WarmupStableDecaySchedule(config)
+    values = [schedule.learning_rate_for_update(index) for index in range(10)]
+    # Warmup: identical shape to WarmupCosineSchedule's own ramp.
+    assert values[0] == pytest.approx(0.5)
+    assert values[1] == pytest.approx(1.0)
+    # Stable phase: flat at the peak rate. decay_updates = round(10*0.3) = 3,
+    # so decay_start = 10 - 3 = 7; updates [2, 7) are stable.
+    for index in range(2, 7):
+        assert values[index] == pytest.approx(1.0)
+    # Decay phase: starts at the peak, ends exactly at the floor.
+    assert values[7] == pytest.approx(1.0)
+    assert values[-1] == pytest.approx(0.1)
+    with pytest.raises(IndexError):
+        schedule.learning_rate_for_update(10)
+    schedule.completed_updates = 4
+    restored = WarmupStableDecaySchedule(config)
+    restored.load_state_dict(schedule.state_dict())
+    assert restored.completed_updates == 4
+
+
+def test_warmup_stable_decay_schedule_rejects_invalid_completed_updates() -> None:
+    config = TrainingConfig(max_updates=10, warmup_updates=1, schedule="wsd")
+    with pytest.raises(ValueError, match="completed_updates"):
+        WarmupStableDecaySchedule(config, completed_updates=11)
+    schedule = WarmupStableDecaySchedule(config)
+    with pytest.raises(ValueError, match="invalid completed scheduler update count"):
+        schedule.load_state_dict({"completed_updates": 999})
+
+
+def test_warmup_stable_decay_schedule_large_warmup_does_not_shrink_decay_window() -> None:
+    # The decay window is a fraction of max_updates, not of the post-warmup
+    # remainder -- a large warmup must not silently eat into it.
+    config = TrainingConfig(
+        max_updates=10,
+        learning_rate=1.0,
+        min_learning_rate=0.0,
+        warmup_updates=8,
+        schedule="wsd",
+        wsd_decay_fraction=0.5,
+    )
+    schedule = WarmupStableDecaySchedule(config)
+    values = [schedule.learning_rate_for_update(index) for index in range(10)]
+    assert values[-1] == pytest.approx(0.0)
+
+
+def test_training_config_rejects_unknown_schedule_and_bad_decay_fraction() -> None:
+    with pytest.raises(ValueError, match="unknown schedule"):
+        TrainingConfig(max_updates=10, warmup_updates=1, schedule="linear")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="wsd_decay_fraction"):
+        TrainingConfig(max_updates=10, warmup_updates=1, wsd_decay_fraction=0.0)
+    with pytest.raises(ValueError, match="wsd_decay_fraction"):
+        TrainingConfig(max_updates=10, warmup_updates=1, wsd_decay_fraction=1.5)
+
+
+def test_build_schedule_selects_cosine_by_default_and_wsd_when_configured() -> None:
+    cosine_config = TrainingConfig(max_updates=10, warmup_updates=1)
+    assert isinstance(build_schedule(cosine_config), WarmupCosineSchedule)
+    wsd_config = TrainingConfig(max_updates=10, warmup_updates=1, schedule="wsd")
+    assert isinstance(build_schedule(wsd_config), WarmupStableDecaySchedule)
+
+
+def test_train_updates_uses_config_schedule_selection_when_none_is_passed() -> None:
+    torch.manual_seed(50)
+    model = MiniFrontier(ModelConfig.tiny_edu(vocab_size=64, max_seq_len=16))
+    provider = ListBatchProvider([TrainingBatch(tokens=torch.randint(0, 64, (2, 8)))])
+    config = TrainingConfig(max_updates=4, warmup_updates=1, schedule="wsd", wsd_decay_fraction=0.5)
+    _, schedule, _, _ = train_updates(model, provider, config, stop_after_updates=2)
+    assert isinstance(schedule, WarmupStableDecaySchedule)
 
 
 def test_shuffled_batch_provider_changes_epochs_and_resumes_exactly() -> None:

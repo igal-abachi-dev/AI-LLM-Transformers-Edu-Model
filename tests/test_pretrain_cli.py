@@ -105,6 +105,8 @@ def _args(
         z_loss_weight=0.0,
         mtp_extra_heads=0,
         mtp_loss_weight=0.0,
+        schedule="cosine",
+        wsd_decay_fraction=0.2,
     )
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -176,6 +178,52 @@ def test_resume_with_mtp_extra_heads_is_rejected(tmp_path, mini_tokenizer) -> No
         assert "resume" in str(error) and "mtp" in str(error).lower()
     else:
         raise AssertionError("expected a ValueError for --resume with mtp_extra_heads > 0")
+
+
+def test_schedule_flag_reaches_real_training_and_produces_a_different_lr_path(
+    tmp_path, mini_tokenizer
+) -> None:
+    """Regression for the same class of gap as loss_chunk_size/z_loss_weight
+    above: TrainingConfig.schedule existing is not enough by itself -- the
+    CLI has to actually reach it, or --schedule wsd would silently train
+    under cosine regardless. Verified by training two otherwise-identical
+    runs (same seed, same data, same everything else) under each schedule
+    and confirming the resulting weights genuinely differ -- proof the two
+    runs actually followed different learning-rate paths, not just that
+    the flag parsed."""
+
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    cosine_output = tmp_path / "cosine"
+    cosine_state, _ = pretrain.run(
+        _args(
+            config_path,
+            shards_path,
+            cosine_output,
+            no_checkpoint=True,
+            updates=4,
+            warmup_updates=0,
+            learning_rate=0.5,
+            min_learning_rate=0.0,
+            schedule="cosine",
+        )
+    )
+    wsd_output = tmp_path / "wsd"
+    wsd_state, _ = pretrain.run(
+        _args(
+            config_path,
+            shards_path,
+            wsd_output,
+            no_checkpoint=True,
+            updates=4,
+            warmup_updates=0,
+            learning_rate=0.5,
+            min_learning_rate=0.0,
+            schedule="wsd",
+            wsd_decay_fraction=0.5,
+        )
+    )
+    assert cosine_state.last_loss != wsd_state.last_loss
 
 
 def test_mtp_extra_heads_flag_reaches_real_training(tmp_path, mini_tokenizer) -> None:
