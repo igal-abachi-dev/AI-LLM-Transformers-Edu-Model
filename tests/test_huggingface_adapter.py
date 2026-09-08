@@ -48,6 +48,8 @@ from minifrontier.model import MiniFrontier
         replace(ModelConfig.tiny_modern(attention_impl="manual"), value_residual=True),
         # MF-082: per-head gated attention must also reach the HF export path.
         replace(ModelConfig.tiny_modern(attention_impl="manual"), gated_attention=True),
+        # MF-107: partial RoPE must also reach the HF export path.
+        replace(ModelConfig.tiny_modern(attention_impl="manual"), rope_fraction=0.5),
         # MF-106: SwiGLU clamping, on Edu -- unlike the items above, this one
         # is NOT Modern-only, so this is also real coverage that the Edu
         # guard change didn't accidentally over-restrict it. A small clamp
