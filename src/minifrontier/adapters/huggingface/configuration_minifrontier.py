@@ -128,6 +128,8 @@ class MiniFrontierConfig(PretrainedConfig):
             or self.qk_norm
             or self.attention_pattern != "full"
             or self.global_position_encoding != "rope"
+            or self.layer_norm_scaling
+            or self.value_residual
         ):
             raise ValueError("Edu configuration violates the frozen architecture")
         if self.preset == "modern" and self.n_kv_heads >= self.n_heads:

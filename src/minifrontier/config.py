@@ -183,6 +183,18 @@ class ModelConfig:
                 raise ValueError("Edu uses full attention in every layer")
             if self.global_position_encoding != "rope":
                 raise ValueError("Edu uses RoPE in every layer")
+            # MF-081/082/083's techniques are reserved for Modern (2026-09-08,
+            # user decision): Edu stays exactly the classic architecture it has
+            # always been, so it remains simple enough to fully explain to a
+            # beginner regardless of which experimental techniques Modern ends
+            # up adopting after their own bounded tests. GQA-ratio changes and
+            # a non-default global_rope_theta are already impossible on Edu
+            # via the guards above (MHA-only, full-attention-only); these two
+            # are the ones with no other structural barrier.
+            if self.layer_norm_scaling:
+                raise ValueError("Edu does not use layer_norm_scaling; that is Modern-only")
+            if self.value_residual:
+                raise ValueError("Edu does not use value_residual; that is Modern-only")
         if self.preset == "modern" and self.n_kv_heads >= self.n_heads:
             raise ValueError("Modern must use fewer KV heads than query heads")
         # NoPE means "this layer gets no position stamp at all". That is only a

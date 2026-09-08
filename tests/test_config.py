@@ -81,6 +81,16 @@ def test_config_rejects_unknown_attention_implementation() -> None:
         ModelConfig(attention_impl="fastest")  # type: ignore[arg-type]
 
 
+def test_config_rejects_edu_layer_norm_scaling() -> None:
+    with pytest.raises(ValueError, match="Modern-only"):
+        replace(ModelConfig.tiny_edu(), layer_norm_scaling=True)
+
+
+def test_config_rejects_edu_value_residual() -> None:
+    with pytest.raises(ValueError, match="Modern-only"):
+        replace(ModelConfig.tiny_edu(), value_residual=True)
+
+
 def test_hybrid_flex_dropout_contract_fails_at_configuration_time() -> None:
     config = ModelConfig.tiny_modern(attention_impl="auto")
     with pytest.raises(ValueError, match="FlexAttention requires dropout=0"):
