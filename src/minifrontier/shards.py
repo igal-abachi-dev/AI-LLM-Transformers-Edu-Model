@@ -493,3 +493,83 @@ class ShardBatchProvider:
         self._reset_orders()
         if not 0 <= self.row_cursor < len(self._row_order):
             raise ValueError("invalid shard provider state")
+
+
+class MixtureBatchProvider:
+    """Draws whole batches from several sources at configured weights (MF-094).
+
+    Each source keeps its own independent `ShardBatchProvider` -- its own
+    shuffle, its own cursor, its own exact-resume state -- so mixing sources
+    together does not disturb how any one of them is read. What this class
+    adds on top is just *which* source's turn it is for the next batch: a
+    weighted random choice, derived the same hash-based way
+    `ShardBatchProvider._rng` derives its own shuffles (a pure function of
+    `(seed, how many batches drawn so far)`, not a stored RNG object), so
+    resuming replays the exact same sequence of source choices without
+    needing to serialize any RNG state.
+
+    Mixture weights are part of this provider's own resumability contract,
+    the same way `ShardBatchProvider` already refuses to resume across a
+    changed seed or shuffle policy: `load_state_dict` rejects a checkpoint
+    whose weights differ from this instance's, rather than silently
+    continuing to train with a different mixture than the one that produced
+    the checkpoint.
+    """
+
+    def __init__(
+        self,
+        providers: dict[str, ShardBatchProvider],
+        weights: dict[str, float],
+        *,
+        seed: int = 0,
+    ) -> None:
+        if not providers:
+            raise ValueError("at least one source is required")
+        if set(providers) != set(weights):
+            raise ValueError("providers and weights must name the exact same sources")
+        if any(weight <= 0 for weight in weights.values()):
+            raise ValueError("mixture weights must be positive")
+        self.providers = providers
+        self.weights = dict(weights)
+        self.seed = seed
+        self._names = sorted(providers)
+        self._batches_drawn = 0
+
+    def _select_source(self, batch_index: int) -> str:
+        label = f"{self.seed}:mixture:{batch_index}"
+        derived = int.from_bytes(hashlib.sha256(label.encode()).digest()[:8], "big")
+        rng = random.Random(derived)
+        return rng.choices(self._names, weights=[self.weights[name] for name in self._names])[0]
+
+    def next_batch(self) -> TrainingBatch:
+        name = self._select_source(self._batches_drawn)
+        self._batches_drawn += 1
+        return self.providers[name].next_batch()
+
+    def state_dict(self) -> dict[str, Any]:
+        return {
+            "version": 1,
+            "seed": self.seed,
+            "weights": dict(self.weights),
+            "batches_drawn": self._batches_drawn,
+            "providers": {name: provider.state_dict() for name, provider in self.providers.items()},
+        }
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        if int(state.get("version", 0)) != 1:
+            raise ValueError("unsupported mixture provider state version")
+        if int(state["seed"]) != self.seed:
+            raise ValueError("mixture provider seed does not match checkpoint")
+        if dict(state["weights"]) != self.weights:
+            raise ValueError(
+                "mixture weights do not match checkpoint -- resuming with different "
+                "weights than the run that produced it is not supported"
+            )
+        if set(state["providers"]) != set(self.providers):
+            raise ValueError("mixture provider source names do not match checkpoint")
+        batches_drawn = int(state["batches_drawn"])
+        if batches_drawn < 0:
+            raise ValueError("invalid mixture provider state")
+        for name, provider_state in state["providers"].items():
+            self.providers[name].load_state_dict(provider_state)
+        self._batches_drawn = batches_drawn

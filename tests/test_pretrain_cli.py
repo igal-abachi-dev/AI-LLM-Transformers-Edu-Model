@@ -77,6 +77,7 @@ def _args(
     values = dict(
         config=config_path,
         train_shards=shards_path,
+        mixture=None,
         output=output_path,
         resume=None,
         device="cpu",

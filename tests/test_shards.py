@@ -10,6 +10,7 @@ from minifrontier.data import Document
 from minifrontier.shards import (
     AdmissionStats,
     DiskDeduplicator,
+    MixtureBatchProvider,
     PackedShardDataset,
     ShardBatchProvider,
     TokenShardWriter,
@@ -114,6 +115,92 @@ def test_shard_shuffle_is_deterministic_complete_and_resume_policy_bound(
     assert restored._next_index() == first._next_index()
     with pytest.raises(ValueError, match="seed/shuffle"):
         ShardBatchProvider(dataset, batch_size=1, seed=90).load_state_dict(state)
+
+
+def _make_shard_pool(directory, tokenizer, *, prefix: str, count: int) -> PackedShardDataset:
+    writer = TokenShardWriter(directory, tokenizer, sequence_length=4, sequences_per_shard=2)
+    for index in range(count):
+        text = f"{prefix} document {index} has enough tokens"
+        writer.add(make_document(text, f"{prefix}-{index}"))
+    writer.finalize(drop_remainder=False)
+    return PackedShardDataset(directory)
+
+
+def test_mixture_batch_provider_draws_from_named_sources_at_configured_weights(
+    tmp_path, mini_tokenizer
+) -> None:
+    web = _make_shard_pool(tmp_path / "web", mini_tokenizer, prefix="web", count=12)
+    code = _make_shard_pool(tmp_path / "code", mini_tokenizer, prefix="code", count=12)
+    providers = {
+        "web": ShardBatchProvider(web, batch_size=1, seed=1),
+        "code": ShardBatchProvider(code, batch_size=1, seed=2),
+    }
+    mixture = MixtureBatchProvider(providers, weights={"web": 0.8, "code": 0.2}, seed=42)
+    counts = {"web": 0, "code": 0}
+    for index in range(200):
+        name = mixture._select_source(index)
+        counts[name] += 1
+        mixture.next_batch()
+    # Not an exact 80/20 split (it's a real weighted random draw), but nowhere
+    # near 50/50 either -- a real, measurable skew toward the heavier source.
+    assert counts["web"] > counts["code"] * 2
+
+
+def test_mixture_batch_provider_exact_resume_across_all_sources(tmp_path, mini_tokenizer) -> None:
+    _make_shard_pool(tmp_path / "web", mini_tokenizer, prefix="web", count=12)
+    _make_shard_pool(tmp_path / "code", mini_tokenizer, prefix="code", count=12)
+
+    def build() -> MixtureBatchProvider:
+        providers = {
+            "web": ShardBatchProvider(PackedShardDataset(tmp_path / "web"), batch_size=1, seed=1),
+            "code": ShardBatchProvider(PackedShardDataset(tmp_path / "code"), batch_size=1, seed=2),
+        }
+        return MixtureBatchProvider(providers, weights={"web": 0.5, "code": 0.5}, seed=7)
+
+    original = build()
+    for _ in range(5):
+        original.next_batch()
+    state = original.state_dict()
+    expected = original.next_batch()
+
+    restored = build()
+    restored.load_state_dict(state)
+    actual = restored.next_batch()
+    assert torch.equal(expected.tokens, actual.tokens)
+
+
+def test_mixture_batch_provider_rejects_changed_weights_on_resume(tmp_path, mini_tokenizer) -> None:
+    web = _make_shard_pool(tmp_path / "web", mini_tokenizer, prefix="web", count=8)
+    code = _make_shard_pool(tmp_path / "code", mini_tokenizer, prefix="code", count=8)
+    providers = {
+        "web": ShardBatchProvider(web, batch_size=1, seed=1),
+        "code": ShardBatchProvider(code, batch_size=1, seed=2),
+    }
+    original = MixtureBatchProvider(providers, weights={"web": 0.5, "code": 0.5}, seed=3)
+    state = original.state_dict()
+
+    changed_providers = {
+        "web": ShardBatchProvider(web, batch_size=1, seed=1),
+        "code": ShardBatchProvider(code, batch_size=1, seed=2),
+    }
+    changed = MixtureBatchProvider(changed_providers, weights={"web": 0.9, "code": 0.1}, seed=3)
+    with pytest.raises(ValueError, match="mixture weights"):
+        changed.load_state_dict(state)
+
+
+def test_mixture_batch_provider_rejects_mismatched_source_names() -> None:
+    with pytest.raises(ValueError, match="same sources"):
+        MixtureBatchProvider({"web": object()}, weights={"code": 1.0})  # type: ignore[arg-type]
+
+
+def test_mixture_batch_provider_rejects_empty_or_non_positive_weights(
+    tmp_path, mini_tokenizer
+) -> None:
+    web = _make_shard_pool(tmp_path / "web", mini_tokenizer, prefix="web", count=4)
+    with pytest.raises(ValueError, match="at least one source"):
+        MixtureBatchProvider({}, weights={})
+    with pytest.raises(ValueError, match="positive"):
+        MixtureBatchProvider({"web": ShardBatchProvider(web, batch_size=1)}, weights={"web": 0.0})
 
 
 def test_shard_hash_corruption_is_rejected(tmp_path, mini_tokenizer) -> None:

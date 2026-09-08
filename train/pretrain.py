@@ -41,7 +41,7 @@ from minifrontier.model import MiniFrontier
 from minifrontier.mtp import MTPHeads
 from minifrontier.reproducibility import seed_everything
 from minifrontier.run_metadata import RunMetadata
-from minifrontier.shards import PackedShardDataset, ShardBatchProvider
+from minifrontier.shards import MixtureBatchProvider, PackedShardDataset, ShardBatchProvider
 from minifrontier.training import (
     TrainingConfig,
     TrainingState,
@@ -54,7 +54,18 @@ from minifrontier.training import (
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
-    parser.add_argument("--train-shards", type=Path, required=True)
+    parser.add_argument(
+        "--train-shards", type=Path, help="single-source training (mutually excl. with --mixture)"
+    )
+    parser.add_argument(
+        "--mixture",
+        action="append",
+        metavar="NAME;SHARDS_PATH;WEIGHT",
+        help="repeatable; e.g. '--mixture web;data/shards/web/train;0.8 "
+        "--mixture code;data/shards/code/train;0.2' (MF-094). Mutually exclusive "
+        "with --train-shards; at least two --mixture entries make a real mixture, "
+        "though one is accepted as a degenerate single-source case.",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--resume", type=Path)
     parser.add_argument("--device", default="cuda")
@@ -132,6 +143,36 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _parse_mixture_entry(spec: str) -> tuple[str, Path, float]:
+    fields = spec.split(";")
+    if len(fields) != 3:
+        raise ValueError(f"--mixture must be 'name;shards_path;weight', got {spec!r}")
+    name, shards_path, weight = fields
+    if not name:
+        raise ValueError(f"--mixture name must be non-empty: {spec!r}")
+    return name, Path(shards_path), float(weight)
+
+
+def _build_batch_provider(args: argparse.Namespace) -> ShardBatchProvider | MixtureBatchProvider:
+    if (args.train_shards is None) == (not args.mixture):
+        raise ValueError("exactly one of --train-shards or --mixture is required")
+    if args.train_shards is not None:
+        dataset = PackedShardDataset(args.train_shards)
+        return ShardBatchProvider(dataset, batch_size=args.batch_size, seed=args.seed)
+    entries = [_parse_mixture_entry(spec) for spec in args.mixture]
+    names = [name for name, _, _ in entries]
+    if len(names) != len(set(names)):
+        raise ValueError(f"--mixture names must be unique, got {names}")
+    providers = {
+        name: ShardBatchProvider(
+            PackedShardDataset(shards_path), batch_size=args.batch_size, seed=args.seed
+        )
+        for name, shards_path, _ in entries
+    }
+    weights = {name: weight for name, _, weight in entries}
+    return MixtureBatchProvider(providers, weights=weights, seed=args.seed)
+
+
 def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
     if not args.no_checkpoint and args.checkpoint_interval <= 0:
         raise ValueError("checkpoint_interval must be positive")
@@ -170,8 +211,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
             n_extra_heads=args.mtp_extra_heads,
             init_std=model_config.resolved_init_std,
         ).to(device)
-    dataset = PackedShardDataset(args.train_shards)
-    provider = ShardBatchProvider(dataset, batch_size=args.batch_size, seed=args.seed)
+    provider = _build_batch_provider(args)
     optimizer = build_adamw(model, train_config)[0]
     if mtp_heads is not None:
         optimizer.add_param_group(
