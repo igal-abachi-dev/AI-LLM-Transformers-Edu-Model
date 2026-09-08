@@ -95,7 +95,8 @@ def test_layer_norm_scaling_disabled_by_default() -> None:
 
 
 def test_layer_norm_scaling_uses_one_indexed_inverse_sqrt_depth() -> None:
-    config = ModelConfig.tiny_edu(n_layers=4)
+    # Modern-only (2026-09-08 decision): Edu stays the classic architecture.
+    config = ModelConfig.tiny_modern(n_layers=4, attention_impl="sdpa")
     config = replace(config, layer_norm_scaling=True)
     model = MiniFrontier(config)
     for layer_index, block in enumerate(model.blocks):
@@ -103,8 +104,11 @@ def test_layer_norm_scaling_uses_one_indexed_inverse_sqrt_depth() -> None:
 
 
 def test_layer_norm_scaling_changes_forward_output() -> None:
+    # Modern-only (2026-09-08 decision): Edu stays the classic architecture.
     torch.manual_seed(31)
-    config = ModelConfig.tiny_edu(n_layers=4, d_model=64, n_heads=4, d_ff=256)
+    config = ModelConfig.tiny_modern(
+        n_layers=4, d_model=64, n_heads=4, n_kv_heads=2, d_ff=256, attention_impl="sdpa"
+    )
     baseline = MiniFrontier(config).eval()
     torch.manual_seed(31)
     scaled = MiniFrontier(replace(config, layer_norm_scaling=True)).eval()
