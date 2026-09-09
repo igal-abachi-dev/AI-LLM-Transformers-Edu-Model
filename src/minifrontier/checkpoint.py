@@ -199,7 +199,12 @@ def load_training_checkpoint(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     root = Path(directory)
     saved_config = json.loads((root / "config.json").read_text(encoding="utf-8"))
-    if saved_config != model.config.to_dict():
+    # Round-trip the saved dict through ModelConfig itself (not compared as a
+    # raw dict) so a checkpoint saved before a later additive ModelConfig field
+    # was introduced still loads -- the field's own default fills in on both
+    # sides identically, rather than the checkpoint's config.json permanently
+    # disagreeing with any model built against a newer ModelConfig schema.
+    if ModelConfig(**saved_config).to_dict() != model.config.to_dict():
         raise ValueError("checkpoint model configuration does not match the target model")
     load_model(model, str(root / "model.safetensors"), strict=True)
     if mtp_heads is not None:

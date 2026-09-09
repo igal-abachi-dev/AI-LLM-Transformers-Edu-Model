@@ -231,3 +231,22 @@ def test_training_checkpoint_rejects_same_shape_semantic_config_change(tmp_path)
     )
     with pytest.raises(ValueError, match="configuration"):
         load_training_checkpoint(checkpoint, incompatible)
+
+
+def test_training_checkpoint_loads_after_a_new_modelconfig_field_is_added(tmp_path) -> None:
+    """A checkpoint's config.json predates a later additive ModelConfig field
+    (e.g. rope_fraction, added by MF-107 after several real MF-081 arms were
+    already trained). Simulate that by hand-writing a config.json with the
+    field missing, matching what an old checkpoint on disk actually looks
+    like, and confirm it still loads under the current schema."""
+
+    config = ModelConfig.tiny_modern(attention_impl="sdpa")
+    model = MiniFrontier(config)
+    checkpoint = tmp_path / "checkpoint"
+    save_training_checkpoint(checkpoint, model)
+    saved = json.loads((checkpoint / "config.json").read_text(encoding="utf-8"))
+    assert "rope_fraction" in saved
+    del saved["rope_fraction"]
+    (checkpoint / "config.json").write_text(json.dumps(saved), encoding="utf-8")
+
+    load_training_checkpoint(checkpoint, MiniFrontier(config), trusted_local_state=True)

@@ -1,0 +1,119 @@
+{
+  "context_lengths": [
+    512,
+    1024,
+    2032
+  ],
+  "needle_fractions": [
+    0.0,
+    0.25,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "release": "artifacts\\mf081-ln-scaling\\baseline\\final",
+  "retrieval_rate_by_context_length": {
+    "512": 0.0,
+    "1024": 0.0,
+    "2032": 0.0
+  },
+  "seed": 0,
+  "trials": {
+    "512": [
+      {
+        "code": "014458",
+        "completion": " the first time to get the water in the world. The",
+        "found": false,
+        "needle_fraction": 0.0
+      },
+      {
+        "code": "225924",
+        "completion": " the first time to get the water in the world. The",
+        "found": false,
+        "needle_fraction": 0.25
+      },
+      {
+        "code": "242630",
+        "completion": " the first time to get the water in the world. The",
+        "found": false,
+        "needle_fraction": 0.5
+      },
+      {
+        "code": "686190",
+        "completion": " the first time to get the water in the water. The",
+        "found": false,
+        "needle_fraction": 0.75
+      },
+      {
+        "code": "875920",
+        "completion": " the first time to get the world around the world. The",
+        "found": false,
+        "needle_fraction": 1.0
+      }
+    ],
+    "1024": [
+      {
+        "code": "045205",
+        "completion": " the\nmain of the world. The water is a",
+        "found": false,
+        "needle_fraction": 0.0
+      },
+      {
+        "code": "776434",
+        "completion": " the first time to get the water in the water. The",
+        "found": false,
+        "needle_fraction": 0.25
+      },
+      {
+        "code": "732121",
+        "completion": " the\nmain of the world. The water is a",
+        "found": false,
+        "needle_fraction": 0.5
+      },
+      {
+        "code": "032099",
+        "completion": " the first time to get the water in the water. The",
+        "found": false,
+        "needle_fraction": 0.75
+      },
+      {
+        "code": "513521",
+        "completion": " the first time to get the water. The water is the",
+        "found": false,
+        "needle_fraction": 1.0
+      }
+    ],
+    "2032": [
+      {
+        "code": "355537",
+        "completion": " the world's largest and most important. The world is the",
+        "found": false,
+        "needle_fraction": 0.0
+      },
+      {
+        "code": "876098",
+        "completion": " the world's largest and most important. The world is the",
+        "found": false,
+        "needle_fraction": 0.25
+      },
+      {
+        "code": "423566",
+        "completion": " the world's largest and most important. The world is the",
+        "found": false,
+        "needle_fraction": 0.5
+      },
+      {
+        "code": "585681",
+        "completion": " the world's largest and most important. The world is the",
+        "found": false,
+        "needle_fraction": 0.75
+      },
+      {
+        "code": "721039",
+        "completion": " the first time to get the world. The first time the",
+        "found": false,
+        "needle_fraction": 1.0
+      }
+    ]
+  }
+}
