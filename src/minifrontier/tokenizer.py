@@ -87,6 +87,27 @@ _DIGIT_SPLIT_PATTERNS: Final[dict[str, Regex]] = {
     "leading_space": Regex(r" ?\d{1,3}"),
 }
 DIGIT_SPLIT_MODE: Final = "none"
+# GPT-4/cl100k_base's real pre-tokenization regex (MF-100), verified directly
+# against tiktoken's own primary source (openai/tiktoken's
+# tiktoken_ext/openai_public.py), not assumed from a secondary summary --
+# an earlier WebSearch summary of this exact pattern misquoted the digit
+# clause as `\p{N}{2,}`, caught only by checking the primary source. Ported
+# from PCRE's possessive quantifiers (`?+`/`++`/`{1,3}+`) to the plain greedy
+# equivalents (`?`/`+`/`{1,3}`), since the `tokenizers` library's own `Regex`
+# silently mis-parses the possessive suffix as an unrelated repeated-group
+# quantifier rather than rejecting it outright -- verified directly: with the
+# possessive form, "123456789" pre-tokenized as one unsplit piece instead of
+# capping at 3 digits. Possessive-vs-greedy only changes backtracking
+# performance on pathological input, not the match itself, for well-formed
+# text. Real, richer than this project's own GPT-2-style default: caps digit
+# runs at 1-3 (like `digit_split`, but built into the split itself), handles
+# contractions case-insensitively, and separates letter/number/punctuation/
+# whitespace runs more finely.
+_GPT4_REGEX_PATTERN: Final[Regex] = Regex(
+    r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}"""
+    r"""| ?[^\s\p{L}\p{N}]+[\r\n]*|\s+$|\s*[\r\n]|\s+(?!\S)|\s"""
+)
+PRETOKENIZER_MODE: Final = "gpt2"
 # Bumped 2026-09-09 (MF-103/MF-104): three tokens (<|eot|>, <|file_sep|>,
 # <|repo_name|>) appended after the original eleven. Purely additive -- IDs
 # 0-10 are unchanged -- but this is real metadata for anyone inspecting a
@@ -170,10 +191,25 @@ class MiniFrontierTokenizer:
         return SPECIAL_TOKEN_IDS["<|eot|>"]
 
     def _validate_special_tokens(self) -> None:
-        """Refuse a tokenizer whose marker IDs drifted -- a silent, ruinous mismatch."""
+        """Refuse a tokenizer whose marker IDs drifted -- a silent, ruinous mismatch.
+
+        A token entirely *absent* from this tokenizer (``actual_id is None``)
+        is tolerated, not rejected: it means this tokenizer predates that
+        token's introduction (e.g. an already-published release's tokenizer,
+        trained before MF-103 added ``<|eot|>``/``<|file_sep|>``/
+        ``<|repo_name|>``) -- the model trained against it never learned
+        anything about that token either, so there is no drift to catch, and
+        rejecting it would make every already-published checkpoint's own
+        tokenizer permanently unloadable the moment `SPECIAL_TOKENS` grows.
+        A token that *is* present at the wrong ID is always rejected -- that
+        is real drift, never tolerated regardless of when the tokenizer was
+        trained.
+        """
 
         for token, expected_id in SPECIAL_TOKEN_IDS.items():
             actual_id = self.backend.token_to_id(token)
+            if actual_id is None:
+                continue
             if actual_id != expected_id:
                 raise ValueError(
                     f"special token {token!r} must have ID {expected_id}, got {actual_id}"
@@ -244,6 +280,7 @@ def train_byte_bpe(
     vocab_size: int = VOCAB_SIZE,
     min_frequency: int = 2,
     digit_split: str = DIGIT_SPLIT_MODE,
+    pretokenizer: str = PRETOKENIZER_MODE,
 ) -> MiniFrontierTokenizer:
     """Train deterministic byte-BPE from an already deterministic text stream.
 
@@ -265,6 +302,16 @@ def train_byte_bpe(
     was ever tested for a trained-quality effect (digit-splitting's actual
     purpose is arithmetic capability, not fertility) -- they remain available
     for a future properly isolated test, not for casual use.
+
+    ``pretokenizer`` selects the pre-tokenization regex family: the frozen
+    default ``"gpt2"`` (this project's own regex, via `ByteLevel`'s built-in
+    pattern -- what every real checkpoint this project has trained uses), or
+    ``"gpt4"`` (MF-100, the real cl100k_base pattern, richer contraction/
+    digit/punctuation handling -- see `_GPT4_REGEX_PATTERN`'s own comment for
+    the verification trail). ``"gpt4"`` requires ``digit_split="none"``: the
+    GPT-4 pattern already caps digit runs at 1-3 itself, and stacking a
+    second, different digit-isolation rule on top was never tested and has
+    no clear semantics.
     """
 
     # Every one of the 256 byte values needs a slot, plus the 11 markers, or some
@@ -277,16 +324,31 @@ def train_byte_bpe(
     if digit_split != "none" and digit_split not in _DIGIT_SPLIT_PATTERNS:
         allowed = sorted(_DIGIT_SPLIT_PATTERNS)
         raise ValueError(f"digit_split must be 'none' or one of {allowed}, got {digit_split!r}")
+    if pretokenizer not in ("gpt2", "gpt4"):
+        raise ValueError(f"pretokenizer must be 'gpt2' or 'gpt4', got {pretokenizer!r}")
+    if pretokenizer == "gpt4" and digit_split != "none":
+        raise ValueError("pretokenizer='gpt4' requires digit_split='none' (untested combination)")
     # unk_token=None: with full byte coverage there is no such thing as an unknown
     # character, so an "unknown" token would only ever hide a bug.
     backend = Tokenizer(BPE(unk_token=None))
-    byte_level = ByteLevel(add_prefix_space=False, use_regex=True)
-    if digit_split == "none":
-        backend.pre_tokenizer = byte_level
-    else:
+    if pretokenizer == "gpt4":
+        # The GPT-4 regex is the entire pre-tokenization rule here -- ByteLevel's
+        # own GPT-2 regex must stay off, or it would re-split each already-split
+        # piece a second time under a different rule.
         backend.pre_tokenizer = Sequence(
-            [Split(_DIGIT_SPLIT_PATTERNS[digit_split], behavior="isolated"), byte_level]
+            [
+                Split(_GPT4_REGEX_PATTERN, behavior="isolated"),
+                ByteLevel(add_prefix_space=False, use_regex=False),
+            ]
         )
+    else:
+        byte_level = ByteLevel(add_prefix_space=False, use_regex=True)
+        if digit_split == "none":
+            backend.pre_tokenizer = byte_level
+        else:
+            backend.pre_tokenizer = Sequence(
+                [Split(_DIGIT_SPLIT_PATTERNS[digit_split], behavior="isolated"), byte_level]
+            )
     backend.decoder = ByteLevelDecoder()
     trainer = BpeTrainer(
         vocab_size=vocab_size,

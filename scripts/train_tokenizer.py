@@ -21,7 +21,7 @@ import json
 from collections.abc import Iterator
 from pathlib import Path
 
-from minifrontier.tokenizer import DIGIT_SPLIT_MODE, VOCAB_SIZE, train_byte_bpe
+from minifrontier.tokenizer import DIGIT_SPLIT_MODE, PRETOKENIZER_MODE, VOCAB_SIZE, train_byte_bpe
 
 
 def iter_input_text(paths: list[Path], *, jsonl_field: str) -> Iterator[str]:
@@ -53,6 +53,15 @@ def parse_args() -> argparse.Namespace:
         default=DIGIT_SPLIT_MODE,
         help="digit pre-tokenization rule; the default is the only one used by real training",
     )
+    parser.add_argument(
+        "--pretokenizer",
+        choices=("gpt2", "gpt4"),
+        default=PRETOKENIZER_MODE,
+        help=(
+            "pre-tokenization regex family (MF-100); 'gpt2' is the only one used by "
+            "real training so far -- 'gpt4' requires --digit-split none"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -63,6 +72,7 @@ def main() -> None:
         vocab_size=args.vocab_size,
         min_frequency=args.min_frequency,
         digit_split=args.digit_split,
+        pretokenizer=args.pretokenizer,
     )
     tokenizer.save(args.output)
     print(f"saved tokenizer with {tokenizer.vocab_size:,} entries to {args.output}")

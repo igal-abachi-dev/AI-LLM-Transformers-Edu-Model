@@ -1,0 +1,21 @@
+{
+  "held_out_utf8_bytes": 1869374,
+  "reference_shards": "data\\shards\\mf064-150m-train\\validation",
+  "reference_tokenizer": "data\\tokenizer",
+  "results": {
+    "gpt2-14tok": {
+      "bytes_per_token": 4.285284631307724,
+      "path": "data/tokenizer-eot",
+      "tokens": 436231,
+      "utf8_bytes": 1869374,
+      "vocab_size": 16384
+    },
+    "gpt4-14tok": {
+      "bytes_per_token": 4.316902058951219,
+      "path": "data/tokenizer-gpt4regex",
+      "tokens": 433036,
+      "utf8_bytes": 1869374,
+      "vocab_size": 16384
+    }
+  }
+}

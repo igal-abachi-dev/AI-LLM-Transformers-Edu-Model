@@ -6,6 +6,14 @@ run.json -- this is a throughput measurement, not a quality comparison), and
 aggregates each arm's real tokens_per_second/peak_memory_mb into one report.
 No new estimation logic: every number here is read directly from a real
 run.json train/pretrain.py already writes.
+
+Updates-per-arm is derived from a fixed *token* budget, not a fixed update
+count: accumulation_steps multiplies real compute per update (an update at
+batch=8/accum=32 processes 128x the tokens of one at batch=2/accum=1), so a
+uniform update count across every combination would make the
+high-accumulation arms take drastically, impractically longer than the
+others for no measurement benefit -- verified directly: 20 updates at
+batch=8/accum=32 on 150m-modern ran over 20 minutes without finishing.
 """
 
 from __future__ import annotations
@@ -25,11 +33,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--batch-sizes", type=int, nargs="+", default=[2, 4, 8])
     parser.add_argument("--accumulation-steps", type=int, nargs="+", default=[1, 8, 32])
-    parser.add_argument("--updates", type=int, default=200)
+    parser.add_argument("--sequence-length", type=int, required=True)
+    parser.add_argument(
+        "--target-tokens-per-arm",
+        type=int,
+        default=400_000,
+        help="real per-arm token budget; updates = target / (batch*accum*sequence_length)",
+    )
+    parser.add_argument("--min-updates", type=int, default=10)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--report", type=Path, default=Path("reports/mf101-batch-size-sweep.json"))
     return parser.parse_args()
+
+
+def updates_for_token_budget(
+    *,
+    target_tokens: int,
+    batch_size: int,
+    accumulation_steps: int,
+    sequence_length: int,
+    min_updates: int,
+) -> int:
+    tokens_per_update = batch_size * accumulation_steps * sequence_length
+    return max(min_updates, round(target_tokens / tokens_per_update))
 
 
 def run_arm(
@@ -43,6 +70,7 @@ def run_arm(
     seed: int,
     device: str,
 ) -> dict[str, Any]:
+    warmup = max(1, min(updates // 10, 5))
     subprocess.run(
         [
             sys.executable,
@@ -55,6 +83,8 @@ def run_arm(
             str(output),
             "--updates",
             str(updates),
+            "--warmup-updates",
+            str(warmup),
             "--batch-size",
             str(batch_size),
             "--accumulation-steps",
@@ -93,13 +123,20 @@ def main() -> None:
     for batch_size in args.batch_sizes:
         for accumulation_steps in args.accumulation_steps:
             label = f"b{batch_size}-a{accumulation_steps}"
+            updates = updates_for_token_budget(
+                target_tokens=args.target_tokens_per_arm,
+                batch_size=batch_size,
+                accumulation_steps=accumulation_steps,
+                sequence_length=args.sequence_length,
+                min_updates=args.min_updates,
+            )
             run_metadata = run_arm(
                 config=args.config,
                 train_shards=args.train_shards,
                 output=args.output_dir / label,
                 batch_size=batch_size,
                 accumulation_steps=accumulation_steps,
-                updates=args.updates,
+                updates=updates,
                 seed=args.seed,
                 device=args.device,
             )
@@ -108,10 +145,15 @@ def main() -> None:
                 accumulation_steps=accumulation_steps,
                 run_metadata=run_metadata,
             )
+            summary["updates"] = updates
             results.append(summary)
             print(json.dumps(summary))
     args.report.parent.mkdir(parents=True, exist_ok=True)
-    report = {"config": str(args.config), "updates": args.updates, "arms": results}
+    report = {
+        "config": str(args.config),
+        "target_tokens_per_arm": args.target_tokens_per_arm,
+        "arms": results,
+    }
     args.report.write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

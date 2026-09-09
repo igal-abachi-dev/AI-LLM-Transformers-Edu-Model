@@ -16,6 +16,59 @@ def test_special_tokens_have_frozen_atomic_ids(mini_tokenizer) -> None:
         assert mini_tokenizer.encode(token) == [expected_id]
 
 
+def test_tokenizer_missing_a_newer_special_token_still_loads() -> None:
+    """An already-published tokenizer trained before <|eot|>/<|file_sep|>/
+    <|repo_name|> existed (MF-103) must remain loadable: growing
+    SPECIAL_TOKENS must not make every already-released checkpoint's own
+    tokenizer permanently unloadable. The model trained against an old
+    tokenizer never learned those tokens either, so their plain absence is
+    not drift."""
+
+    import minifrontier.tokenizer as tokenizer_module
+
+    original_tokens = tokenizer_module.SPECIAL_TOKENS
+    original_ids = tokenizer_module.SPECIAL_TOKEN_IDS
+    try:
+        tokenizer_module.SPECIAL_TOKENS = original_tokens[:11]
+        tokenizer_module.SPECIAL_TOKEN_IDS = {
+            token: index for index, token in enumerate(original_tokens[:11])
+        }
+        old_style = train_byte_bpe(["hello world " * 10], vocab_size=300, min_frequency=1)
+    finally:
+        tokenizer_module.SPECIAL_TOKENS = original_tokens
+        tokenizer_module.SPECIAL_TOKEN_IDS = original_ids
+
+    # Reload the SAME backend object under the CURRENT (14-token) contract --
+    # this is the real check: __init__ re-runs _validate_special_tokens.
+    reloaded = MiniFrontierTokenizer(old_style.backend)
+    assert reloaded.backend.token_to_id("<|eot|>") is None
+    assert reloaded.eos_id == SPECIAL_TOKEN_IDS["<|eos|>"]
+
+
+def test_tokenizer_still_rejects_a_special_token_present_at_the_wrong_id() -> None:
+    """Real drift -- a token that DOES exist but at a different ID than the
+    current contract expects -- must still be rejected unconditionally."""
+
+    import minifrontier.tokenizer as tokenizer_module
+
+    original_tokens = tokenizer_module.SPECIAL_TOKENS
+    original_ids = tokenizer_module.SPECIAL_TOKEN_IDS
+    try:
+        # Swap <|bos|> and <|eos|> so <|eos|> lands at ID 1, not 2 -- a real
+        # token, present, at the wrong position relative to the real contract.
+        swapped = list(original_tokens)
+        swapped[1], swapped[2] = swapped[2], swapped[1]
+        tokenizer_module.SPECIAL_TOKENS = tuple(swapped)
+        tokenizer_module.SPECIAL_TOKEN_IDS = {token: index for index, token in enumerate(swapped)}
+        drifted = train_byte_bpe(["hello world " * 10], vocab_size=300, min_frequency=1)
+    finally:
+        tokenizer_module.SPECIAL_TOKENS = original_tokens
+        tokenizer_module.SPECIAL_TOKEN_IDS = original_ids
+
+    with pytest.raises(ValueError, match="must have ID"):
+        MiniFrontierTokenizer(drifted.backend)
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -120,6 +173,52 @@ def test_digit_split_leading_space_keeps_the_space_attached_to_the_digit_group()
     corpus = ["the year 2026 was great " * 5, "digits 123456789 and more " * 5]
     tokenizer = train_byte_bpe(corpus, vocab_size=300, min_frequency=1, digit_split="leading_space")
     assert _pretokenize(tokenizer, " 2026") == ["Ġ202", "6"]
+
+
+def _gpt4_corpus() -> list[str]:
+    return [
+        "the year 2026 was great " * 5,
+        "digits 123456789 and more digits " * 5,
+        "don't can't I'm it's " * 5,
+    ]
+
+
+def test_pretokenizer_default_is_gpt2_and_unchanged() -> None:
+    tokenizer = train_byte_bpe(_gpt4_corpus(), vocab_size=320, min_frequency=1)
+    explicit = train_byte_bpe(_gpt4_corpus(), vocab_size=320, min_frequency=1, pretokenizer="gpt2")
+    assert _pretokenize(tokenizer, " 2026") == _pretokenize(explicit, " 2026")
+
+
+def test_pretokenizer_gpt4_caps_digit_runs_at_three() -> None:
+    tokenizer = train_byte_bpe(_gpt4_corpus(), vocab_size=320, min_frequency=1, pretokenizer="gpt4")
+    assert _pretokenize(tokenizer, "123456789") == ["123", "456", "789"]
+
+
+def test_pretokenizer_gpt4_splits_contractions() -> None:
+    tokenizer = train_byte_bpe(_gpt4_corpus(), vocab_size=320, min_frequency=1, pretokenizer="gpt4")
+    assert _pretokenize(tokenizer, "don't") == ["don", "'t"]
+
+
+def test_pretokenizer_gpt4_still_round_trips_arbitrary_text() -> None:
+    tokenizer = train_byte_bpe(_gpt4_corpus(), vocab_size=320, min_frequency=1, pretokenizer="gpt4")
+    text = "Hello, world! 123456789 don't stop.\nNew line here."
+    assert tokenizer.decode(tokenizer.encode(text)) == text
+
+
+def test_pretokenizer_rejects_invalid_value() -> None:
+    with pytest.raises(ValueError, match="pretokenizer must be"):
+        train_byte_bpe(_gpt4_corpus(), vocab_size=320, min_frequency=1, pretokenizer="gpt3")
+
+
+def test_pretokenizer_gpt4_rejects_combination_with_digit_split() -> None:
+    with pytest.raises(ValueError, match="untested combination"):
+        train_byte_bpe(
+            _gpt4_corpus(),
+            vocab_size=320,
+            min_frequency=1,
+            pretokenizer="gpt4",
+            digit_split="no_leading_space",
+        )
 
 
 def test_train_byte_bpe_rejects_unknown_digit_split_mode() -> None:

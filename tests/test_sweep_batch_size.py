@@ -2,7 +2,33 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.sweep_batch_size import summarize_arm
+from scripts.sweep_batch_size import summarize_arm, updates_for_token_budget
+
+
+def test_updates_for_token_budget_scales_down_as_effective_batch_grows() -> None:
+    cheap = updates_for_token_budget(
+        target_tokens=400_000,
+        batch_size=2,
+        accumulation_steps=1,
+        sequence_length=1024,
+        min_updates=10,
+    )
+    expensive = updates_for_token_budget(
+        target_tokens=400_000,
+        batch_size=8,
+        accumulation_steps=32,
+        sequence_length=1024,
+        min_updates=10,
+    )
+    assert cheap > expensive
+    assert cheap == max(10, round(400_000 / (2 * 1 * 1024)))
+
+
+def test_updates_for_token_budget_never_drops_below_the_floor() -> None:
+    updates = updates_for_token_budget(
+        target_tokens=1, batch_size=8, accumulation_steps=32, sequence_length=1024, min_updates=10
+    )
+    assert updates == 10
 
 
 def _run_metadata(**overrides) -> dict:
