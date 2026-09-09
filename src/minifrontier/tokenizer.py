@@ -29,16 +29,30 @@ splitting pre-tokenization (Llama 3/Qwen-style, groups of at most 3 -- see
 its actual purpose (arithmetic capability) was never evaluated at all, so
 turning it on for the 16k vocabulary now would be an untested combination.
 The parameter remains available for a future, properly isolated test. The
-first eleven IDs are reserved for markers that never appear in ordinary
+first fourteen IDs are reserved for markers that never appear in ordinary
 text::
 
     <|pad|> <|bos|> <|eos|> <|system|> <|user|> <|assistant|>
     <|fim_prefix|> <|fim_suffix|> <|fim_middle|> <|tool_call|> <|tool_result|>
+    <|eot|> <|file_sep|> <|repo_name|>
 
 Those markers are the entire mechanism behind chat roles. There is no "assistant
 mode" inside the model -- just a token that means the assistant's turn starts
 here. It is also why prompt injection is possible at all: text that smuggles in
 convincing markers can be read as structure rather than content.
+
+``<|eot|>`` (MF-103, 2026-09-09) is the chat/SFT *turn* boundary -- distinct
+from ``<|eos|>``, which keeps its original, sole role marking *document*
+boundaries in the pretraining pack (``data.py``). Before this split, one
+token meant both "this document is finished" and "my conversational turn is
+finished," which a base-pretrained-then-SFT'd model was being asked to learn
+as two different behaviors from one symbol -- the same problem real
+production tokenizers avoid (Llama 3's ``<|end_of_text|>`` vs ``<|eot_id|>``;
+Qwen's ``<|endoftext|>`` vs ``<|im_end|>``). ``<|file_sep|>``/``<|repo_name|>``
+(MF-104, reserved the same pass, following StarCoder2/Qwen2.5-Coder's real
+convention) mark file and repository boundaries for a future repo-level
+(multi-file) packing task -- reserved now because doing so later would move
+every ID after them, but unused until that task exists.
 """
 
 from __future__ import annotations
@@ -73,7 +87,11 @@ _DIGIT_SPLIT_PATTERNS: Final[dict[str, Regex]] = {
     "leading_space": Regex(r" ?\d{1,3}"),
 }
 DIGIT_SPLIT_MODE: Final = "none"
-TOKENIZER_VERSION: Final = 1
+# Bumped 2026-09-09 (MF-103/MF-104): three tokens (<|eot|>, <|file_sep|>,
+# <|repo_name|>) appended after the original eleven. Purely additive -- IDs
+# 0-10 are unchanged -- but this is real metadata for anyone inspecting a
+# tokenizer_config.json later, so the version number reflects it.
+TOKENIZER_VERSION: Final = 2
 SPECIAL_TOKENS: Final[tuple[str, ...]] = (
     "<|pad|>",
     "<|bos|>",
@@ -86,10 +104,16 @@ SPECIAL_TOKENS: Final[tuple[str, ...]] = (
     "<|fim_middle|>",
     "<|tool_call|>",
     "<|tool_result|>",
+    "<|eot|>",
+    "<|file_sep|>",
+    "<|repo_name|>",
 )
-# IDs 0..10, assigned by position: <|pad|> is 0, <|bos|> is 1, and so on. These
+# IDs 0..13, assigned by position: <|pad|> is 0, <|bos|> is 1, and so on. These
 # are part of the frozen contract, because a checkpoint trained with <|eos|> as 2
 # produces nonsense if reloaded against a tokenizer that numbered them otherwise.
+# New tokens are only ever appended (never inserted) for exactly this reason --
+# 0-10 were already frozen before <|eot|>/<|file_sep|>/<|repo_name|> (11-13)
+# were added (MF-103/MF-104), so no existing ID moved.
 SPECIAL_TOKEN_IDS: Final[dict[str, int]] = {
     token: index for index, token in enumerate(SPECIAL_TOKENS)
 }
@@ -138,6 +162,12 @@ class MiniFrontierTokenizer:
     @property
     def eos_id(self) -> int:
         return SPECIAL_TOKEN_IDS["<|eos|>"]
+
+    @property
+    def eot_id(self) -> int:
+        """The chat/SFT turn-boundary marker (MF-103) -- never used for document boundaries."""
+
+        return SPECIAL_TOKEN_IDS["<|eot|>"]
 
     def _validate_special_tokens(self) -> None:
         """Refuse a tokenizer whose marker IDs drifted -- a silent, ruinous mismatch."""

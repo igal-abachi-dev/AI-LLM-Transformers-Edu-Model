@@ -13,8 +13,11 @@ the model would also be learning to imitate the user -- to produce more question
 
 So each example here carries two parallel arrays of the same length::
 
-    token_ids  <|bos|> <|user|> what is 2+2 <|eos|> <|assistant|> 4 <|eos|>
+    token_ids  <|bos|> <|user|> what is 2+2 <|eot|> <|assistant|> 4 <|eot|>
     loss_mask     F       F      F  F  F  F    F         F        T    T
+
+``<|eot|>`` (MF-103) is the turn boundary here, not ``<|eos|>`` -- ``<|eos|>``
+keeps its original, pretraining-only role marking document boundaries.
 
 The conversation is flattened into that one stream of tokens by the marker tokens
 from ``tokenizer.py`` -- there are no chat "objects" at this level, only text.
@@ -125,11 +128,13 @@ def encode_sft_example(
 ) -> SFTExample:
     """Flatten a conversation into tokens plus the assistant-only loss mask.
 
-    Each turn becomes ``<|role|>`` + content + ``<|eos|>`` + newline. Only an
-    assistant turn's content and its closing ``<|eos|>`` are marked True -- the
-    ``<|eos|>`` matters, because that is how the model learns when to *stop*.
-    Role markers themselves are never graded: predicting whose turn it is next is
-    the template's job, not something the model should be guessing.
+    Each turn becomes ``<|role|>`` + content + ``<|eot|>`` + newline. Only an
+    assistant turn's content and its closing ``<|eot|>`` are marked True -- the
+    ``<|eot|>`` matters, because that is how the model learns when to *stop*
+    (MF-103; ``<|eos|>`` is never used here, it keeps its pretraining-only
+    document-boundary role). Role markers themselves are never graded:
+    predicting whose turn it is next is the template's job, not something the
+    model should be guessing.
     """
 
     if max_length < 2:
@@ -139,7 +144,7 @@ def encode_sft_example(
         role = SPECIAL_TOKEN_IDS[f"<|{message.role}|>"]
         content = tokenizer.encode("\n" + message.content)
         newline = tokenizer.encode("\n")
-        ids = [role, *content, tokenizer.eos_id, *newline]
+        ids = [role, *content, tokenizer.eot_id, *newline]
         assistant = message.role == "assistant"
         mask = [False, *([assistant] * len(content)), assistant, *([False] * len(newline))]
         segments.append((ids, mask, message.role))

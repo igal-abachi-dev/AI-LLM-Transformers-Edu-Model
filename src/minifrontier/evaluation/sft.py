@@ -4,8 +4,8 @@ Beginner's map of this file
 ---------------------------
 After fine-tuning, the questions are simpler than benchmark accuracy: does the
 model answer instead of continuing the question, does it stop cleanly at
-``<|eos|>``, does it stay inside the chat format? These deliberately shallow,
-readable checks measure exactly that and claim nothing more.
+``<|eot|>`` (MF-103), does it stay inside the chat format? These deliberately
+shallow, readable checks measure exactly that and claim nothing more.
 """
 
 from __future__ import annotations

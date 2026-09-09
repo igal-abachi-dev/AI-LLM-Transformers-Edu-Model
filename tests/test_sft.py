@@ -37,7 +37,7 @@ def record(messages: tuple[ChatMessage, ...], record_id: str = "fixture") -> Con
 def test_chat_template_is_deterministic_and_role_order_is_strict() -> None:
     messages = [ChatMessage("system", "Be concise."), ChatMessage("user", "Hi")]
     assert render_chat(messages, add_generation_prompt=True) == (
-        "<|bos|><|system|>\nBe concise.<|eos|>\n<|user|>\nHi<|eos|>\n<|assistant|>\n"
+        "<|bos|><|system|>\nBe concise.<|eot|>\n<|user|>\nHi<|eot|>\n<|assistant|>\n"
     )
     with pytest.raises(ValueError, match="expected assistant"):
         validate_messages([ChatMessage("user", "one"), ChatMessage("user", "two")])
@@ -68,7 +68,7 @@ def test_assistant_only_mask_excludes_system_user_and_role_tokens(mini_tokenizer
     assert not any(example.loss_mask[: assistant_role + 1])
     assert example.loss_mask[user_role] is False
     assert any(example.loss_mask[assistant_role + 1 :])
-    assert example.loss_mask[example.token_ids.index(mini_tokenizer.eos_id, assistant_role)]
+    assert example.loss_mask[example.token_ids.index(mini_tokenizer.eot_id, assistant_role)]
 
 
 def test_jinja_chat_runtime_and_sft_serialization_share_one_token_contract(
@@ -174,9 +174,12 @@ def test_template_aware_chat_generation_cpu_smoke(mini_tokenizer) -> None:
     assert isinstance(result, str)
 
 
-def test_non_assistant_special_token_ids_excludes_only_eos() -> None:
+def test_non_assistant_special_token_ids_excludes_only_eot() -> None:
     ids = non_assistant_special_token_ids()
-    assert SPECIAL_TOKEN_IDS["<|eos|>"] not in ids
+    assert SPECIAL_TOKEN_IDS["<|eot|>"] not in ids
+    # <|eos|> is purely a pretraining document-boundary marker now (MF-103) --
+    # a chat assistant reply must never emit it, so it stays suppressed.
+    assert SPECIAL_TOKEN_IDS["<|eos|>"] in ids
     assert SPECIAL_TOKEN_IDS["<|bos|>"] in ids
     assert SPECIAL_TOKEN_IDS["<|user|>"] in ids
     assert len(ids) == len(SPECIAL_TOKEN_IDS) - 1
@@ -223,6 +226,8 @@ def test_generate_assistant_forwards_sampling_controls_to_model_generate(
     assert captured["repetition_penalty"] == 1.1
     assert captured["no_repeat_ngram_size"] == 3
     assert captured["suppress_token_ids"] == suppress_ids
+    # MF-103: chat generation must stop at <|eot|>, never the pretraining <|eos|>.
+    assert captured["eos_id"] == mini_tokenizer.eot_id
 
 
 @pytest.mark.slow

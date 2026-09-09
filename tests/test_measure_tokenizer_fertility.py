@@ -70,10 +70,14 @@ def test_digit_split_modes_produce_measurably_different_fertility() -> None:
     # digit-bearing text, which is what this integration test checks -- the
     # per-mode pre-tokenization boundaries themselves are exhaustively covered
     # in tests/test_tokenizer.py.
+    # vocab_size=320, not 300: MF-103/MF-104 grew the reserved special-token
+    # count from 11 to 14, leaving 3 fewer merge slots at a fixed vocab_size --
+    # 300 no longer leaves enough room for the two modes to diverge on this
+    # exact corpus/text pair, verified directly before picking 320.
     corpus = ["the year 2026 was great " * 20, "digits 123456789 and more digits " * 20]
-    no_digit = train_byte_bpe(corpus, vocab_size=300, min_frequency=1, digit_split="none")
+    no_digit = train_byte_bpe(corpus, vocab_size=320, min_frequency=1, digit_split="none")
     no_leading_space = train_byte_bpe(
-        corpus, vocab_size=300, min_frequency=1, digit_split="no_leading_space"
+        corpus, vocab_size=320, min_frequency=1, digit_split="no_leading_space"
     )
     text = "in 2026 there were 123 events and 456 more"
     no_digit_result = fertility.measure_fertility(no_digit, text)

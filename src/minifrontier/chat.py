@@ -6,11 +6,13 @@ The chat window is a friendly illusion. The model never sees bubbles, roles, or 
 conversation object -- it sees one flat stream of tokens, and the "roles" are
 marker tokens inside that stream::
 
-    <|bos|><|system|>You are helpful.<|eos|><|user|>What is 2+2?<|eos|><|assistant|>
+    <|bos|><|system|>You are helpful.<|eot|><|user|>What is 2+2?<|eot|><|assistant|>
 
 Then it is asked its one and only question: what token comes next? Having been
 trained on text where ``<|assistant|>`` is followed by assistant-flavoured
-writing, it starts producing an answer, and it stops when it emits ``<|eos|>``.
+writing, it starts producing an answer, and it stops when it emits ``<|eot|>``
+(MF-103) -- the chat/SFT turn boundary, distinct from ``<|eos|>``, which keeps
+its original, pretraining-only role marking document boundaries.
 
 This module holds the flattening (a Jinja template, so the exact format is data
 rather than code), the rules about which turn orders are legal, and the loop that
@@ -40,7 +42,7 @@ DEFAULT_SYSTEM_PROMPT_PATH = Path(__file__).parents[2] / "templates" / "system_p
 
 @dataclass(frozen=True, slots=True)
 class ChatMessage:
-    """One turn. Becomes ``<|role|>`` + content + ``<|eos|>`` once serialized."""
+    """One turn. Becomes ``<|role|>`` + content + ``<|eot|>`` once serialized."""
 
     role: Role
     content: str
@@ -124,7 +126,7 @@ def encode_chat_prompt(
     for message in messages:
         token_ids.append(SPECIAL_TOKEN_IDS[f"<|{message.role}|>"])
         token_ids.extend(tokenizer.encode("\n" + message.content))
-        token_ids.append(tokenizer.eos_id)
+        token_ids.append(tokenizer.eot_id)
         token_ids.extend(tokenizer.encode("\n"))
     if add_generation_prompt:
         token_ids.append(SPECIAL_TOKEN_IDS["<|assistant|>"])
@@ -193,14 +195,17 @@ def complete_text(
 
 
 def non_assistant_special_token_ids() -> list[int]:
-    """Every special-token ID except ``<|eos|>``.
+    """Every special-token ID except ``<|eot|>``.
 
     A chat reply should never itself contain role markers, ``<|pad|>``, or
-    FIM/tool tokens -- those are structural, not assistant vocabulary. ``<|eos|>``
-    is excluded because it must remain samplable: it's how generation stops.
+    FIM/tool tokens -- those are structural, not assistant vocabulary.
+    ``<|eot|>`` is excluded because it must remain samplable: it's how chat
+    generation stops (MF-103). ``<|eos|>`` is suppressed like everything
+    else here -- it is purely a pretraining document-boundary marker now, and
+    a chat assistant should never emit it.
     """
 
-    return [token_id for token, token_id in SPECIAL_TOKEN_IDS.items() if token != "<|eos|>"]
+    return [token_id for token, token_id in SPECIAL_TOKEN_IDS.items() if token != "<|eot|>"]
 
 
 def generate_assistant(
@@ -241,7 +246,7 @@ def generate_assistant(
         repetition_penalty=repetition_penalty,
         no_repeat_ngram_size=no_repeat_ngram_size,
         suppress_token_ids=suppress_token_ids,
-        eos_id=tokenizer.eos_id,
+        eos_id=tokenizer.eot_id,  # chat turn boundary (MF-103), not the pretraining <|eos|>
         generator=generator,
     )
     continuation = generated[0, prompt.shape[1] :].tolist()

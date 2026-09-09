@@ -5,7 +5,7 @@
 #
 # The expected difference is qualitative rather than a score: the base model
 # continues your question (often with more questions), while the SFT model answers
-# it and stops cleanly at <|eos|>. SFT teaches format and behaviour, not knowledge
+# it and stops cleanly at <|eot|>. SFT teaches format and behaviour, not knowledge
 # -- everything the model knows still came from pretraining.
 
 from __future__ import annotations

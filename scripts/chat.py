@@ -3,7 +3,7 @@
 # Interactive chat with an SFT model. Unlike `sample.py`, this wraps your text in
 # the role markers the model was fine-tuned on:
 #
-#   <|bos|><|system|>...<|eos|><|user|>your text<|eos|><|assistant|>
+#   <|bos|><|system|>...<|eot|><|user|>your text<|eot|><|assistant|>
 #
 # ...and then asks the same single question the model always answers: what token
 # comes next? There is no "chat mode" inside the model -- the roles are just

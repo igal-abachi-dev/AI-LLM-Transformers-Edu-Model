@@ -38,6 +38,16 @@ def test_bos_eos_are_only_added_explicitly(mini_tokenizer) -> None:
     assert bounded == [mini_tokenizer.bos_id, *plain, mini_tokenizer.eos_id]
 
 
+def test_eot_id_is_distinct_from_eos_id(mini_tokenizer) -> None:
+    """MF-103: <|eot|> (chat/SFT turn boundary) must never collide with
+    <|eos|> (pretraining document boundary) -- that collision is the whole
+    problem this task exists to fix."""
+
+    assert mini_tokenizer.eot_id == SPECIAL_TOKEN_IDS["<|eot|>"]
+    assert mini_tokenizer.eot_id != mini_tokenizer.eos_id
+    assert mini_tokenizer.encode("<|eot|>") == [mini_tokenizer.eot_id]
+
+
 def test_training_is_deterministic_for_fixed_order(tmp_path) -> None:
     corpus = ["alpha beta gamma" * 8, "delta epsilon" * 8]
     hashes = []
@@ -70,8 +80,9 @@ def test_loader_rejects_changed_tokenizer_hash(tokenizer_dir) -> None:
 
 
 def test_contract_contains_all_expected_reserved_tokens() -> None:
-    assert len(SPECIAL_TOKENS) == 11
+    assert len(SPECIAL_TOKENS) == 14
     assert SPECIAL_TOKENS[0:3] == ("<|pad|>", "<|bos|>", "<|eos|>")
+    assert SPECIAL_TOKENS[11:14] == ("<|eot|>", "<|file_sep|>", "<|repo_name|>")
 
 
 def _pretokenize(tokenizer: MiniFrontierTokenizer, text: str) -> list[str]:
