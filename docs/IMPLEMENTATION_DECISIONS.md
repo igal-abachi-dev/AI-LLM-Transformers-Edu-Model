@@ -409,3 +409,38 @@ independently re-checked against the actual source before any action.
   6:1 showed no quality upside over 3:1 to justify switching on its own — only a KV-cache memory
   argument, which this project has not needed. Kept at 3:1 pending either a stronger reason to move
   or a real test at 350M scale.
+
+## 2026-09-09 — MF-105: MTP enabled for the real 350M/release run
+
+- **`--mtp-extra-heads 1 --mtp-loss-weight 0.3` will be used for the real 350M/release training
+  run**, user-confirmed, decided ahead of MF-105's own original framing ("wait until MF-070's run is
+  being planned, not before") — grouped instead with this session's other pre-MF-070 recipe
+  decisions (LN scaling, gated attention, GQA ratio) rather than deferred further.
+- **Why**: the original "MTP stays off by default" call (`reports/mf070-mtp-quality.md`) weighed
+  only a quality-only tradeoff (−5.3% training wall-clock for +0.74% PPL — not worth it alone).
+  MF-093's later, separate result changed the calculus: the same trained MTP heads, repurposed for
+  self-speculative decoding, give a real, measured 1.21x greedy-decode speedup at 45.3% draft
+  acceptance (`reports/mf093-speculative-decoding.md`) — a benefit the original decision never had
+  available to weigh. The training-time cost is paid once during the (already multi-day) run; the
+  drafting capability then persists on the checkpoint for every future greedy-decode use
+  indefinitely. Architectural risk is low by construction: MTP heads are carved out to never touch
+  `ModelConfig` or `MiniFrontier`'s `state_dict()` (the frozen MTP carve-out, `AGENTS.md`), so this
+  does not complicate the release checkpoint format or compatibility.
+- **Caveats accepted, not overlooked**: the 1.21x/45.3% figures are single-seed, measured at 150M
+  scale, not yet confirmed at 350M; the speedup is greedy-only today — `chat.py`'s real default
+  (`temperature=0.8`) will not benefit until a materially more complex probability-ratio acceptance
+  rule for non-greedy sampling exists, which is unscoped future work, not part of this decision.
+  Edu is unaffected either way (never trained with MTP heads).
+- **Does not change any code-level default.** `TrainingConfig.mtp_extra_heads` stays `0` in the
+  library itself — this is a decision about the real release run's actual invocation command, the
+  same category of recipe decision as WSD's decay fraction, not a change to MTP's frozen
+  off-by-default carve-out.
+- **Follow-up, same day: the speedup was undeliverable until [[MF-109]] closed a real gap.**
+  `export_release`/`load_release` never learned about MTP heads when MF-093 added `mtp_heads`
+  support to the training-checkpoint save/load path — a release exported from an MTP-trained
+  checkpoint would have silently dropped the draft heads, and `scripts/sample.py` had no path to
+  use them regardless. `scripts/export.py`/`checkpoint.py`/`release.py`/`chat.py`/`scripts/sample.py`
+  now carry MTP heads end to end, and self-speculative decoding is on by default in
+  `scripts/sample.py` whenever a release has trained heads and the request is genuinely greedy —
+  structurally Modern-only (Edu never has heads to export) rather than via a preset check. Full
+  detail in `tasks/backlog.md`'s `MF-109` entry.

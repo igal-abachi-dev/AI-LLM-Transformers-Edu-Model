@@ -6,6 +6,7 @@ import torch
 from minifrontier.checkpoint import (
     export_release,
     load_release,
+    load_release_mtp_heads,
     load_training_checkpoint,
     prune_old_checkpoints,
     save_training_checkpoint,
@@ -207,6 +208,36 @@ def test_release_folder_loads_independently(tmp_path, mini_tokenizer) -> None:
         "generation_config.json",
         "sha256-manifest.json",
     } <= {path.name for path in release.iterdir()}
+
+
+def test_release_without_mtp_heads_has_none_and_no_mtp_files(tmp_path, mini_tokenizer) -> None:
+    config = ModelConfig.tiny_edu(vocab_size=max(512, mini_tokenizer.vocab_size))
+    release = tmp_path / "release"
+    export_release(release, MiniFrontier(config), mini_tokenizer)
+    assert load_release_mtp_heads(release, config) is None
+    assert not (release / "mtp_heads.safetensors").exists()
+    assert not (release / "mtp_config.json").exists()
+
+
+def test_release_with_mtp_heads_round_trips_real_weights(tmp_path, mini_tokenizer) -> None:
+    torch.manual_seed(3)
+    config = ModelConfig.tiny_modern(vocab_size=max(512, mini_tokenizer.vocab_size))
+    mtp_heads = MTPHeads(d_model=config.d_model, vocab_size=config.vocab_size, n_extra_heads=1)
+    release = tmp_path / "release"
+    export_release(release, MiniFrontier(config), mini_tokenizer, mtp_heads=mtp_heads)
+    assert (release / "mtp_heads.safetensors").exists()
+    assert (release / "mtp_config.json").exists()
+
+    loaded_heads = load_release_mtp_heads(release, config)
+    assert loaded_heads is not None
+    assert loaded_heads.n_extra_heads == 1
+    hidden = torch.randn(1, 3, config.d_model)
+    assert torch.equal(loaded_heads.predict(hidden), mtp_heads.predict(hidden))
+
+    # sha256-manifest.json covers the two new files too, not just the original set.
+    manifest = json.loads((release / "sha256-manifest.json").read_text(encoding="utf-8"))
+    assert "mtp_heads.safetensors" in manifest
+    assert "mtp_config.json" in manifest
 
 
 def test_release_manifest_rejects_tampering(tmp_path, mini_tokenizer) -> None:

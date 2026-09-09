@@ -243,10 +243,20 @@ def export_release(
     tokenizer: MiniFrontierTokenizer,
     *,
     model_card: str | None = None,
+    mtp_heads: MTPHeads | None = None,
 ) -> None:
     target = Path(directory)
     target.mkdir(parents=True, exist_ok=True)
     save_model(model, str(target / "model.safetensors"))
+    if mtp_heads is not None:
+        # Optional, additive: an Edu release (or any release never trained with
+        # MTP) simply never writes these two files, so load_release's own
+        # contract and every existing release stay exactly as they are.
+        save_model(mtp_heads, str(target / "mtp_heads.safetensors"))
+        (target / "mtp_config.json").write_text(
+            json.dumps({"n_extra_heads": mtp_heads.n_extra_heads}, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     (target / "config.json").write_text(
         json.dumps(model.config.to_dict(), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -298,3 +308,33 @@ def load_release(
     load_model(model, str(root / "model.safetensors"), strict=True, device=str(device))
     model.eval()
     return model, MiniFrontierTokenizer.from_directory(root)
+
+
+def load_release_mtp_heads(
+    directory: str | Path,
+    config: ModelConfig,
+    *,
+    device: torch.device | str = "cpu",
+) -> MTPHeads | None:
+    """Load a release's MTP heads (MF-105), or ``None`` if it was never trained with any.
+
+    Separate from `load_release` itself so every existing caller of
+    `load_release` (its two-value return unpacking) is completely unaffected.
+    Returns ``None`` for the overwhelming common case -- any Edu release, or
+    any Modern release trained without MTP -- rather than raising, since the
+    caller (e.g. `scripts/sample.py`) needs "no heads" to be a normal,
+    expected outcome it can branch on, not an error to catch.
+    """
+
+    root = Path(directory)
+    heads_path = root / "mtp_heads.safetensors"
+    mtp_config_path = root / "mtp_config.json"
+    if not heads_path.exists() or not mtp_config_path.exists():
+        return None
+    n_extra_heads = json.loads(mtp_config_path.read_text(encoding="utf-8"))["n_extra_heads"]
+    mtp_heads = MTPHeads(
+        d_model=config.d_model, vocab_size=config.vocab_size, n_extra_heads=n_extra_heads
+    ).to(device)
+    load_model(mtp_heads, str(heads_path), strict=True, device=str(device))
+    mtp_heads.eval()
+    return mtp_heads

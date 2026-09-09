@@ -21,7 +21,7 @@ from typing import Literal
 
 import torch
 
-from minifrontier.checkpoint import load_release, verify_release_manifest
+from minifrontier.checkpoint import load_release, load_release_mtp_heads, verify_release_manifest
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,10 +97,24 @@ def verify_release(directory: str | Path) -> dict[str, object]:
         logits = model(prompt).logits
     if not torch.isfinite(logits).all():
         raise ValueError("release produced non-finite logits on a load-test forward pass")
+    # A release exported with MTP heads (MF-105) must be load-tested the same
+    # way the main model is, before the caller trusts this release enough to
+    # delete the only other copy of those weights (scripts/export.py's default
+    # cleanup) -- a corrupted mtp_heads.safetensors would otherwise go
+    # undetected until someone tries speculative decoding on a published model
+    # with no source checkpoint left to fix it from.
+    mtp_heads = load_release_mtp_heads(root, model.config)
+    if mtp_heads is not None:
+        with torch.no_grad():
+            hidden = model(prompt, return_hidden_states=True).hidden_states
+            draft_logits = mtp_heads.predict(hidden)
+        if not torch.isfinite(draft_logits).all():
+            raise ValueError("release MTP heads produced non-finite logits on a load-test pass")
     return {
         "status": "load_tested",
         "parameters": model.parameter_count(),
         "logits_finite": True,
+        "mtp_heads_present": mtp_heads is not None,
     }
 
 

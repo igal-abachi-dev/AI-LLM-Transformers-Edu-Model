@@ -30,6 +30,8 @@ import torch
 from jinja2 import Environment, StrictUndefined
 
 from minifrontier.model import MiniFrontier
+from minifrontier.mtp import MTPHeads
+from minifrontier.speculative_decoding import speculative_generate
 from minifrontier.tokenizer import SPECIAL_TOKEN_IDS, MiniFrontierTokenizer
 
 Role = Literal["system", "user", "assistant"]
@@ -163,9 +165,20 @@ def complete_text(
     top_k: int | None = None,
     top_p: float = 1.0,
     seed: int = 42,
+    mtp_heads: MTPHeads | None = None,
 ) -> str:
     token_ids = tokenizer.encode(prompt, add_bos=True)
     tokens = torch.tensor([token_ids], dtype=torch.long, device=model.token_embedding.weight.device)
+    # Self-speculative decoding (MF-093/MF-105) is only exact for greedy
+    # decoding -- its acceptance rule has no probability-ratio correction for
+    # sampling yet. Any non-default temperature/top-k/top-p silently falls
+    # back to plain decoding rather than producing an approximation under a
+    # decoding mode the guarantee doesn't cover.
+    if mtp_heads is not None and temperature == 0.0 and top_k is None and top_p == 1.0:
+        generated, _stats = speculative_generate(
+            model, mtp_heads, tokens, max_new_tokens=max_new_tokens, eos_id=tokenizer.eos_id
+        )
+        return tokenizer.decode(generated[0].tolist(), skip_special_tokens=True)
     generator = torch.Generator(device=tokens.device).manual_seed(seed)
     generated = model.generate(
         tokens,

@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 from minifrontier.chat import complete_text
-from minifrontier.checkpoint import load_release
+from minifrontier.checkpoint import load_release, load_release_mtp_heads
 from minifrontier.precision import cast_model_for_inference
 
 
@@ -39,6 +39,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-k", type=int)
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--no-speculative",
+        action="store_true",
+        help=(
+            "Disable self-speculative decoding even if the release has trained MTP "
+            "heads (MF-093/MF-105). Speculative decoding is an exact acceleration of "
+            "greedy decoding, on by default whenever a release has MTP heads and "
+            "--temperature 0 --top-k None --top-p 1.0 (the default); this only exists "
+            "for a plain-decode baseline, e.g. when profiling the speedup itself."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -51,6 +62,15 @@ def main() -> None:
     policy = cast_model_for_inference(model, args.precision, args.device)
     if policy.fallback_reason:
         print(f"precision fallback: {policy.fallback_reason}", file=sys.stderr)
+    # None for any Edu release, or a Modern release never trained with MTP --
+    # this is what makes speculative decoding "default for Modern, never Edu"
+    # a structural fact rather than a preset check: Edu has never had trained
+    # MTP heads to export in the first place (AGENTS.md's MTP carve-out).
+    mtp_heads = (
+        None
+        if args.no_speculative
+        else load_release_mtp_heads(args.model, model.config, device=args.device)
+    )
     print(
         complete_text(
             model,
@@ -61,6 +81,7 @@ def main() -> None:
             top_k=args.top_k,
             top_p=args.top_p,
             seed=args.seed,
+            mtp_heads=mtp_heads,
         )
     )
 

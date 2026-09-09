@@ -29,6 +29,7 @@ from pathlib import Path
 from minifrontier.checkpoint import export_release, load_training_checkpoint
 from minifrontier.config import ModelConfig
 from minifrontier.model import MiniFrontier
+from minifrontier.mtp import MTPHeads
 from minifrontier.release import verify_release
 from minifrontier.tokenizer import MiniFrontierTokenizer
 
@@ -57,6 +58,20 @@ def main() -> None:
         **json.loads((args.checkpoint / "config.json").read_text(encoding="utf-8"))
     )
     model = MiniFrontier(config)
+    # A checkpoint trained with MTP heads (MF-070/MF-093/MF-105) records that in its
+    # own trainer_state.json -- read it directly (not a new CLI flag) so export is
+    # fully automatic from what the checkpoint actually contains, and unaffected for
+    # every checkpoint trained before MTP existed (missing key defaults to 0/None).
+    trainer_state = json.loads((args.checkpoint / "trainer_state.json").read_text(encoding="utf-8"))
+    mtp_extra_heads = trainer_state.get("training_config", {}).get("mtp_extra_heads", 0)
+    mtp_heads = None
+    if mtp_extra_heads > 0:
+        mtp_heads = MTPHeads(
+            d_model=config.d_model,
+            vocab_size=config.vocab_size,
+            n_extra_heads=mtp_extra_heads,
+            init_std=config.resolved_init_std,
+        )
     # Training checkpoints are explicitly local/trusted here; published releases contain only
     # safetensors and text metadata and never carry the pickle-backed optimizer state.
     load_training_checkpoint(
@@ -64,10 +79,11 @@ def main() -> None:
         model,
         restore_rng=False,
         trusted_local_state=True,
+        mtp_heads=mtp_heads,
     )
     tokenizer = MiniFrontierTokenizer.from_directory(args.tokenizer)
     model_card = args.model_card.read_text(encoding="utf-8") if args.model_card else None
-    export_release(args.output, model, tokenizer, model_card=model_card)
+    export_release(args.output, model, tokenizer, model_card=model_card, mtp_heads=mtp_heads)
     # Never delete the source based on export_release() alone succeeding -- verify the
     # release is actually a complete, loadable model first. An interrupted or corrupted
     # export must never cost the only remaining copy of the trained weights.
