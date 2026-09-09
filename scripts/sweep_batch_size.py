@@ -130,16 +130,25 @@ def main() -> None:
                 sequence_length=args.sequence_length,
                 min_updates=args.min_updates,
             )
-            run_metadata = run_arm(
-                config=args.config,
-                train_shards=args.train_shards,
-                output=args.output_dir / label,
-                batch_size=batch_size,
-                accumulation_steps=accumulation_steps,
-                updates=updates,
-                seed=args.seed,
-                device=args.device,
-            )
+            output = args.output_dir / label
+            existing_run_json = output / "run.json"
+            if existing_run_json.exists():
+                # A prior invocation already completed this exact arm (e.g. a
+                # resumed sweep after an earlier arm was interrupted) -- reuse
+                # its real recorded result instead of retraining it.
+                run_metadata = json.loads(existing_run_json.read_text(encoding="utf-8"))
+                print(f"skipping {label} (already completed): {existing_run_json}")
+            else:
+                run_metadata = run_arm(
+                    config=args.config,
+                    train_shards=args.train_shards,
+                    output=output,
+                    batch_size=batch_size,
+                    accumulation_steps=accumulation_steps,
+                    updates=updates,
+                    seed=args.seed,
+                    device=args.device,
+                )
             summary = summarize_arm(
                 batch_size=batch_size,
                 accumulation_steps=accumulation_steps,

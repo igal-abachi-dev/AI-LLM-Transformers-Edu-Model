@@ -92,13 +92,20 @@ This repo's tokenizer (`src/minifrontier/tokenizer.py`) has exactly **16,384 tok
 vocabulary — that's `VOCAB_SIZE`. Big commercial models use 100,000–200,000, but the idea is
 identical.
 
-Eleven of those slots are **special tokens** — pieces of text that never appear in normal
+Fourteen of those slots are **special tokens** — pieces of text that never appear in normal
 writing, used as markers:
 
 ```
 <|pad|> <|bos|> <|eos|> <|system|> <|user|> <|assistant|>
 <|fim_prefix|> <|fim_suffix|> <|fim_middle|> <|tool_call|> <|tool_result|>
+<|eot|> <|file_sep|> <|repo_name|>
 ```
+
+`<|eot|>` marks the end of one chat turn — a different job from `<|eos|>`, which marks the
+end of a whole pretraining document (see section 1.2 for why that split matters).
+`<|file_sep|>` and `<|repo_name|>` are reserved for a future repo-level code feature and
+aren't used by anything yet — reserving the IDs now is free, adding them in later would not
+be.
 
 Each token has an ID number. `<|pad|>` is 0, `<|bos|>` ("beginning of sequence") is 1, and
 so on. **From here on, the model never sees letters again — only lists of ID numbers.**
@@ -149,6 +156,17 @@ and the integer sequences the neural network actually understands.
 ---
 
 ## Digit splitting in the tokenizer
+
+> **Update: this was tested for real and reverted.** The vocabulary was briefly raised to
+> 32,768 with digit-splitting on, exactly as this section describes — then real training
+> evidence (three independent retrains) found a reproducible ~1% quality regression at 32k,
+> with the gap *widening* rather than closing as training went on, and a separate fertility
+> check ruled out digit-splitting itself as an efficient fix either way. **The frozen default
+> is back to 16,384 tokens with digit-splitting off** (`digit_split="none"` in
+> `train_byte_bpe`) — what every real checkpoint this project has actually trained uses. The
+> mechanism below still exists in the code and is worth understanding, but it is not what
+> runs by default; read the rest of this section as "how it would work if you turned it on,"
+> not "what's currently on."
 
 A model only ever sees **token IDs**. How those IDs are chosen for numbers matters a lot for arithmetic.
 
@@ -218,7 +236,7 @@ Look at `templates/chat_template.jinja` in this repo — this is the entire tric
 
 ```jinja
 <|bos|>{% for message in messages %}<|{{ message.role }}|>
-{{ message.content }}<|eos|>
+{{ message.content }}<|eot|>
 {% endfor %}{% if add_generation_prompt %}<|assistant|>
 {% endif -%}
 ```
@@ -226,13 +244,21 @@ Look at `templates/chat_template.jinja` in this repo — this is the entire tric
 Your conversation gets flattened into something like:
 
 ```
-<|bos|><|system|>You are helpful.<|eos|><|user|>What is 2+2?<|eos|><|assistant|>
+<|bos|><|system|>You are helpful.<|eot|><|user|>What is 2+2?<|eot|><|assistant|>
 ```
 ![Chat bubbles flattened into one stream of tokens](svg/02-chat-template.svg)
 
 ...and then the model is asked its one and only question: *what token comes next?* It has
 learned that after `<|assistant|>` comes assistant-flavoured text, so it starts writing an
-answer. It stops when it guesses `<|eos|>`.
+answer. It stops when it guesses `<|eot|>`.
+
+`<|eot|>` ("end of turn") is a different marker from `<|eos|>` ("end of sequence") on
+purpose. `<|eos|>` means "this whole pretraining document is finished" — the glue between
+documents in `data.py`'s pretraining pack. `<|eot|>` means "my turn in this conversation is
+finished." Early versions of this project used the same token for both jobs, which meant the
+model had to learn two different meanings from one symbol. Real production models keep them
+separate too: Llama 3 has `<|eot_id|>` versus `<|end_of_text|>`, Qwen has `<|im_end|>` versus
+`<|endoftext|>`.
 
 There is no "assistant mode". There are no bubbles. **The roles are just marker tokens in a
 stream of text.** That's why "prompt injection" is possible at all — if untrusted text can
@@ -333,6 +359,8 @@ replies Y", and only score it on the assistant's half. That's **SFT** — superv
 fine-tuning — and this repo does it in `train/sft.py` and `src/minifrontier/sft.py`. The
 `loss_mask` argument you'll see threaded through the code exists exactly for this: *only
 learn from the assistant's words, not the user's.*
+
+sft teaches the format of chat question answer and behaviour , not knowledge
 
 Now — back to that suspicion from Part 0. How does "guess the next token" produce working
 code? Because to guess the next token *really well* across all of human text, the cheapest
@@ -549,6 +577,24 @@ That is the complete mechanics of SwiGLU
 
 Most of the model’s parameters live in the three SwiGLU matrices (especially in larger models).
 
+## A safety net for SwiGLU — clamping
+
+One more small, cheap addition worth knowing about, and unlike the Modern-only upgrades in
+Part 3, this one applies to **both** `tiny_edu` and `tiny_modern`.
+
+SwiGLU's gate above is a smooth on/off dimmer switch — but nothing stops the numbers feeding
+into it from growing very large during training, especially early on or after an unlucky
+batch. An unusually large value entering `silu(gate(x))` can spike, and that spike rides the
+residual stream (the conveyor belt) into every later layer.
+
+The fix is a plain `torch.clamp` on the gate (and optionally the "up" branch) before they
+multiply together — a fuse that caps how extreme a single activation is allowed to get,
+without changing anything about ordinary, well-behaved values. It costs nothing in speed or
+parameters, and it's off by default (`swiglu_clamp = None`) until a real value is chosen. It
+matters more on this project's own reference hardware than it would on a data-center GPU:
+that card has no native BF16 tensor cores, so real training there runs in FP16 instead
+(`src/minifrontier/precision.py`), and FP16 has real, narrower dynamic range than BF16 — a
+spike that BF16 would shrug off can actually be a problem here.
 
 
 
@@ -696,6 +742,8 @@ between 2019 and 2025. The 2017 skeleton survived; people fixed four specific pa
 | Norms | pre-norm only | **+ QK-Norm** | Training blows up at scale |
 | Attention span | full, every layer | **3 local + 1 global** | Attention cost grows quadratically |
 | Position | RoPE everywhere | RoPE, **optional NoPE on global layers** | Long-context behaviour |
+| Residual damping | init-time only | **+ LayerNorm scaling** | Deep stacks grow the residual stream too large |
+| Attention output | ungated | **+ per-head gating** | Old context lingers in a fixed-size local cache |
 
 
 > Modern architecture:
@@ -934,6 +982,58 @@ Because NoPE only makes sense when local layers underneath have already done the
 
 ---
 
+## Partial RoPE — rotating only part of each head (experiment)
+
+Section 2.2 rotates *every* number in a Q/K head by RoPE. Partial RoPE asks: does it have to
+be all of them? The config gains a fraction (`rope_fraction`, 1.0 by default — today's
+ordinary behaviour) that controls how much of each head actually gets rotated. Only the
+*last* slice of each head's numbers turns; the rest pass straight through, carrying pure
+content with no position stamp mixed in at all.
+
+The idea, borrowed from real production models (GPT-NeoX, Phi-3, and every DeepSeek
+generation since V2), is that a head might benefit from having some dimensions that are
+purely about *what* a token is, completely undisturbed by *where* it sits — the same
+content-versus-position split that motivates NoPE above, but applied *inside* every layer's
+own head instead of choosing it per-layer. Like NoPE, this is Modern-only and still an open
+question: the mechanism is implemented and tested (`rope_fraction = 1.0` is checked to be
+bit-for-bit identical to ordinary RoPE), but no real bounded comparison has yet found a
+fraction that beats the default.
+
+---
+
+## Modern's two newest defaults — LayerNorm scaling and gated attention
+
+Both of these started as bounded experiments in this project — real matched-token training
+comparisons, not guesses — and are now the actual default for every `tiny_modern`-shaped
+preset, not switches you have to turn on yourself.
+
+**LayerNorm scaling.** Section 2.3 already showed one trick that keeps a deep residual
+stream from growing out of control: damping the *initial* weights by
+`1 / sqrt(2 * n_layers)`. LayerNorm scaling attacks the same problem from the other end —
+every forward pass, not just at the start. Each block's normalized input gets multiplied by
+a small, fixed, non-learned number that shrinks with depth: `1 / sqrt(layer_index + 1)`.
+Layer 0 is untouched; the deepest layer is scaled down noticeably. A real bounded test in
+this project found that *replacing* the init-time damping with this was a clear regression —
+the two mechanisms are not interchangeable — but *adding* it on top of the existing damping
+gave a small, real improvement. That's why both run together, not one instead of the other.
+
+**Gated attention.** The ring cache from earlier in this part (the whiteboard with limited
+slots) has a real cost: once a local layer's cache wraps around, old information is
+genuinely gone, not just far away. A head that leaned on something now-evicted has no way to
+say "actually, ignore what I just told you." Gated attention gives it one: right before a
+head's output gets merged back into the residual stream, it passes through a learned sigmoid
+gate — a dial from "pass this through" to "suppress this almost entirely" — computed from
+the same input that built that head's query in the first place. The gate starts almost fully
+open (so training begins close to ordinary attention) and learns to close itself only where
+it helps. In this project's own real measurement, turning it on gave the single clearest
+quality improvement of any tested change so far.
+
+Both are Modern-only, for the same reason GQA and hybrid attention are: Edu stays the plain,
+textbook architecture on purpose, so there's always one preset in this repo simple enough to
+hold in your head completely.
+
+---
+
 ## 3.5 What did *not* change — and why that's the lesson
 
 Between "textbook 2017 Transformer" and "2025 production model", all of this stayed
@@ -1044,7 +1144,43 @@ uv run --extra cpu python labs/08_mtp.py
 
 Because the literature gains appear mainly at very large scale, MTP is treated as an opt-in experiment (`scripts/compare_mtp.py`) rather than a default training setting.
 
---- 
+---
+
+## MTP heads at inference time — a free second guess (self-speculative decoding)
+
+The section above described MTP as a training-time-only auxiliary loss, shelved because its
+quality gain alone wasn't worth the training slowdown. It turns out those same trained heads
+have a second, completely different use — one this project measured for real, not
+theoretically.
+
+Plain generation (section 2.8) is memory-bandwidth-bound: producing one token means reading
+every weight once, and hardly any of that time is spent on arithmetic. Producing *two*
+tokens in one forward pass costs only a little more than producing one, because the weights
+only get read once either way. That's the opening MTP heads exploit: while the model
+produces its normal next-token guess, an MTP head — riding along on the very same hidden
+state, for free — also proposes a *draft* for the token after that.
+
+The trick, in `src/minifrontier/speculative_decoding.py`:
+
+1. Feed the real, confirmed token together with the pending draft token in **one** batched
+   forward pass.
+2. The real token's own logits are the model's honest, unbiased opinion of what should come
+   next — it never got to peek at the draft (the causal mask sees to that), so this verdict
+   can't be contaminated by a wrong guess.
+3. If the verdict agrees with the draft: **accept**. Both tokens are real, and the same pass
+   already handed back a fresh draft for the token after *that* — no extra forward pass
+   needed.
+4. If it disagrees: **reject**. Roll the cache back one step (the same idea as
+   `KVCache.truncate` undoing a speculative miss), keep the verdict as the real token, and
+   try a new draft from its hidden state instead.
+
+For plain greedy decoding this is an **exact** speedup, not an approximation — the final
+text is identical either way; only how many forward passes it took to produce it changes.
+Measured for real on this project's own hardware: **1.21x faster**, with 45.3% of drafts
+accepted. The same trained weights, no extra training cost, doing a genuinely different job
+than the one they were originally added for.
+
+---
 
 
 ## 3.9  How a real model actually gets built
@@ -1484,7 +1620,32 @@ closely guarded numbers at any lab.
 **Increasingly, a lot of this data is synthetic** — written by an existing model, then
 filtered. That sounds circular, and it partly is, but a strong model producing carefully
 verified examples turns out to be a very cheap way to make training data for the next one.
- 
+
+### Mixing real data sources at a ratio
+
+That "40% web, 20% code, 10% math" idea above isn't just a fact about big labs — this repo
+has a real, working version of it. Training normally reads from one pool of already-packed
+shards. `MixtureBatchProvider` (`src/minifrontier/shards.py`) reads from **several** named
+pools at once, picking which one serves each whole batch by a weighted random draw — e.g.
+70% web text, 30% code, real numbers set with `--mixture web;path;0.7 --mixture
+code;path;0.3` on `train/pretrain.py`.
+
+Two details make it trustworthy rather than just convenient:
+
+- **Exact resume.** Each source keeps its own independent shuffle and cursor. Which source
+  served which batch is derived purely from `(seed, how many batches drawn so far)` — so
+  resuming a training run replays the *exact* same sequence of source choices, not a new
+  random one.
+- **A checkpoint remembers its own mixture.** Resuming a run with different weights than the
+  ones that produced the checkpoint fails loudly instead of silently continuing under a
+  different mix than the loss curve up to that point was actually measured under.
+
+This is also the real prerequisite for an idea used by several published small-model recipes
+(MiniCPM, SmolLM2): putting higher-quality, more curated data preferentially in the *last*
+part of training — the "decay" phase of the learning-rate schedule — rather than spreading
+it evenly throughout. Without a way to mix sources by ratio in the first place, that idea
+can't be tried at all.
+
 ---
  
 ## 8.3 Stage 2 — Pretraining
