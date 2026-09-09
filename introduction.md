@@ -505,6 +505,16 @@ up with something like "60% dog, 30% barked, 10% the". Then they collect a **ble
 everyone's envelopes, weighted by those percentages**, and that blend becomes their sticky
 note.
 
+ “How does the computer measure if a Query matches a Key?”
+(`Q · Kᵀ`) measures geometric alignment. 
+
+If two vectors point in similar directions in meaning-space, 
+their dot product is large and positive; 
+
+if they are perpendicular or opposite, 
+the score is low or negative.
+
+
 Three extra rules make it work:
 
 **No peeking at the future (the causal mask).** Because the model's whole job is guessing
