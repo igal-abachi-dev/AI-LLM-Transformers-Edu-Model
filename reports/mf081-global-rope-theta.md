@@ -32,18 +32,36 @@ Delta vs. baseline: ΔCE -0.211%, ΔPPL -1.082%, ΔBPB -0.211%.
 - **This measurement does not actually test the value's real motivation.**
   Llama 3's `rope_theta=500,000` exists specifically for long-context
   extrapolation, not in-distribution short-context quality -- the
-  in-distribution BPB tested here is a weak proxy for that claim. A real
-  test needs the long-context retrieval eval ([[MF-086]]'s
-  needle-haystack harness, the same tool [[MF-082]] uses) run against this
-  checkpoint at context lengths beyond `local_window=512`, not just a
-  validation-split loss number. Not run in this pass; the checkpoint
-  (`artifacts/mf081-global-rope-theta/500k/final`) is available for that
-  follow-up.
+  in-distribution BPB tested here is a weak proxy for that claim.
 - No preset change; `global_rope_theta` stays unset (`None`, shared 10,000)
   in `150m-modern.toml`.
 
+## Needle-haystack retrieval re-eval (2026-09-09)
+
+Ran `scripts/eval_needle_haystack.py --checkpoint
+artifacts/mf081-global-rope-theta/500k/final --context-lengths 512 1024
+2032` (`reports/mf081-needle-haystack-global-rope-theta.json`), the same
+harness and same command shape as [[MF-082]]'s gated-attention re-eval.
+
+| Arm | retrieval rate @512 | @1024 | @2032 |
+|---|---|---|---|
+| baseline | 0.0 | 0.0 | 0.0 |
+| global_rope_theta=500k | 0.0 | 0.0 | 0.0 |
+
+**Inconclusive, same reason as [[MF-082]]'s gated-attention re-eval**: this
+is a 5,000-update/~10.24M-token bounded checkpoint, ~100x short of
+[[MF-086]]'s reference budget (the real 1B-token MF-065 release, which
+retrieves at `{512: 1.0, 1024: 0.4, 2032: 0.0}`). At this token budget
+neither arm has learned in-context needle retrieval at all yet, even at
+length=512 inside the local window -- this comparison cannot distinguish
+"a larger global theta doesn't help extrapolation" from "retrieval hasn't
+emerged yet at this budget." A real test of this value's actual motivation
+needs the same larger-budget retrain this project's other undertrained
+needle-haystack comparisons are now blocked on.
+
 ## Limitations
 
-Single seed, single ~10.24M-token bounded budget, in-distribution
-short-context validation only -- the long-context retrieval question this
-value actually targets remains untested.
+Single seed, single ~10.24M-token bounded budget for both the validation
+quality and needle-haystack measurements -- the long-context extrapolation
+question this value actually targets remains untested at a budget where
+retrieval has actually emerged.
