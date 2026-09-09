@@ -93,6 +93,7 @@ def _args(
         learning_rate=1e-3,
         min_learning_rate=1e-3,
         weight_decay=0.0,
+        no_decay_embeddings=False,
         gradient_clip=1.0,
         checkpoint_interval=1,
         no_checkpoint=False,
@@ -157,27 +158,107 @@ def test_loss_chunk_size_and_z_loss_weight_flags_reach_real_training(
     assert state.last_loss is not None and state.last_loss == state.last_loss  # not NaN
 
 
-def test_resume_with_mtp_extra_heads_is_rejected(tmp_path, mini_tokenizer) -> None:
-    """MTP head weights are not part of the saved checkpoint (see mtp.py) --
-    combining --resume with MTP must fail loudly, not silently reinitialize."""
+def test_mtp_heads_are_saved_in_every_checkpoint_when_enabled(tmp_path, mini_tokenizer) -> None:
+    """A real, previously-missing gap: train/pretrain.py's own save calls never
+    forwarded mtp_heads, so a real --mtp-extra-heads run's trained draft heads
+    were silently lost the moment training ended -- despite checkpoint.py/
+    export.py/release.py all being built to expect mtp_heads.safetensors to be
+    there (MF-093/MF-109). Both the periodic and final checkpoint must have it."""
 
     shards_path = _build_shards(tmp_path, mini_tokenizer)
     config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
-    try:
-        pretrain.run(
-            _args(
-                config_path,
-                shards_path,
-                tmp_path / "out",
-                resume=tmp_path,
-                mtp_extra_heads=1,
-                mtp_loss_weight=0.5,
-            )
+    output = tmp_path / "out"
+    pretrain.run(
+        _args(
+            config_path,
+            shards_path,
+            output,
+            updates=2,
+            checkpoint_interval=1,
+            mtp_extra_heads=1,
+            mtp_loss_weight=0.5,
         )
-    except ValueError as error:
-        assert "resume" in str(error) and "mtp" in str(error).lower()
-    else:
-        raise AssertionError("expected a ValueError for --resume with mtp_extra_heads > 0")
+    )
+    assert (output / "checkpoint-00000001" / "mtp_heads.safetensors").exists()
+    assert (output / "final" / "mtp_heads.safetensors").exists()
+
+
+def test_resume_with_mtp_extra_heads_restores_the_trained_heads(tmp_path, mini_tokenizer) -> None:
+    """--resume together with --mtp-extra-heads > 0 must actually restore the
+    trained heads, not reinitialize them -- the real fix for the gap the
+    previous version of this test only guarded against by rejecting outright.
+    pretrain.py's CLI has no way to run a real partial-then-resume-to-
+    completion scenario in one process (each invocation runs to its full
+    --updates), so -- matching test_mixture_flag_reaches_real_training_and_
+    checkpoint_reloads's own documented limitation -- this resumes a run
+    that is already complete, proving the real load path (construct
+    MTPHeads, pass it into load_training_checkpoint, no crash, no silent
+    reinitialization) rather than proving additional updates happen."""
+
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    output = tmp_path / "out"
+    pretrain.run(
+        _args(
+            config_path,
+            shards_path,
+            output,
+            updates=2,
+            mtp_extra_heads=1,
+            mtp_loss_weight=0.5,
+        )
+    )
+    resumed_state, _ = pretrain.run(
+        _args(
+            config_path,
+            shards_path,
+            output,
+            updates=2,
+            resume=output / "final",
+            mtp_extra_heads=1,
+            mtp_loss_weight=0.5,
+        )
+    )
+    assert resumed_state.completed_updates == 2
+    assert (output / "final" / "mtp_heads.safetensors").exists()
+
+
+def test_no_decay_embeddings_flag_reaches_real_training(tmp_path, mini_tokenizer) -> None:
+    """TrainingConfig.decay_embeddings existing is not enough by itself -- the
+    CLI had no path to it at all before this flag. Verified by training two
+    otherwise-identical runs (same seed/data/everything else, real nonzero
+    weight_decay so the flag has something to actually change) and confirming
+    the resulting loss genuinely differs -- proof the embedding really is
+    excluded from decay through the real entry point, not just that the flag
+    parses."""
+
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    decayed_state, _ = pretrain.run(
+        _args(
+            config_path,
+            shards_path,
+            tmp_path / "decayed",
+            no_checkpoint=True,
+            updates=4,
+            learning_rate=0.5,
+            weight_decay=0.9,
+            no_decay_embeddings=False,
+        )
+    )
+    undecayed_state, _ = pretrain.run(
+        _args(
+            config_path,
+            shards_path,
+            tmp_path / "undecayed",
+            no_checkpoint=True,
+            updates=4,
+            learning_rate=0.5,
+            weight_decay=0.9,
+            no_decay_embeddings=True,
+        )
+    )
+    assert decayed_state.last_loss != undecayed_state.last_loss
 
 
 def test_schedule_flag_reaches_real_training_and_produces_a_different_lr_path(

@@ -82,6 +82,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--min-learning-rate", type=float, default=3e-5)
     parser.add_argument("--weight-decay", type=float, default=0.1)
+    parser.add_argument(
+        "--no-decay-embeddings",
+        action="store_true",
+        help=(
+            "Exclude the token embedding from weight decay (TrainingConfig.decay_embeddings "
+            "defaults to True, decaying it like every other >=2D parameter). Real published "
+            "small-model recipes (OLMo 2 1B, SmolLM3) report this off as a stability "
+            "improvement, particularly relevant here since embeddings are tied to lm_head "
+            "by default -- not this project's own measured recommendation, no bounded test "
+            "has compared the two on this project's own data/hardware."
+        ),
+    )
     parser.add_argument("--gradient-clip", type=float, default=1.0)
     parser.add_argument("--checkpoint-interval", type=int, default=100)
     parser.add_argument(
@@ -135,9 +147,9 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Multi-Token Prediction: number of extra heads predicting further ahead "
             "(t+2, t+3, ...), an off-by-default training-only experiment (see mtp.py, "
-            "AGENTS.md). 0 disables MTP entirely. NOT resumable yet: --resume together "
-            "with --mtp-extra-heads > 0 is rejected, because MTP head weights (unlike "
-            "the model and optimizer) are not currently persisted in the checkpoint."
+            "AGENTS.md). 0 disables MTP entirely. MTP head weights are saved in "
+            "mtp_heads.safetensors alongside every periodic/final checkpoint and restored "
+            "on --resume, same as the model and optimizer."
         ),
     )
     parser.add_argument("--mtp-loss-weight", type=float, default=0.0)
@@ -198,11 +210,6 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         raise ValueError("checkpoint_interval must be positive")
     if args.keep_last_n_checkpoints is not None and args.keep_last_n_checkpoints <= 0:
         raise ValueError("keep_last_n_checkpoints must be positive")
-    if args.resume is not None and args.mtp_extra_heads > 0:
-        raise ValueError(
-            "--resume with --mtp-extra-heads > 0 is not supported: MTP head weights are "
-            "not part of the saved checkpoint (see mtp.py) and would silently reinitialize"
-        )
     model_config = ModelConfig.from_toml(args.config)
     train_config = TrainingConfig(
         max_updates=args.updates,
@@ -210,6 +217,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         min_learning_rate=args.min_learning_rate,
         warmup_updates=args.warmup_updates,
         weight_decay=args.weight_decay,
+        decay_embeddings=not args.no_decay_embeddings,
         gradient_clip=args.gradient_clip,
         gradient_accumulation_steps=args.accumulation_steps,
         precision=args.precision,
@@ -248,6 +256,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
             optimizer=optimizer,
             scheduler=schedule,
             trusted_local_state=True,
+            mtp_heads=mtp_heads,
         )
         if trainer_values.get("training_config") != asdict(train_config):
             raise ValueError("resume training configuration does not match the checkpoint")
@@ -286,6 +295,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
                 "compile_report": asdict(compile_report),
             },
             data_cursor=provider.state_dict(),
+            mtp_heads=mtp_heads,
         )
         if args.keep_last_n_checkpoints is not None:
             prune_old_checkpoints(args.output, keep_last_n=args.keep_last_n_checkpoints)
@@ -326,6 +336,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
                 "precision": asdict(policy),
             },
             data_cursor=provider.state_dict(),
+            mtp_heads=mtp_heads,
         )
     peak_allocated = torch.cuda.max_memory_allocated(device) if device.type == "cuda" else 0
     peak_reserved = torch.cuda.max_memory_reserved(device) if device.type == "cuda" else 0

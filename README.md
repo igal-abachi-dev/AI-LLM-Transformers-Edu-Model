@@ -74,8 +74,8 @@ Every Edu block is byte-identical, so 2 boxes or 20 boxes carry the same informa
 |---|---|---|---|
 | `50m-modern` | 14 | 11 | 3, 7, 11 |
 | `150m-modern` | 20 | 15 | 3, 7, 11, 15, 19 |
-| `500m-modern` | 24 | 18 | 3, 7 … 23 |
 | `350m-modern` | 28 | 21 | 3, 7 … 27 |
+| `500m-modern` | 30 | 23 | 3, 7 … 27 |
 
 The learning progression is deliberate:
 
@@ -128,7 +128,7 @@ Start with `introduction.md`, then the tiny models and labs — that’s clearly
 | 50M | 14 | 512 | 8 | 2 | 1,408 | 1,024 | Development, tests, experiments |
 | 150M | 20 | 768 | 12 | 4 | 2,048 | Canonical Edu/Modern release |
 | 350M | 28 | 1,024 | 16 | 4 | 2,816 | Optional scale check |
-| 500M | 24 | 1,280 | 20 | 4 | 3,456 | Optional stretch target |
+| 500M | 30 | 1,152 | 18 | 6 | 3,072 | Optional stretch target |
 
 All sizes use a single 16,384-token byte-level BPE tokenizer, 64-dimensional attention heads, bias-free linear layers, tied embeddings, RMSNorm epsilon `1e-6`, and dropout `0` by default.
 
