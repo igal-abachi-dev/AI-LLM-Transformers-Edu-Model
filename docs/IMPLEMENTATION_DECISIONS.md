@@ -360,3 +360,52 @@ independently re-checked against the actual source before any action.
   checked and found to carry no technical content: a two-day internal API beta with a speed
   benchmark and a marketing claim of a new multimodal architecture, no technical report, weights,
   config, or architecture disclosure. Reviewed, not acted on.
+
+## 2026-09-09 — MF-081/082: LayerNorm scaling and gated attention adopted into every Modern preset
+
+- **`layer_norm_scaling = true` and `gated_attention = true` are now the default for every frozen
+  Modern preset** (`configs/50m-modern.toml`, `150m-modern.toml`, `350m-modern.toml`,
+  `500m-modern.toml`; `residual_std_damping` stays at its existing default `true`), user-directed
+  after the real bounded-ablation results below. Both remain structurally impossible on Edu
+  (`ModelConfig.__post_init__`'s existing guard); no change to Edu's frozen architecture.
+- **LayerNorm scaling**: the real 3-arm bounded test (`reports/mf081-ln-scaling.md`) found LN
+  scaling *replacing* the existing init-time `residual_std_damping` is a clear regression (+2.84%
+  CE) — not adopted that way. LN scaling *added alongside* the existing damping (the arm actually
+  adopted here) showed a small improvement (-0.35% CE/BPB, -1.81% PPL), 2-8x the estimated noise
+  floor (~0.046-0.2%, `reports/mf088-seed-variance.md`) but from a single seed at a ~10.24M-token
+  bounded budget — plausibly real, not confirmed by a second seed. Adopted as a pragmatic call given
+  the downside case (replacing the existing damping) is now known and explicitly avoided.
+- **Gated attention** (per-head sigmoid gate on the SDPA output before `out_proj`, Qiu et al.
+  arXiv:2505.06708, Qwen3-Next-style — the fix MF-082 chose for the ring-cache attention-sink
+  degradation `reports/mf086-needle-haystack.json` confirmed): the real bounded arm
+  (`reports/mf082-gated-attention-quality.md`) is the clearest quality signal of any arm run this
+  pass, -0.67% CE / -3.37% PPL / -0.67% BPB, well above the noise floor. **Adopted for this
+  validation-quality result alone** — the companion needle-haystack re-eval (this task's actual
+  sink-fix acceptance test) came back inconclusive, not negative: both the baseline and gated arms
+  scored 0.0 retrieval at every context length including inside the local window, because a
+  5,000-update (~10.24M-token) bounded checkpoint is ~100x short of the reference budget
+  (`reports/mf086-needle-haystack.json`'s real 1B-token MF-065 release, which does retrieve within
+  its local window) where the retrieval capability has actually emerged. Whether gated attention
+  specifically fixes sink eviction remains an open question, explicitly deferred: a conclusive
+  re-test needs a real ~1B-token `gated_attention=true` retrain (3-4 days at this project's measured
+  throughput), which is real GPU-time competition with MF-070's own 350M run and is deferred until
+  after it, not run now. The formula itself (sigmoid gate on the attention output) is not claimed to
+  be the best possible mechanism — DeepSeek-V4's real, more surgical alternative (a learned per-head
+  scalar inside the softmax denominator, letting attention mass sum to less than one, see the
+  2026-09-08 entry above) remains recorded and available; switching to it is deferred until there is
+  real evidence the current sigmoid formula underperforms specifically at the sink-eviction task,
+  not swapped speculatively now.
+- **Real parameter-count effect, computed via `exact_parameter_count`, not hand-calculated**:
+  `gated_attention`'s `gate_proj: Linear(d_model, n_heads, bias=True)` per layer is the only one of
+  the two adopted items that adds parameters. 50m-modern: 47,915,376 (was 47,730,816, +0.387%);
+  150m-modern: 138,630,640 (was 138,446,080, +0.133%); 350m-modern: 332,919,744 (was 332,460,544,
+  +0.138%); 500m-modern: 444,244,380 (was 443,621,760, +0.140%). `layer_norm_scaling` adds zero
+  parameters (a fixed, non-learned multiply).
+- **GQA ratio stays at each preset's existing default (3:1) — not changed.** The real 2-arm sweep
+  (`reports/mf081-gqa-sweep.md`) found 6:1 statistically indistinguishable from 3:1 at 150M scale
+  (-0.015% CE, inside the noise floor) and 12:1/MQA a small, plausibly-real regression (+0.24% CE).
+  Nothing between 6:1 and 12:1 was tested, this is single-seed at 150M scale on a ~10.24M-token
+  budget (not the 350M scale or 3B-token release budget this decision will actually govern), and
+  6:1 showed no quality upside over 3:1 to justify switching on its own — only a KV-cache memory
+  argument, which this project has not needed. Kept at 3:1 pending either a stronger reason to move
+  or a real test at 350M scale.
