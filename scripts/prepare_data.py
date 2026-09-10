@@ -27,6 +27,7 @@ from minifrontier.data import (
     iter_dclm_edu,
     iter_finemath,
     iter_fineweb_edu,
+    iter_github_code,
     iter_jsonl_documents,
     split_bucket,
 )
@@ -44,7 +45,8 @@ def parse_args() -> argparse.Namespace:
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--manifest", type=Path)
     source.add_argument(
-        "--source", choices=("fineweb-edu", "dclm-edu", "finemath", "cosmopedia-v2")
+        "--source",
+        choices=("fineweb-edu", "dclm-edu", "finemath", "cosmopedia-v2", "github-code"),
     )
     parser.add_argument("--limit", type=int)
     parser.add_argument("--start", type=int, default=0)
@@ -64,6 +66,19 @@ def parse_args() -> argparse.Namespace:
         choices=("finemath-3plus", "finemath-4plus", "infiwebmath-3plus", "infiwebmath-4plus"),
         help="Only meaningful with --source finemath: which of the dataset's four real "
         "subsets to use.",
+    )
+    parser.add_argument(
+        "--github-languages",
+        nargs="*",
+        help="Only meaningful with --source github-code: restrict to these languages "
+        "(case-insensitive, e.g. Python JavaScript). Omit for no language restriction.",
+    )
+    parser.add_argument(
+        "--github-repo-allowlist",
+        type=Path,
+        help="Only meaningful with --source github-code: a text file, one 'owner/repo' "
+        "per line, restricting the stream to exactly this curated set of repositories "
+        "instead of an unfiltered crawl of the whole dataset.",
     )
     parser.add_argument("--tokenizer", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
