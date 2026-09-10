@@ -9,6 +9,7 @@ import torch
 from minifrontier.data import Document
 from minifrontier.shards import (
     AdmissionStats,
+    CurriculumMixtureProvider,
     DiskDeduplicator,
     MixtureBatchProvider,
     PackedShardDataset,
@@ -201,6 +202,128 @@ def test_mixture_batch_provider_rejects_empty_or_non_positive_weights(
         MixtureBatchProvider({}, weights={})
     with pytest.raises(ValueError, match="positive"):
         MixtureBatchProvider({"web": ShardBatchProvider(web, batch_size=1)}, weights={"web": 0.0})
+
+
+def test_curriculum_provider_switches_weights_at_the_configured_batch_index(
+    tmp_path, mini_tokenizer
+) -> None:
+    web = _make_shard_pool(tmp_path / "web", mini_tokenizer, prefix="web", count=200)
+    code = _make_shard_pool(tmp_path / "code", mini_tokenizer, prefix="code", count=200)
+    providers = {
+        "web": ShardBatchProvider(web, batch_size=1, seed=1),
+        "code": ShardBatchProvider(code, batch_size=1, seed=2),
+    }
+    curriculum = CurriculumMixtureProvider(
+        providers,
+        stable_weights={"web": 0.9, "code": 0.1},
+        decay_weights={"web": 0.1, "code": 0.9},
+        decay_phase_start_batch=100,
+        seed=42,
+    )
+    stable_counts = {"web": 0, "code": 0}
+    for index in range(100):
+        stable_counts[curriculum._select_source(index)] += 1
+    decay_counts = {"web": 0, "code": 0}
+    for index in range(100, 200):
+        decay_counts[curriculum._select_source(index)] += 1
+    # Before the boundary: web-heavy. At/after it: code-heavy -- a real,
+    # measurable reversal at exactly the configured switch point.
+    assert stable_counts["web"] > stable_counts["code"]
+    assert decay_counts["code"] > decay_counts["web"]
+
+
+def test_curriculum_provider_exact_resume_across_the_phase_boundary(tmp_path, mini_tokenizer) -> None:
+    _make_shard_pool(tmp_path / "web", mini_tokenizer, prefix="web", count=12)
+    _make_shard_pool(tmp_path / "code", mini_tokenizer, prefix="code", count=12)
+
+    def build() -> CurriculumMixtureProvider:
+        providers = {
+            "web": ShardBatchProvider(PackedShardDataset(tmp_path / "web"), batch_size=1, seed=1),
+            "code": ShardBatchProvider(PackedShardDataset(tmp_path / "code"), batch_size=1, seed=2),
+        }
+        return CurriculumMixtureProvider(
+            providers,
+            stable_weights={"web": 0.5, "code": 0.5},
+            decay_weights={"web": 0.5, "code": 0.5},
+            decay_phase_start_batch=3,
+            seed=7,
+        )
+
+    original = build()
+    for _ in range(5):  # crosses the decay_phase_start_batch=3 boundary
+        original.next_batch()
+    state = original.state_dict()
+    expected = original.next_batch()
+
+    restored = build()
+    restored.load_state_dict(state)
+    actual = restored.next_batch()
+    assert torch.equal(expected.tokens, actual.tokens)
+
+
+def test_curriculum_provider_rejects_changed_weights_or_boundary_on_resume(
+    tmp_path, mini_tokenizer
+) -> None:
+    web = _make_shard_pool(tmp_path / "web", mini_tokenizer, prefix="web", count=8)
+    code = _make_shard_pool(tmp_path / "code", mini_tokenizer, prefix="code", count=8)
+
+    def make(**overrides) -> CurriculumMixtureProvider:
+        providers = {
+            "web": ShardBatchProvider(web, batch_size=1, seed=1),
+            "code": ShardBatchProvider(code, batch_size=1, seed=2),
+        }
+        defaults = dict(
+            stable_weights={"web": 0.5, "code": 0.5},
+            decay_weights={"web": 0.2, "code": 0.8},
+            decay_phase_start_batch=3,
+            seed=3,
+        )
+        defaults.update(overrides)
+        return CurriculumMixtureProvider(providers, **defaults)
+
+    original = make()
+    state = original.state_dict()
+
+    with pytest.raises(ValueError, match="stable-phase weights"):
+        make(stable_weights={"web": 0.9, "code": 0.1}).load_state_dict(state)
+    with pytest.raises(ValueError, match="decay-phase weights"):
+        make(decay_weights={"web": 0.9, "code": 0.1}).load_state_dict(state)
+    with pytest.raises(ValueError, match="decay_phase_start_batch"):
+        make(decay_phase_start_batch=10).load_state_dict(state)
+
+
+def test_curriculum_provider_rejects_mismatched_source_names_and_bad_weights() -> None:
+    with pytest.raises(ValueError, match="same sources"):
+        CurriculumMixtureProvider(
+            {"web": object()},  # type: ignore[arg-type]
+            stable_weights={"code": 1.0},
+            decay_weights={"web": 1.0},
+            decay_phase_start_batch=1,
+        )
+    with pytest.raises(ValueError, match="at least one source"):
+        CurriculumMixtureProvider({}, stable_weights={}, decay_weights={}, decay_phase_start_batch=1)
+
+
+def test_curriculum_provider_rejects_non_positive_weights_and_negative_boundary(
+    tmp_path, mini_tokenizer
+) -> None:
+    web = _make_shard_pool(tmp_path / "web", mini_tokenizer, prefix="web", count=4)
+    providers = {"web": ShardBatchProvider(web, batch_size=1)}
+    with pytest.raises(ValueError, match="positive"):
+        CurriculumMixtureProvider(
+            providers, stable_weights={"web": 0.0}, decay_weights={"web": 1.0}, decay_phase_start_batch=1
+        )
+    with pytest.raises(ValueError, match="positive"):
+        CurriculumMixtureProvider(
+            providers, stable_weights={"web": 1.0}, decay_weights={"web": 0.0}, decay_phase_start_batch=1
+        )
+    with pytest.raises(ValueError, match="decay_phase_start_batch"):
+        CurriculumMixtureProvider(
+            providers,
+            stable_weights={"web": 1.0},
+            decay_weights={"web": 1.0},
+            decay_phase_start_batch=-1,
+        )
 
 
 def test_shard_hash_corruption_is_rejected(tmp_path, mini_tokenizer) -> None:

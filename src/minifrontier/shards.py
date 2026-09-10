@@ -573,3 +573,108 @@ class MixtureBatchProvider:
         for name, provider_state in state["providers"].items():
             self.providers[name].load_state_dict(provider_state)
         self._batches_drawn = batches_drawn
+
+
+class CurriculumMixtureProvider:
+    """A `MixtureBatchProvider` whose weights change once, at a fixed batch index.
+
+    MF-095: the SmolLM2/MiniCPM-style decay-phase data curriculum -- put a
+    different (typically higher-quality-weighted) mix in WSD's decay phase
+    than the stable phase used. Structurally identical to `MixtureBatchProvider`
+    (same sources, same weighted-draw-per-batch mechanism, same resumability
+    contract) except there are two weight dicts instead of one, and which is
+    active is a pure function of how many batches have been drawn so far --
+    so, like the plain mixture provider, resuming replays the exact same
+    sequence of source/phase choices with no RNG object to serialize.
+
+    ``decay_phase_start_batch`` is expressed in *batches drawn*, not
+    optimizer updates, since `next_batch` is what this class actually counts;
+    a caller with gradient accumulation must convert
+    ``training.wsd_decay_start_update(config) * config.gradient_accumulation_steps``
+    itself -- kept out of this class so it stays data-layer-only, with no
+    `TrainingConfig` import, matching `MixtureBatchProvider`'s own existing
+    separation of concerns.
+    """
+
+    def __init__(
+        self,
+        providers: dict[str, ShardBatchProvider],
+        stable_weights: dict[str, float],
+        decay_weights: dict[str, float],
+        *,
+        decay_phase_start_batch: int,
+        seed: int = 0,
+    ) -> None:
+        if not providers:
+            raise ValueError("at least one source is required")
+        if set(providers) != set(stable_weights) or set(providers) != set(decay_weights):
+            raise ValueError(
+                "providers, stable_weights, and decay_weights must name the exact same sources"
+            )
+        if any(weight <= 0 for weight in stable_weights.values()) or any(
+            weight <= 0 for weight in decay_weights.values()
+        ):
+            raise ValueError("mixture weights must be positive")
+        if decay_phase_start_batch < 0:
+            raise ValueError("decay_phase_start_batch must be non-negative")
+        self.providers = providers
+        self.stable_weights = dict(stable_weights)
+        self.decay_weights = dict(decay_weights)
+        self.decay_phase_start_batch = decay_phase_start_batch
+        self.seed = seed
+        self._names = sorted(providers)
+        self._batches_drawn = 0
+
+    def _weights_for_batch(self, batch_index: int) -> dict[str, float]:
+        if batch_index >= self.decay_phase_start_batch:
+            return self.decay_weights
+        return self.stable_weights
+
+    def _select_source(self, batch_index: int) -> str:
+        weights = self._weights_for_batch(batch_index)
+        label = f"{self.seed}:curriculum:{batch_index}"
+        derived = int.from_bytes(hashlib.sha256(label.encode()).digest()[:8], "big")
+        rng = random.Random(derived)
+        return rng.choices(self._names, weights=[weights[name] for name in self._names])[0]
+
+    def next_batch(self) -> TrainingBatch:
+        name = self._select_source(self._batches_drawn)
+        self._batches_drawn += 1
+        return self.providers[name].next_batch()
+
+    def state_dict(self) -> dict[str, Any]:
+        return {
+            "version": 1,
+            "seed": self.seed,
+            "stable_weights": dict(self.stable_weights),
+            "decay_weights": dict(self.decay_weights),
+            "decay_phase_start_batch": self.decay_phase_start_batch,
+            "batches_drawn": self._batches_drawn,
+            "providers": {name: provider.state_dict() for name, provider in self.providers.items()},
+        }
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        if int(state.get("version", 0)) != 1:
+            raise ValueError("unsupported curriculum provider state version")
+        if int(state["seed"]) != self.seed:
+            raise ValueError("curriculum provider seed does not match checkpoint")
+        if dict(state["stable_weights"]) != self.stable_weights:
+            raise ValueError(
+                "curriculum stable-phase weights do not match checkpoint -- resuming with "
+                "different weights than the run that produced it is not supported"
+            )
+        if dict(state["decay_weights"]) != self.decay_weights:
+            raise ValueError(
+                "curriculum decay-phase weights do not match checkpoint -- resuming with "
+                "different weights than the run that produced it is not supported"
+            )
+        if int(state["decay_phase_start_batch"]) != self.decay_phase_start_batch:
+            raise ValueError("curriculum decay_phase_start_batch does not match checkpoint")
+        if set(state["providers"]) != set(self.providers):
+            raise ValueError("curriculum provider source names do not match checkpoint")
+        batches_drawn = int(state["batches_drawn"])
+        if batches_drawn < 0:
+            raise ValueError("invalid curriculum provider state")
+        for name, provider_state in state["providers"].items():
+            self.providers[name].load_state_dict(provider_state)
+        self._batches_drawn = batches_drawn

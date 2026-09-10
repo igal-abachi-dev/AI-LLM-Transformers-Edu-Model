@@ -455,6 +455,24 @@ class WarmupCosineSchedule:
         self.completed_updates = completed
 
 
+def wsd_decay_start_update(config: TrainingConfig) -> int:
+    """The first update index inside WSD's decay phase.
+
+    Pulled out of `WarmupStableDecaySchedule.learning_rate_for_update` so
+    `MF-095`'s decay-phase data curriculum can share exactly this boundary
+    rather than recomputing (and risking drift from) its own copy of the
+    same formula -- the data curriculum and the learning-rate schedule must
+    agree on where the decay phase starts, since MF-095 exists specifically
+    to change *what data* is seen once the LR schedule enters that phase.
+    """
+
+    # The decay window is the LAST `wsd_decay_fraction` of the whole run, not
+    # of the post-warmup remainder -- so a larger warmup does not silently
+    # shrink how many updates the decay phase actually gets.
+    decay_updates = max(1, round(config.max_updates * config.wsd_decay_fraction))
+    return max(config.warmup_updates, config.max_updates - decay_updates)
+
+
 class WarmupStableDecaySchedule:
     """Warmup, then flat at the peak rate, then a short cosine-shaped decay.
 
@@ -495,11 +513,7 @@ class WarmupStableDecaySchedule:
         # Warmup: identical to WarmupCosineSchedule's own ramp.
         if self.config.warmup_updates and update_index < self.config.warmup_updates:
             return self.config.learning_rate * (update_index + 1) / self.config.warmup_updates
-        # The decay window is the LAST `wsd_decay_fraction` of the whole run,
-        # not of the post-warmup remainder -- so a larger warmup does not
-        # silently shrink how many updates the decay phase actually gets.
-        decay_updates = max(1, round(self.config.max_updates * self.config.wsd_decay_fraction))
-        decay_start = max(self.config.warmup_updates, self.config.max_updates - decay_updates)
+        decay_start = wsd_decay_start_update(self.config)
         if update_index < decay_start:
             # Stable phase: flat at the peak rate.
             return self.config.learning_rate

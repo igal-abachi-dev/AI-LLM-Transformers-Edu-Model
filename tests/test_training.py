@@ -28,6 +28,7 @@ from minifrontier.training import (
     build_schedule,
     train_updates,
     validate_cpu_batch,
+    wsd_decay_start_update,
 )
 
 
@@ -79,6 +80,26 @@ def test_warmup_stable_decay_schedule_boundaries_and_state() -> None:
     restored = WarmupStableDecaySchedule(config)
     restored.load_state_dict(schedule.state_dict())
     assert restored.completed_updates == 4
+
+
+def test_wsd_decay_start_update_matches_the_schedules_own_boundary() -> None:
+    config = TrainingConfig(
+        max_updates=10,
+        learning_rate=1.0,
+        min_learning_rate=0.1,
+        warmup_updates=2,
+        schedule="wsd",
+        wsd_decay_fraction=0.3,
+    )
+    # decay_updates = round(10*0.3) = 3, decay_start = 10 - 3 = 7, matching the
+    # boundaries test above's own comment -- kept in sync deliberately, since
+    # wsd_decay_start_update is the single source of truth both now share.
+    assert wsd_decay_start_update(config) == 7
+    schedule = WarmupStableDecaySchedule(config)
+    boundary = wsd_decay_start_update(config)
+    assert schedule.learning_rate_for_update(boundary - 1) == pytest.approx(1.0)
+    assert schedule.learning_rate_for_update(boundary) == pytest.approx(1.0)
+    assert schedule.learning_rate_for_update(boundary + 1) < 1.0
 
 
 def test_warmup_stable_decay_schedule_rejects_invalid_completed_updates() -> None:
