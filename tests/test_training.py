@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from minifrontier.cache import KVCache
+from minifrontier.cautious_adamw import CautiousAdamW
 from minifrontier.checkpoint import load_training_checkpoint, save_training_checkpoint
 from minifrontier.compilation import maybe_compile
 from minifrontier.config import ModelConfig
@@ -22,6 +23,8 @@ from minifrontier.training import (
     WarmupCosineSchedule,
     WarmupStableDecaySchedule,
     build_adamw,
+    build_cautious_adamw,
+    build_optimizer,
     build_schedule,
     train_updates,
     validate_cpu_batch,
@@ -181,6 +184,62 @@ def test_training_config_rejects_ema_decay_outside_open_unit_interval() -> None:
     # None (disabled) and a real in-range value are both accepted without raising.
     TrainingConfig(max_updates=2, warmup_updates=0, ema_decay=None)
     TrainingConfig(max_updates=2, warmup_updates=0, ema_decay=0.999)
+
+
+def test_training_config_rejects_unknown_optimizer_and_bad_cautious_xi() -> None:
+    with pytest.raises(ValueError, match="optimizer"):
+        TrainingConfig(max_updates=2, warmup_updates=0, optimizer="rmsprop")
+    with pytest.raises(ValueError, match="cautious_xi"):
+        TrainingConfig(max_updates=2, warmup_updates=0, cautious_xi=0.0)
+    with pytest.raises(ValueError, match="cautious_xi"):
+        TrainingConfig(max_updates=2, warmup_updates=0, cautious_xi=-1.0)
+    # Both accepted values are fine without raising.
+    TrainingConfig(max_updates=2, warmup_updates=0, optimizer="adamw")
+    TrainingConfig(max_updates=2, warmup_updates=0, optimizer="cautious_adamw", cautious_xi=2.0)
+
+
+def test_build_optimizer_dispatches_on_config_optimizer_field() -> None:
+    config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
+    model = MiniFrontier(config)
+
+    adamw_config = TrainingConfig(max_updates=1, warmup_updates=0, optimizer="adamw")
+    optimizer, _ = build_optimizer(model, adamw_config)
+    assert isinstance(optimizer, torch.optim.AdamW)
+
+    cautious_config = TrainingConfig(max_updates=1, warmup_updates=0, optimizer="cautious_adamw")
+    optimizer, _ = build_optimizer(model, cautious_config)
+    assert isinstance(optimizer, CautiousAdamW)
+
+
+def test_build_cautious_adamw_splits_decay_groups_like_build_adamw() -> None:
+    config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
+    model = MiniFrontier(config)
+    training_config = TrainingConfig(max_updates=1, warmup_updates=0, weight_decay=0.1)
+    _, adamw_names = build_adamw(model, training_config)
+    _, cautious_names = build_cautious_adamw(model, training_config)
+    assert adamw_names == cautious_names
+
+
+def test_train_updates_with_cautious_adamw_actually_trains_the_model() -> None:
+    torch.manual_seed(50)
+    config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
+    model = MiniFrontier(config)
+    initial_weight = model.blocks[0].feed_forward.down_proj.weight.clone()
+    tokens = torch.randint(0, config.vocab_size, (2, 8))
+    training_config = TrainingConfig(
+        max_updates=2,
+        learning_rate=1e-2,
+        min_learning_rate=1e-2,
+        warmup_updates=0,
+        weight_decay=0.1,
+        precision="float32",
+        optimizer="cautious_adamw",
+    )
+    _, _, state, _ = train_updates(
+        model, ListBatchProvider([TrainingBatch(tokens)]), training_config
+    )
+    assert state.completed_updates == 2
+    assert not torch.equal(model.blocks[0].feed_forward.down_proj.weight, initial_weight)
 
 
 def test_training_config_rejects_inconsistent_chunk_and_z_loss_fields() -> None:

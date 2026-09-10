@@ -109,6 +109,8 @@ def _args(
         schedule="cosine",
         wsd_decay_fraction=0.2,
         ema_decay=None,
+        optimizer="adamw",
+        cautious_xi=1.0,
     )
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -275,6 +277,39 @@ def test_resume_with_ema_decay_restores_the_shadow_weights(tmp_path, mini_tokeni
     )
     assert resumed_state.completed_updates == 2
     assert (output / "final" / "ema.safetensors").exists()
+
+
+def test_cautious_adamw_optimizer_flag_reaches_real_training(tmp_path, mini_tokenizer) -> None:
+    """--optimizer cautious_adamw must actually reach build_optimizer through the
+    real CLI, not just parse -- proven by a real training run whose loss differs
+    from the plain-adamw run at identical seed/data/lr (the two optimizers take
+    genuinely different steps)."""
+
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    adamw_state, _ = pretrain.run(
+        _args(
+            config_path,
+            shards_path,
+            tmp_path / "adamw",
+            no_checkpoint=True,
+            updates=4,
+            learning_rate=0.5,
+            optimizer="adamw",
+        )
+    )
+    cautious_state, _ = pretrain.run(
+        _args(
+            config_path,
+            shards_path,
+            tmp_path / "cautious",
+            no_checkpoint=True,
+            updates=4,
+            learning_rate=0.5,
+            optimizer="cautious_adamw",
+        )
+    )
+    assert adamw_state.last_loss != cautious_state.last_loss
 
 
 def test_no_decay_embeddings_flag_reaches_real_training(tmp_path, mini_tokenizer) -> None:

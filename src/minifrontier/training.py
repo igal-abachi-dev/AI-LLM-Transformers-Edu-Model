@@ -42,6 +42,7 @@ from typing import Any, Literal, Protocol
 
 import torch
 
+from minifrontier.cautious_adamw import CautiousAdamW
 from minifrontier.config import AttentionImplementation
 from minifrontier.ema import EMAWeights
 from minifrontier.loss import chunked_next_token_loss_stats, next_token_loss_stats
@@ -125,6 +126,16 @@ class TrainingConfig:
     # average of the model's weights alongside training (see ema.py) -- an
     # opt-in, nearly-free quality lever, never required for training itself.
     ema_decay: float | None = None
+    # "adamw" (the default, unchanged): plain decoupled AdamW. "cautious_adamw"
+    # (MF-083): Cautious AdamW (arXiv:2411.16085) -- masks the update to only
+    # elements agreeing in sign with the current gradient. Modern-only if ever
+    # adopted as a default, per AGENTS.md's Frozen V1 split; Edu is unaffected
+    # either way since TrainingConfig itself carries no preset awareness.
+    optimizer: Literal["adamw", "cautious_adamw"] = "adamw"
+    # Only meaningful when optimizer="cautious_adamw": the normalization
+    # constant in the paper's effective-learning-rate rescaling
+    # (dim / (aligned_count + xi)). 1.0 is the paper's own default.
+    cautious_xi: float = 1.0
 
     def __post_init__(self) -> None:
         if self.max_updates <= 0:
@@ -163,6 +174,10 @@ class TrainingConfig:
             raise ValueError("wsd_decay_fraction must be in (0, 1]")
         if self.ema_decay is not None and not 0.0 < self.ema_decay < 1.0:
             raise ValueError("ema_decay must be in (0, 1)")
+        if self.optimizer not in ("adamw", "cautious_adamw"):
+            raise ValueError(f"unknown optimizer: {self.optimizer}")
+        if self.cautious_xi <= 0:
+            raise ValueError("cautious_xi must be positive")
 
 
 @dataclass(slots=True)
@@ -579,6 +594,31 @@ def build_adamw(
     return optimizer, names
 
 
+def build_cautious_adamw(
+    model: MiniFrontier, config: TrainingConfig
+) -> tuple[CautiousAdamW, dict[str, list[str]]]:
+    """Same decay/no-decay grouping as `build_adamw`, but the MF-083 cautious optimizer."""
+
+    groups, names = _parameter_groups(model, config)
+    optimizer = CautiousAdamW(
+        groups,
+        lr=config.learning_rate,
+        betas=(config.beta1, config.beta2),
+        xi=config.cautious_xi,
+    )
+    return optimizer, names
+
+
+def build_optimizer(
+    model: MiniFrontier, config: TrainingConfig
+) -> tuple[torch.optim.Optimizer, dict[str, list[str]]]:
+    """Dispatch to the AdamW variant `config.optimizer` selects -- mirrors `build_schedule`."""
+
+    if config.optimizer == "cautious_adamw":
+        return build_cautious_adamw(model, config)
+    return build_adamw(model, config)
+
+
 def validate_cpu_batch(batch: TrainingBatch, *, vocab_size: int) -> tuple[torch.Tensor, int]:
     """Validate IDs before CUDA transfer and return labels plus valid target count.
 
@@ -670,7 +710,7 @@ def train_updates(
         raise ValueError("ema must be provided if and only if config.ema_decay is set")
     torch_device = torch.device(device)
     policy = resolve_precision(config.precision, torch_device)
-    optimizer = optimizer or build_adamw(model, config)[0]
+    optimizer = optimizer or build_optimizer(model, config)[0]
     schedule = schedule or build_schedule(config)
     state = state or TrainingState()
     # Disabled (the BF16/FP32 case) makes every scaler call below a transparent

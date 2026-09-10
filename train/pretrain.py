@@ -47,7 +47,7 @@ from minifrontier.training import (
     LearningRateSchedule,
     TrainingConfig,
     TrainingState,
-    build_adamw,
+    build_optimizer,
     build_schedule,
     train_updates,
 )
@@ -183,6 +183,24 @@ def parse_args() -> argparse.Namespace:
             "periodic/final checkpoint and restored on --resume, same as MTP heads."
         ),
     )
+    parser.add_argument(
+        "--optimizer",
+        choices=("adamw", "cautious_adamw"),
+        default="adamw",
+        help=(
+            "adamw (default): plain decoupled AdamW. cautious_adamw (MF-083, "
+            "arXiv:2411.16085): masks the update to only elements agreeing in sign "
+            "with the current gradient, rescaling the effective learning rate to "
+            "compensate -- a real, off-by-default, bounded-tested experiment."
+        ),
+    )
+    parser.add_argument(
+        "--cautious-xi",
+        type=float,
+        default=1.0,
+        help="Only meaningful with --optimizer cautious_adamw: the paper's own "
+        "normalization constant (their default is 1.0).",
+    )
     return parser.parse_args()
 
 
@@ -241,6 +259,8 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         schedule=args.schedule,
         wsd_decay_fraction=args.wsd_decay_fraction,
         ema_decay=args.ema_decay,
+        optimizer=args.optimizer,
+        cautious_xi=args.cautious_xi,
     )
     device = torch.device(args.device)
     seed_everything(args.seed)
@@ -255,7 +275,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         ).to(device)
     ema = EMAWeights(model, decay=args.ema_decay) if args.ema_decay is not None else None
     provider = _build_batch_provider(args)
-    optimizer = build_adamw(model, train_config)[0]
+    optimizer = build_optimizer(model, train_config)[0]
     if mtp_heads is not None:
         optimizer.add_param_group(
             {"params": list(mtp_heads.parameters()), "weight_decay": train_config.weight_decay}
