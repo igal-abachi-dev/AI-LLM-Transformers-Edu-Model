@@ -37,6 +37,7 @@ import torch
 from safetensors.torch import load_model, save_model
 
 from minifrontier.config import ModelConfig
+from minifrontier.ema import EMAWeights
 from minifrontier.model import MiniFrontier
 from minifrontier.mtp import MTPHeads
 from minifrontier.reproducibility import capture_rng_state, restore_rng_state
@@ -107,6 +108,7 @@ def save_training_checkpoint(
     trainer_state: Mapping[str, Any] | None = None,
     data_cursor: Mapping[str, Any] | None = None,
     mtp_heads: MTPHeads | None = None,
+    ema: EMAWeights | None = None,
 ) -> None:
     """Write every checkpoint file, then publish them all in one atomic rename.
 
@@ -141,6 +143,10 @@ def save_training_checkpoint(
         # (see mtp.py's own docstring on why), so they need their own file, only
         # written when a caller actually passes them.
         save_model(mtp_heads, str(staging / "mtp_heads.safetensors"))
+    if ema is not None:
+        # Plain safetensors, not save_model: EMAWeights is not an nn.Module, just
+        # a dict of shadow tensors keyed by parameter name (see ema.py).
+        ema.save(str(staging / "ema.safetensors"))
     (staging / "trainer_state.json").write_text(
         json.dumps(dict(trainer_state or {}), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -196,6 +202,7 @@ def load_training_checkpoint(
     restore_rng: bool = True,
     trusted_local_state: bool = False,
     mtp_heads: MTPHeads | None = None,
+    ema: EMAWeights | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     root = Path(directory)
     saved_config = json.loads((root / "config.json").read_text(encoding="utf-8"))
@@ -218,6 +225,14 @@ def load_training_checkpoint(
                 "saved with MTP heads, so they cannot be loaded"
             )
         load_model(mtp_heads, str(mtp_heads_path), strict=True)
+    if ema is not None:
+        ema_path = root / "ema.safetensors"
+        if not ema_path.exists():
+            raise ValueError(
+                f"{root} has no ema.safetensors -- this checkpoint was not saved with "
+                "EMA tracking, so it cannot be loaded"
+            )
+        ema.load(str(ema_path))
     state_path = root / "training_state.pt"
     local_state: dict[str, Any] = {}
     if state_path.exists():

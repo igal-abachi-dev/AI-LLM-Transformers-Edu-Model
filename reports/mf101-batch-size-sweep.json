@@ -1,0 +1,68 @@
+{
+  "arms": [
+    {
+      "accumulation_steps": 1,
+      "batch_size": 2,
+      "effective_batch": 2,
+      "peak_memory_mb": 5158.8916015625,
+      "tokens_per_second": 3996.8980416615027,
+      "tokens_per_update": 2046.0,
+      "train_loss": 6.614773750305176,
+      "updates": 195
+    },
+    {
+      "accumulation_steps": 8,
+      "batch_size": 2,
+      "effective_batch": 16,
+      "peak_memory_mb": 5662.16015625,
+      "tokens_per_second": 4147.497491116411,
+      "tokens_per_update": 16368.0,
+      "train_loss": 7.5323686599731445,
+      "updates": 24
+    },
+    {
+      "accumulation_steps": 32,
+      "batch_size": 2,
+      "effective_batch": 64,
+      "peak_memory_mb": 5662.16015625,
+      "tokens_per_second": 4374.052833455315,
+      "tokens_per_update": 65472.0,
+      "train_loss": 8.243348121643066,
+      "updates": 10
+    },
+    {
+      "accumulation_steps": 1,
+      "batch_size": 4,
+      "effective_batch": 4,
+      "peak_memory_mb": 8307.7998046875,
+      "tokens_per_second": 643.3382525842422,
+      "tokens_per_update": 4092.0,
+      "train_loss": 6.861405849456787,
+      "updates": 98
+    },
+    {
+      "accumulation_steps": 8,
+      "batch_size": 4,
+      "effective_batch": 32,
+      "peak_memory_mb": 8789.318359375,
+      "tokens_per_second": 412.60683428695944,
+      "tokens_per_update": 32736.0,
+      "train_loss": 8.04188060760498,
+      "updates": 12
+    },
+    {
+      "accumulation_steps": 32,
+      "batch_size": 4,
+      "effective_batch": 128,
+      "note": "never completed a single logged update in 49 real minutes before being killed -- treated as a real, informative failure, not a bug",
+      "peak_memory_mb": null,
+      "tokens_per_second": null,
+      "tokens_per_update": null,
+      "train_loss": null,
+      "updates": 0
+    }
+  ],
+  "batch_8_arms": "not attempted -- see reports/mf101-batch-size-sweep.md for reasoning",
+  "config": "configs/150m-modern.toml",
+  "target_tokens_per_arm": 400000
+}

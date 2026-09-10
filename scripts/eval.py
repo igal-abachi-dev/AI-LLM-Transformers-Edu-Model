@@ -42,6 +42,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--run-harness", action="store_true")
     parser.add_argument("--include-gsm8k", action="store_true")
+    parser.add_argument(
+        "--include-extended",
+        action="store_true",
+        help=(
+            "Add blimp/lambada_openai/winogrande/openbookqa/commonsense_qa/boolq "
+            "(MF-086) -- arc_easy/hellaswag/piqa alone score near chance at this "
+            "project's scale. blimp alone expands to 67 real subtasks, so this is "
+            "opt-in rather than a DEFAULT_TASKS change."
+        ),
+    )
     parser.add_argument("--limit", type=int, default=10)
     return parser.parse_args()
 
@@ -86,7 +96,9 @@ def main() -> None:
     policy = cast_model_for_inference(model, args.precision, args.device)
     adapter = MiniFrontierEvalLM(model, tokenizer)
     report: dict[str, Any] = {
-        "settings": harness_settings(include_gsm8k=args.include_gsm8k),
+        "settings": harness_settings(
+            include_gsm8k=args.include_gsm8k, include_extended=args.include_extended
+        ),
         "adapter_smoke": _adapter_smoke(adapter),
         "validation": None,
         "harness": {"status": "not_requested"},

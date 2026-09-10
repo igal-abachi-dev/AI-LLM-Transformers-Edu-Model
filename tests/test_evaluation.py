@@ -117,6 +117,37 @@ def test_lm_eval_adapter_local_smoke(mini_tokenizer) -> None:
     assert settings["tasks"] == ["arc_easy", "hellaswag", "piqa"]
 
 
+def test_harness_settings_include_extended_adds_the_mf086_tasks() -> None:
+    settings = harness_settings(include_extended=True)
+    assert settings["tasks"] == [
+        "arc_easy",
+        "hellaswag",
+        "piqa",
+        "blimp",
+        "lambada_openai",
+        "winogrande",
+        "openbookqa",
+        "commonsense_qa",
+        "boolq",
+    ]
+
+
+def test_harness_settings_include_gsm8k_and_extended_compose() -> None:
+    settings = harness_settings(include_gsm8k=True, include_extended=True)
+    assert settings["tasks"] == [
+        "arc_easy",
+        "hellaswag",
+        "piqa",
+        "gsm8k",
+        "blimp",
+        "lambada_openai",
+        "winogrande",
+        "openbookqa",
+        "commonsense_qa",
+        "boolq",
+    ]
+
+
 def test_sft_scoring_is_transparent_and_handles_missing_responses() -> None:
     prompts = [
         {"id": "one", "category": "instruction", "required_substrings": ["BLUE"]},

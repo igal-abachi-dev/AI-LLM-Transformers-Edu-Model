@@ -43,6 +43,7 @@ from typing import Any, Literal, Protocol
 import torch
 
 from minifrontier.config import AttentionImplementation
+from minifrontier.ema import EMAWeights
 from minifrontier.loss import chunked_next_token_loss_stats, next_token_loss_stats
 from minifrontier.model import MiniFrontier
 from minifrontier.precision import Precision, PrecisionPolicy, resolve_precision
@@ -120,6 +121,10 @@ class TrainingConfig:
     # is relying on (Hägele et al., arXiv:2405.18392) -- roughly matches
     # cosine's own quality, not a project-specific tuned value.
     wsd_decay_fraction: float = 0.2
+    # None (the default): no EMA tracking. A value in (0, 1) tracks a decaying
+    # average of the model's weights alongside training (see ema.py) -- an
+    # opt-in, nearly-free quality lever, never required for training itself.
+    ema_decay: float | None = None
 
     def __post_init__(self) -> None:
         if self.max_updates <= 0:
@@ -156,6 +161,8 @@ class TrainingConfig:
             raise ValueError(f"unknown schedule: {self.schedule}")
         if not 0.0 < self.wsd_decay_fraction <= 1.0:
             raise ValueError("wsd_decay_fraction must be in (0, 1]")
+        if self.ema_decay is not None and not 0.0 < self.ema_decay < 1.0:
+            raise ValueError("ema_decay must be in (0, 1)")
 
 
 @dataclass(slots=True)
@@ -626,6 +633,7 @@ def train_updates(
     forward_model: torch.nn.Module | None = None,
     stop_after_updates: int | None = None,
     mtp_heads: torch.nn.Module | None = None,
+    ema: EMAWeights | None = None,
 ) -> tuple[
     torch.optim.Optimizer | CombinedOptimizer, LearningRateSchedule, TrainingState, PrecisionPolicy
 ]:
@@ -648,10 +656,18 @@ def train_updates(
     ``optimizer``. ``state.last_loss`` always reports the primary next-token
     loss alone, never mixed with the MTP auxiliary term, so it stays directly
     comparable to a non-MTP run's logged loss.
+
+    ``ema`` is an optional ``ema.EMAWeights`` tracker (see ``ema.py``). It must
+    be provided if and only if ``config.ema_decay`` is set; this function never
+    constructs one itself. Updated once per optimizer step actually taken --
+    never on a step this loop itself skipped for a non-finite gradient -- so
+    the shadow never absorbs an update that had no real effect on the model.
     """
 
     if (config.mtp_extra_heads > 0) != (mtp_heads is not None):
         raise ValueError("mtp_heads must be provided if and only if config.mtp_extra_heads > 0")
+    if (config.ema_decay is not None) != (ema is not None):
+        raise ValueError("ema must be provided if and only if config.ema_decay is set")
     torch_device = torch.device(device)
     policy = resolve_precision(config.precision, torch_device)
     optimizer = optimizer or build_adamw(model, config)[0]
@@ -793,6 +809,8 @@ def train_updates(
         # nanoGPT/nanochat's convention.
         if policy.needs_grad_scaler or torch.isfinite(gradient_norm):
             scaler.step(optimizer)
+            if ema is not None:
+                ema.update(model)
         else:
             optimizer.zero_grad(set_to_none=True)
             state.nonfinite_updates += 1

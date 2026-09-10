@@ -108,6 +108,7 @@ def _args(
         mtp_loss_weight=0.0,
         schedule="cosine",
         wsd_decay_fraction=0.2,
+        ema_decay=None,
     )
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -221,6 +222,59 @@ def test_resume_with_mtp_extra_heads_restores_the_trained_heads(tmp_path, mini_t
     )
     assert resumed_state.completed_updates == 2
     assert (output / "final" / "mtp_heads.safetensors").exists()
+
+
+def test_ema_is_saved_in_every_checkpoint_when_enabled(tmp_path, mini_tokenizer) -> None:
+    """Same class of gap as MTP heads: --ema-decay must actually reach
+    save_training_checkpoint's ema= parameter through the real CLI, in both
+    the periodic and final checkpoint."""
+
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    output = tmp_path / "out"
+    pretrain.run(
+        _args(
+            config_path,
+            shards_path,
+            output,
+            updates=2,
+            checkpoint_interval=1,
+            ema_decay=0.9,
+        )
+    )
+    assert (output / "checkpoint-00000001" / "ema.safetensors").exists()
+    assert (output / "final" / "ema.safetensors").exists()
+
+
+def test_resume_with_ema_decay_restores_the_shadow_weights(tmp_path, mini_tokenizer) -> None:
+    """--resume together with --ema-decay must restore the trained shadow
+    weights, not reinitialize them from the resumed model's live weights --
+    mirroring the equivalent MTP resume test/fix above."""
+
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    output = tmp_path / "out"
+    pretrain.run(
+        _args(
+            config_path,
+            shards_path,
+            output,
+            updates=2,
+            ema_decay=0.9,
+        )
+    )
+    resumed_state, _ = pretrain.run(
+        _args(
+            config_path,
+            shards_path,
+            output,
+            updates=2,
+            resume=output / "final",
+            ema_decay=0.9,
+        )
+    )
+    assert resumed_state.completed_updates == 2
+    assert (output / "final" / "ema.safetensors").exists()
 
 
 def test_no_decay_embeddings_flag_reaches_real_training(tmp_path, mini_tokenizer) -> None:

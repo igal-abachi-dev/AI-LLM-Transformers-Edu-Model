@@ -9,6 +9,7 @@ from minifrontier.cache import KVCache
 from minifrontier.checkpoint import load_training_checkpoint, save_training_checkpoint
 from minifrontier.compilation import maybe_compile
 from minifrontier.config import ModelConfig
+from minifrontier.ema import EMAWeights
 from minifrontier.model import MiniFrontier
 from minifrontier.mtp import MTPHeads
 from minifrontier.precision import resolve_precision
@@ -171,6 +172,15 @@ def test_training_config_rejects_inconsistent_mtp_fields() -> None:
         TrainingConfig(max_updates=2, warmup_updates=0, mtp_extra_heads=0, mtp_loss_weight=0.5)
     # A consistent combination is accepted without raising.
     TrainingConfig(max_updates=2, warmup_updates=0, mtp_extra_heads=1, mtp_loss_weight=0.5)
+
+
+def test_training_config_rejects_ema_decay_outside_open_unit_interval() -> None:
+    for bad_decay in (0.0, 1.0, -0.1, 1.1):
+        with pytest.raises(ValueError, match="ema_decay"):
+            TrainingConfig(max_updates=2, warmup_updates=0, ema_decay=bad_decay)
+    # None (disabled) and a real in-range value are both accepted without raising.
+    TrainingConfig(max_updates=2, warmup_updates=0, ema_decay=None)
+    TrainingConfig(max_updates=2, warmup_updates=0, ema_decay=0.999)
 
 
 def test_training_config_rejects_inconsistent_chunk_and_z_loss_fields() -> None:
@@ -368,6 +378,76 @@ def test_train_updates_skips_step_and_counts_a_nonfinite_gradient_without_a_scal
     assert state.nonfinite_updates == 1
     assert state.completed_updates == 1
     assert torch.equal(model.blocks[0].feed_forward.down_proj.weight, initial_weight)
+
+
+def test_train_updates_requires_ema_iff_ema_decay_is_set() -> None:
+    config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
+    model = MiniFrontier(config)
+    tokens = torch.randint(0, config.vocab_size, (2, 8))
+    provider = ListBatchProvider([TrainingBatch(tokens)])
+
+    ema_config = TrainingConfig(max_updates=1, warmup_updates=0, ema_decay=0.9)
+    with pytest.raises(ValueError, match="ema"):
+        train_updates(model, provider, ema_config)
+
+    plain_config = TrainingConfig(max_updates=1, warmup_updates=0)
+    ema = EMAWeights(model, decay=0.9)
+    with pytest.raises(ValueError, match="ema"):
+        train_updates(model, provider, plain_config, ema=ema)
+
+
+def test_train_updates_moves_ema_shadow_by_the_documented_decay() -> None:
+    torch.manual_seed(41)
+    config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
+    model = MiniFrontier(config)
+    ema = EMAWeights(model, decay=0.9)
+    before = ema.state_dict()["blocks.0.feed_forward.down_proj.weight"].clone()
+    tokens = torch.randint(0, config.vocab_size, (2, 8))
+    training_config = TrainingConfig(
+        max_updates=1,
+        learning_rate=1e-2,
+        min_learning_rate=1e-2,
+        warmup_updates=0,
+        weight_decay=0.0,
+        gradient_clip=1e9,
+        precision="float32",
+        ema_decay=0.9,
+    )
+    train_updates(
+        model,
+        ListBatchProvider([TrainingBatch(tokens)]),
+        training_config,
+        ema=ema,
+    )
+    live = model.blocks[0].feed_forward.down_proj.weight
+    assert not torch.equal(live, before)  # the live weight actually moved this step
+    expected_shadow = before * 0.9 + live.detach() * 0.1
+    shadow = ema.state_dict()["blocks.0.feed_forward.down_proj.weight"]
+    assert torch.allclose(shadow, expected_shadow)
+
+
+def test_train_updates_does_not_move_ema_shadow_on_a_skipped_nonfinite_step(monkeypatch) -> None:
+    config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
+    model = MiniFrontier(config)
+    ema = EMAWeights(model, decay=0.9)
+    before = dict(ema.state_dict())
+    tokens = torch.randint(0, config.vocab_size, (2, 8))
+    training_config = TrainingConfig(
+        max_updates=1, warmup_updates=0, precision="float32", ema_decay=0.9
+    )
+
+    monkeypatch.setattr(
+        torch.nn.utils, "clip_grad_norm_", lambda *args, **kwargs: torch.tensor(float("nan"))
+    )
+
+    train_updates(
+        model,
+        ListBatchProvider([TrainingBatch(tokens)]),
+        training_config,
+        ema=ema,
+    )
+    for name, tensor in ema.state_dict().items():
+        assert torch.equal(tensor, before[name])
 
 
 def test_cpu_batch_validation_rejects_bad_ids_and_all_masked() -> None:

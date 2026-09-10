@@ -12,6 +12,7 @@ from minifrontier.checkpoint import (
     save_training_checkpoint,
 )
 from minifrontier.config import ModelConfig
+from minifrontier.ema import EMAWeights
 from minifrontier.model import MiniFrontier
 from minifrontier.mtp import MTPHeads
 
@@ -147,6 +148,37 @@ def test_load_training_checkpoint_rejects_missing_mtp_heads_instead_of_silent_re
     )
     with pytest.raises(ValueError, match=r"mtp_heads\.safetensors"):
         load_training_checkpoint(checkpoint, MiniFrontier(config), mtp_heads=requesting_heads)
+
+
+def test_ema_round_trips_through_checkpoint_save_and_load(tmp_path) -> None:
+    torch.manual_seed(22)
+    config = ModelConfig.tiny_edu()
+    model = MiniFrontier(config)
+    ema = EMAWeights(model, decay=0.9)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.add_(1.0)
+    ema.update(model)
+    checkpoint = tmp_path / "checkpoint"
+    save_training_checkpoint(checkpoint, model, ema=ema)
+    assert (checkpoint / "ema.safetensors").exists()
+
+    expected = dict(ema.state_dict())
+    loaded_model = MiniFrontier(config)
+    loaded_ema = EMAWeights(loaded_model, decay=0.9)
+    load_training_checkpoint(checkpoint, loaded_model, ema=loaded_ema, trusted_local_state=True)
+    for name, value in loaded_ema.state_dict().items():
+        assert torch.equal(value, expected[name])
+
+
+def test_load_training_checkpoint_rejects_missing_ema_instead_of_silent_reinit(tmp_path) -> None:
+    config = ModelConfig.tiny_edu()
+    model = MiniFrontier(config)
+    checkpoint = tmp_path / "checkpoint"
+    save_training_checkpoint(checkpoint, model)  # no ema=... passed
+    requesting_ema = EMAWeights(MiniFrontier(config), decay=0.9)
+    with pytest.raises(ValueError, match=r"ema\.safetensors"):
+        load_training_checkpoint(checkpoint, MiniFrontier(config), ema=requesting_ema)
 
 
 def test_prune_old_checkpoints_keeps_only_most_recent_and_never_touches_final(tmp_path) -> None:

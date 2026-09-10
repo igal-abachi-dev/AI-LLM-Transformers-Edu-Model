@@ -40,6 +40,22 @@ from minifrontier.tokenizer import MiniFrontierTokenizer
 
 DEFAULT_TASKS = ("arc_easy", "hellaswag", "piqa")
 OPTIONAL_TASKS = ("gsm8k",)
+# MF-086 part (3): arc_easy/hellaswag/piqa alone score near chance at this
+# project's scale and would not detect most of the improvements proposed in
+# MF-081/082. Kept opt-in (like OPTIONAL_TASKS) rather than folded into
+# DEFAULT_TASKS -- "blimp" alone expands to 67 real BLiMP paradigm subtasks
+# (verified against the installed lm-eval's own task registry), so appending
+# these unconditionally would multiply the cost of every quick default-task
+# smoke/comparison run across this project, not just the real evaluation
+# passes these tasks actually exist for.
+EXTENDED_TASKS = (
+    "blimp",
+    "lambada_openai",
+    "winogrande",
+    "openbookqa",
+    "commonsense_qa",
+    "boolq",
+)
 
 
 class MiniFrontierEvalLM(LM):
@@ -130,12 +146,16 @@ class MiniFrontierEvalLM(LM):
         return results
 
 
-def harness_settings(*, include_gsm8k: bool = False) -> dict[str, Any]:
+def harness_settings(
+    *, include_gsm8k: bool = False, include_extended: bool = False
+) -> dict[str, Any]:
     """Return the exact task/version settings persisted beside benchmark results."""
 
     tasks = [*DEFAULT_TASKS]
     if include_gsm8k:
         tasks.extend(OPTIONAL_TASKS)
+    if include_extended:
+        tasks.extend(EXTENDED_TASKS)
     try:
         version = importlib.metadata.version("lm-eval")
     except importlib.metadata.PackageNotFoundError:

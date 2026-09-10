@@ -37,6 +37,7 @@ from minifrontier.checkpoint import (
 )
 from minifrontier.compilation import maybe_compile
 from minifrontier.config import ModelConfig
+from minifrontier.ema import EMAWeights
 from minifrontier.model import MiniFrontier
 from minifrontier.mtp import MTPHeads
 from minifrontier.reproducibility import seed_everything
@@ -172,6 +173,16 @@ def parse_args() -> argparse.Namespace:
         help="Only meaningful with --schedule wsd: fraction of --updates spent in the "
         "final decay phase.",
     )
+    parser.add_argument(
+        "--ema-decay",
+        type=float,
+        help=(
+            "Track a decaying average of the model's weights alongside training (see "
+            "ema.py, MF-086) -- a value in (0, 1), e.g. 0.999. Omit to disable (the "
+            "default). The shadow weights are saved in ema.safetensors alongside every "
+            "periodic/final checkpoint and restored on --resume, same as MTP heads."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -229,6 +240,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         mtp_loss_weight=args.mtp_loss_weight,
         schedule=args.schedule,
         wsd_decay_fraction=args.wsd_decay_fraction,
+        ema_decay=args.ema_decay,
     )
     device = torch.device(args.device)
     seed_everything(args.seed)
@@ -241,6 +253,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
             n_extra_heads=args.mtp_extra_heads,
             init_std=model_config.resolved_init_std,
         ).to(device)
+    ema = EMAWeights(model, decay=args.ema_decay) if args.ema_decay is not None else None
     provider = _build_batch_provider(args)
     optimizer = build_adamw(model, train_config)[0]
     if mtp_heads is not None:
@@ -257,6 +270,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
             scheduler=schedule,
             trusted_local_state=True,
             mtp_heads=mtp_heads,
+            ema=ema,
         )
         if trainer_values.get("training_config") != asdict(train_config):
             raise ValueError("resume training configuration does not match the checkpoint")
@@ -296,6 +310,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
             },
             data_cursor=provider.state_dict(),
             mtp_heads=mtp_heads,
+            ema=ema,
         )
         if args.keep_last_n_checkpoints is not None:
             prune_old_checkpoints(args.output, keep_last_n=args.keep_last_n_checkpoints)
@@ -320,6 +335,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         update_callback=None if args.no_checkpoint else checkpoint_callback,
         forward_model=execution_model,
         mtp_heads=mtp_heads,
+        ema=ema,
     )
     elapsed = time.perf_counter() - started
     if not args.no_checkpoint:
@@ -337,6 +353,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
             },
             data_cursor=provider.state_dict(),
             mtp_heads=mtp_heads,
+            ema=ema,
         )
     peak_allocated = torch.cuda.max_memory_allocated(device) if device.type == "cuda" else 0
     peak_reserved = torch.cuda.max_memory_reserved(device) if device.type == "cuda" else 0
