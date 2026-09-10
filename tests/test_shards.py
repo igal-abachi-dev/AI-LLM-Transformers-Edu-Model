@@ -95,9 +95,7 @@ def test_token_shard_writer_rejects_unknown_packing_and_bad_buffer_size(
     with pytest.raises(ValueError, match="packing mode"):
         TokenShardWriter(tmp_path, mini_tokenizer, sequence_length=4, packing="bogus")
     with pytest.raises(ValueError, match="pack_buffer_documents"):
-        TokenShardWriter(
-            tmp_path, mini_tokenizer, sequence_length=4, pack_buffer_documents=0
-        )
+        TokenShardWriter(tmp_path, mini_tokenizer, sequence_length=4, pack_buffer_documents=0)
 
 
 def test_token_shard_writer_best_fit_packing_never_discards_a_token(

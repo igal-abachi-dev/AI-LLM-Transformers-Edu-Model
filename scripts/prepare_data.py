@@ -72,6 +72,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sequences-per-shard", type=int, default=1024)
     parser.add_argument("--evaluation-signatures", type=Path)
     parser.add_argument("--keep-remainder", action="store_true")
+    parser.add_argument(
+        "--packing",
+        choices=("ribbon", "best_fit", "bos_crop"),
+        default="ribbon",
+        help=(
+            "MF-097: ribbon (default, unchanged) concatenates documents and slices "
+            "fixed-length rows immediately. best_fit/bos_crop buffer whole documents "
+            "and pack a batch at a time -- see packing.py for the real tradeoff."
+        ),
+    )
+    parser.add_argument(
+        "--pack-buffer-documents",
+        type=int,
+        default=256,
+        help="Only meaningful with --packing best_fit/bos_crop: how many whole "
+        "documents to buffer before packing a batch.",
+    )
     return parser.parse_args()
 
 
@@ -132,12 +149,16 @@ def main() -> None:
         tokenizer,
         sequence_length=args.sequence_length,
         sequences_per_shard=args.sequences_per_shard,
+        packing=args.packing,
+        pack_buffer_documents=args.pack_buffer_documents,
     )
     validation_writer = TokenShardWriter(
         args.output / "validation",
         tokenizer,
         sequence_length=args.sequence_length,
         sequences_per_shard=args.sequences_per_shard,
+        packing=args.packing,
+        pack_buffer_documents=args.pack_buffer_documents,
     )
     validation_threshold = int(args.validation_fraction * 10_000)
     with DiskDeduplicator(
