@@ -111,6 +111,7 @@ def _args(
         ema_decay=None,
         optimizer="adamw",
         cautious_xi=1.0,
+        decay_mixture=None,
     )
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -476,4 +477,83 @@ def test_mixture_and_train_shards_are_mutually_exclusive(tmp_path, mini_tokenize
     with pytest.raises(ValueError, match="exactly one"):
         pretrain.run(
             _args(config_path, None, tmp_path / "out", train_shards=None, no_checkpoint=True)
+        )
+
+
+def test_decay_mixture_flag_reaches_real_training_via_curriculum_provider(
+    tmp_path, mini_tokenizer
+) -> None:
+    """Real end-to-end wiring for MF-095: --decay-mixture (with --mixture and
+    --schedule wsd) must actually build a CurriculumMixtureProvider and train
+    with it, not just parse. CurriculumMixtureProvider's own exact-resume and
+    weight-switch behavior are unit-tested directly in test_shards.py; this
+    proves the CLI reaches it."""
+
+    web_shards = _build_shards(tmp_path / "web-src", mini_tokenizer)
+    code_shards = _build_shards(tmp_path / "code-src", mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    output = tmp_path / "curriculum-run"
+    mixture = [f"web;{web_shards};0.7", f"code;{code_shards};0.3"]
+
+    state, _ = pretrain.run(
+        _args(
+            config_path,
+            None,
+            output,
+            train_shards=None,
+            mixture=mixture,
+            decay_mixture=["code;0.9"],
+            schedule="wsd",
+            updates=4,
+            no_checkpoint=False,
+        )
+    )
+    assert state.completed_updates == 4
+    assert state.last_loss is not None and state.last_loss == state.last_loss  # not NaN
+    assert (output / "final" / "training_state.pt").exists()
+
+
+def test_decay_mixture_requires_mixture_and_wsd_schedule(tmp_path, mini_tokenizer) -> None:
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    with pytest.raises(ValueError, match="--decay-mixture requires --mixture"):
+        pretrain.run(
+            _args(
+                config_path,
+                shards_path,
+                tmp_path / "out",
+                decay_mixture=["web;0.9"],
+                no_checkpoint=True,
+            )
+        )
+    with pytest.raises(ValueError, match="--decay-mixture requires --schedule wsd"):
+        pretrain.run(
+            _args(
+                config_path,
+                None,
+                tmp_path / "out",
+                train_shards=None,
+                mixture=[f"web;{shards_path};1.0"],
+                decay_mixture=["web;0.9"],
+                schedule="cosine",
+                no_checkpoint=True,
+            )
+        )
+
+
+def test_decay_mixture_names_must_be_subset_of_mixture_names(tmp_path, mini_tokenizer) -> None:
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    with pytest.raises(ValueError, match="subset"):
+        pretrain.run(
+            _args(
+                config_path,
+                None,
+                tmp_path / "out",
+                train_shards=None,
+                mixture=[f"web;{shards_path};1.0"],
+                decay_mixture=["nonexistent;0.9"],
+                schedule="wsd",
+                no_checkpoint=True,
+            )
         )

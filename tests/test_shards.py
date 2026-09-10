@@ -232,7 +232,9 @@ def test_curriculum_provider_switches_weights_at_the_configured_batch_index(
     assert decay_counts["code"] > decay_counts["web"]
 
 
-def test_curriculum_provider_exact_resume_across_the_phase_boundary(tmp_path, mini_tokenizer) -> None:
+def test_curriculum_provider_exact_resume_across_the_phase_boundary(
+    tmp_path, mini_tokenizer
+) -> None:
     _make_shard_pool(tmp_path / "web", mini_tokenizer, prefix="web", count=12)
     _make_shard_pool(tmp_path / "code", mini_tokenizer, prefix="code", count=12)
 
@@ -301,7 +303,9 @@ def test_curriculum_provider_rejects_mismatched_source_names_and_bad_weights() -
             decay_phase_start_batch=1,
         )
     with pytest.raises(ValueError, match="at least one source"):
-        CurriculumMixtureProvider({}, stable_weights={}, decay_weights={}, decay_phase_start_batch=1)
+        CurriculumMixtureProvider(
+            {}, stable_weights={}, decay_weights={}, decay_phase_start_batch=1
+        )
 
 
 def test_curriculum_provider_rejects_non_positive_weights_and_negative_boundary(
@@ -311,11 +315,17 @@ def test_curriculum_provider_rejects_non_positive_weights_and_negative_boundary(
     providers = {"web": ShardBatchProvider(web, batch_size=1)}
     with pytest.raises(ValueError, match="positive"):
         CurriculumMixtureProvider(
-            providers, stable_weights={"web": 0.0}, decay_weights={"web": 1.0}, decay_phase_start_batch=1
+            providers,
+            stable_weights={"web": 0.0},
+            decay_weights={"web": 1.0},
+            decay_phase_start_batch=1,
         )
     with pytest.raises(ValueError, match="positive"):
         CurriculumMixtureProvider(
-            providers, stable_weights={"web": 1.0}, decay_weights={"web": 0.0}, decay_phase_start_batch=1
+            providers,
+            stable_weights={"web": 1.0},
+            decay_weights={"web": 0.0},
+            decay_phase_start_batch=1,
         )
     with pytest.raises(ValueError, match="decay_phase_start_batch"):
         CurriculumMixtureProvider(

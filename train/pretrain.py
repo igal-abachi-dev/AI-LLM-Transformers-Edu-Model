@@ -42,7 +42,12 @@ from minifrontier.model import MiniFrontier
 from minifrontier.mtp import MTPHeads
 from minifrontier.reproducibility import seed_everything
 from minifrontier.run_metadata import RunMetadata
-from minifrontier.shards import MixtureBatchProvider, PackedShardDataset, ShardBatchProvider
+from minifrontier.shards import (
+    CurriculumMixtureProvider,
+    MixtureBatchProvider,
+    PackedShardDataset,
+    ShardBatchProvider,
+)
 from minifrontier.training import (
     LearningRateSchedule,
     TrainingConfig,
@@ -50,6 +55,7 @@ from minifrontier.training import (
     build_optimizer,
     build_schedule,
     train_updates,
+    wsd_decay_start_update,
 )
 
 
@@ -201,6 +207,20 @@ def parse_args() -> argparse.Namespace:
         help="Only meaningful with --optimizer cautious_adamw: the paper's own "
         "normalization constant (their default is 1.0).",
     )
+    parser.add_argument(
+        "--decay-mixture",
+        action="append",
+        metavar="NAME;WEIGHT",
+        help=(
+            "repeatable; MF-095's decay-phase data curriculum -- reweights an "
+            "existing --mixture source once WSD's decay phase starts, e.g. "
+            "'--decay-mixture web;0.3 --decay-mixture code;0.7'. Requires "
+            "--schedule wsd and --mixture (same source names, no new shard paths); "
+            "sources not listed here keep their --mixture weight in the decay phase "
+            "unchanged. Omit entirely to keep --mixture's weights fixed for the "
+            "whole run (the default, unchanged behavior)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -214,9 +234,23 @@ def _parse_mixture_entry(spec: str) -> tuple[str, Path, float]:
     return name, Path(shards_path), float(weight)
 
 
-def _build_batch_provider(args: argparse.Namespace) -> ShardBatchProvider | MixtureBatchProvider:
+def _parse_decay_mixture_entry(spec: str) -> tuple[str, float]:
+    fields = spec.split(";")
+    if len(fields) != 2:
+        raise ValueError(f"--decay-mixture must be 'name;weight', got {spec!r}")
+    name, weight = fields
+    if not name:
+        raise ValueError(f"--decay-mixture name must be non-empty: {spec!r}")
+    return name, float(weight)
+
+
+def _build_batch_provider(
+    args: argparse.Namespace, train_config: TrainingConfig
+) -> ShardBatchProvider | MixtureBatchProvider | CurriculumMixtureProvider:
     if (args.train_shards is None) == (not args.mixture):
         raise ValueError("exactly one of --train-shards or --mixture is required")
+    if args.decay_mixture and not args.mixture:
+        raise ValueError("--decay-mixture requires --mixture")
     if args.train_shards is not None:
         dataset = PackedShardDataset(args.train_shards)
         return ShardBatchProvider(dataset, batch_size=args.batch_size, seed=args.seed)
@@ -230,8 +264,23 @@ def _build_batch_provider(args: argparse.Namespace) -> ShardBatchProvider | Mixt
         )
         for name, shards_path, _ in entries
     }
-    weights = {name: weight for name, _, weight in entries}
-    return MixtureBatchProvider(providers, weights=weights, seed=args.seed)
+    stable_weights = {name: weight for name, _, weight in entries}
+    if not args.decay_mixture:
+        return MixtureBatchProvider(providers, weights=stable_weights, seed=args.seed)
+    if train_config.schedule != "wsd":
+        raise ValueError("--decay-mixture requires --schedule wsd")
+    decay_overrides = dict(_parse_decay_mixture_entry(spec) for spec in args.decay_mixture)
+    if not set(decay_overrides) <= set(stable_weights):
+        raise ValueError("--decay-mixture names must be a subset of --mixture names")
+    decay_weights = {**stable_weights, **decay_overrides}
+    decay_phase_start_batch = wsd_decay_start_update(train_config) * args.accumulation_steps
+    return CurriculumMixtureProvider(
+        providers,
+        stable_weights=stable_weights,
+        decay_weights=decay_weights,
+        decay_phase_start_batch=decay_phase_start_batch,
+        seed=args.seed,
+    )
 
 
 def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
@@ -274,7 +323,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
             init_std=model_config.resolved_init_std,
         ).to(device)
     ema = EMAWeights(model, decay=args.ema_decay) if args.ema_decay is not None else None
-    provider = _build_batch_provider(args)
+    provider = _build_batch_provider(args, train_config)
     optimizer = build_optimizer(model, train_config)[0]
     if mtp_heads is not None:
         optimizer.add_param_group(
