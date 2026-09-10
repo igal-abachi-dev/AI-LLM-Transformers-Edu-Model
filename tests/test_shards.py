@@ -14,6 +14,8 @@ from minifrontier.shards import (
     MixtureBatchProvider,
     PackedShardDataset,
     ShardBatchProvider,
+    ShardManifest,
+    ShardRecord,
     TokenShardWriter,
     admit_documents,
     normalized_sha256,
@@ -85,6 +87,109 @@ def test_immutable_shards_hashes_and_exact_provider_resume(tmp_path, mini_tokeni
     assert torch.equal(expected.loss_mask, actual.loss_mask)
     assert first.tokens.dtype == torch.int64
     assert isinstance(dataset._cached_tokens, np.memmap)
+
+
+def test_token_shard_writer_rejects_unknown_packing_and_bad_buffer_size(
+    tmp_path, mini_tokenizer
+) -> None:
+    with pytest.raises(ValueError, match="packing mode"):
+        TokenShardWriter(tmp_path, mini_tokenizer, sequence_length=4, packing="bogus")
+    with pytest.raises(ValueError, match="pack_buffer_documents"):
+        TokenShardWriter(
+            tmp_path, mini_tokenizer, sequence_length=4, pack_buffer_documents=0
+        )
+
+
+def test_token_shard_writer_best_fit_packing_never_discards_a_token(
+    tmp_path, mini_tokenizer
+) -> None:
+    writer = TokenShardWriter(
+        tmp_path,
+        mini_tokenizer,
+        sequence_length=8,
+        sequences_per_shard=4,
+        packing="best_fit",
+        pack_buffer_documents=3,
+    )
+    documents = [
+        make_document(f"document {index} has a few different words in it", str(index))
+        for index in range(7)
+    ]
+    expected_total = sum(
+        len(mini_tokenizer.encode(document.text, add_eos=True)) for document in documents
+    )
+    for document in documents:
+        writer.add(document)
+    manifest = writer.finalize()
+    assert manifest.packing == "best_fit"
+    assert manifest.total_non_padding_tokens == expected_total
+
+
+def test_token_shard_writer_bos_crop_packing_prepends_bos_to_every_row(
+    tmp_path, mini_tokenizer
+) -> None:
+    writer = TokenShardWriter(
+        tmp_path,
+        mini_tokenizer,
+        sequence_length=6,
+        sequences_per_shard=4,
+        packing="bos_crop",
+        pack_buffer_documents=2,
+    )
+    for index in range(5):
+        writer.add(make_document(f"document {index} has several words", str(index)))
+    manifest = writer.finalize()
+    assert manifest.packing == "bos_crop"
+    dataset = PackedShardDataset(tmp_path)
+    assert len(dataset) == manifest.total_sequences > 0
+    for index in range(len(dataset)):
+        tokens, _ = dataset[index]
+        assert int(tokens[0]) == mini_tokenizer.bos_id
+
+
+def test_token_shard_writer_finalize_flushes_a_partial_packed_buffer(
+    tmp_path, mini_tokenizer
+) -> None:
+    """A buffer smaller than pack_buffer_documents at finalize() time must
+    still be packed and written, not silently dropped -- unlike ribbon mode's
+    drop_remainder, best_fit/bos_crop always flush their final batch."""
+
+    writer = TokenShardWriter(
+        tmp_path,
+        mini_tokenizer,
+        sequence_length=8,
+        packing="best_fit",
+        pack_buffer_documents=100,
+    )
+    writer.add(make_document("just one short document here", "0"))
+    manifest = writer.finalize(drop_remainder=True)
+    assert manifest.total_sequences == 1
+    assert manifest.total_non_padding_tokens > 0
+
+
+def test_shard_manifest_defaults_packing_to_ribbon_for_backward_compatibility() -> None:
+    # A manifest written before the `packing` field existed has no such key.
+    old_style = {
+        "version": "minifrontier-shards-v2",
+        "sequence_length": 4,
+        "dtype": "uint16",
+        "pad_id": 0,
+        "total_sequences": 1,
+        "total_non_padding_tokens": 4,
+        "shards": [
+            {
+                "tokens_path": "shard-00000.tokens.npy",
+                "counts_path": "shard-00000.counts.npy",
+                "sequences": 1,
+                "tokens_sha256": "x",
+                "counts_sha256": "y",
+            }
+        ],
+    }
+    values = dict(old_style)
+    values["shards"] = tuple(ShardRecord(**item) for item in values["shards"])
+    manifest = ShardManifest(**values)
+    assert manifest.packing == "ribbon"
 
 
 def test_shard_shuffle_is_deterministic_complete_and_resume_policy_bound(

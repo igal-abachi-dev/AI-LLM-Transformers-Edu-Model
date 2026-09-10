@@ -42,5 +42,5 @@ def test_manifest_source_rejects_fineweb_cursor_options(tmp_path: Path) -> None:
         source=None,
         limit=1,
     )
-    with pytest.raises(ValueError, match="require --source"):
+    with pytest.raises(ValueError, match="require a streaming --source"):
         prepare_data.document_stream(args)

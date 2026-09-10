@@ -34,13 +34,14 @@ import sqlite3
 from bisect import bisect_right
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
 from minifrontier.data import Document
+from minifrontier.packing import pack_best_fit, pack_bos_aligned_crop
 from minifrontier.tokenizer import MiniFrontierTokenizer
 from minifrontier.training import TrainingBatch
 
@@ -208,6 +209,10 @@ class ShardManifest:
     total_sequences: int
     total_non_padding_tokens: int
     shards: tuple[ShardRecord, ...]
+    # Additive (MF-097): which TokenShardWriter.packing mode produced these
+    # shards. Defaulted so a manifest written before this field existed still
+    # loads -- "ribbon" was the only mode that could have produced it.
+    packing: str = "ribbon"
 
     def write(self, path: Path) -> None:
         path.write_text(json.dumps(asdict(self), indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -220,7 +225,22 @@ class ShardManifest:
 
 
 class TokenShardWriter:
-    """Stream documents into fixed-size uint16 shards without retaining the corpus."""
+    """Stream documents into fixed-size uint16 shards without retaining the corpus.
+
+    ``packing`` selects how documents become rows (MF-097):
+
+    * ``"ribbon"`` (the default, unchanged): concatenate every document's
+      tokens into one running stream and slice off fixed-size rows as they
+      become available. Zero tokens wasted, but most rows end with one
+      document's tail immediately followed by an unrelated document's head.
+    * ``"best_fit"`` / ``"bos_crop"``: buffer whole documents (``packing.py``'s
+      ``pack_best_fit``/``pack_bos_aligned_crop``) and decide, a batch of
+      ``pack_buffer_documents`` documents at a time, how to group them into
+      rows -- see that module's docstring for the real tradeoff between the
+      two. Buffering means a document's own row assignment is not decided
+      until enough later documents have also arrived, unlike ribbon mode's
+      immediate slicing.
+    """
 
     def __init__(
         self,
@@ -229,28 +249,63 @@ class TokenShardWriter:
         *,
         sequence_length: int,
         sequences_per_shard: int = 1024,
+        packing: Literal["ribbon", "best_fit", "bos_crop"] = "ribbon",
+        pack_buffer_documents: int = 256,
     ) -> None:
         if sequence_length < 2 or sequences_per_shard <= 0:
             raise ValueError("invalid shard dimensions")
         if tokenizer.vocab_size > np.iinfo(np.uint16).max + 1:
             raise ValueError("uint16 shards require a vocabulary no larger than 65536")
+        if packing not in ("ribbon", "best_fit", "bos_crop"):
+            raise ValueError(f"unknown packing mode: {packing}")
+        if pack_buffer_documents <= 0:
+            raise ValueError("pack_buffer_documents must be positive")
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.tokenizer = tokenizer
         self.sequence_length = sequence_length
         self.sequences_per_shard = sequences_per_shard
-        self.token_buffer: list[int] = []
+        self.packing = packing
+        self.pack_buffer_documents = pack_buffer_documents
+        self.token_buffer: list[int] = []  # "ribbon" mode only
+        self.document_buffer: list[list[int]] = []  # "best_fit"/"bos_crop" only
         self.sequence_buffer: list[list[int]] = []
         self.count_buffer: list[int] = []
         self.records: list[ShardRecord] = []
         self.total_tokens = 0
 
     def add(self, document: Document) -> None:
-        self.token_buffer.extend(self.tokenizer.encode(document.text, add_eos=True))
-        while len(self.token_buffer) >= self.sequence_length:
-            sequence = self.token_buffer[: self.sequence_length]
-            del self.token_buffer[: self.sequence_length]
-            self._append_sequence(sequence, self.sequence_length)
+        tokens = self.tokenizer.encode(document.text, add_eos=True)
+        if self.packing == "ribbon":
+            self.token_buffer.extend(tokens)
+            while len(self.token_buffer) >= self.sequence_length:
+                sequence = self.token_buffer[: self.sequence_length]
+                del self.token_buffer[: self.sequence_length]
+                self._append_sequence(sequence, self.sequence_length)
+            return
+        self.document_buffer.append(tokens)
+        if len(self.document_buffer) >= self.pack_buffer_documents:
+            self._pack_buffered_documents()
+
+    def _pack_buffered_documents(self) -> None:
+        if not self.document_buffer:
+            return
+        if self.packing == "best_fit":
+            packed = pack_best_fit(
+                self.document_buffer,
+                sequence_length=self.sequence_length,
+                pad_id=self.tokenizer.pad_id,
+            )
+        else:
+            packed = pack_bos_aligned_crop(
+                self.document_buffer,
+                sequence_length=self.sequence_length,
+                pad_id=self.tokenizer.pad_id,
+                bos_id=self.tokenizer.bos_id,
+            )
+        for row_tokens, non_padding in packed:
+            self._append_sequence(row_tokens, non_padding)
+        self.document_buffer.clear()
 
     def _append_sequence(self, tokens: list[int], non_padding: int) -> None:
         self.sequence_buffer.append(tokens)
@@ -286,13 +341,21 @@ class TokenShardWriter:
         self.count_buffer.clear()
 
     def finalize(self, *, drop_remainder: bool = True) -> ShardManifest:
-        if self.token_buffer and not drop_remainder:
-            non_padding = len(self.token_buffer)
-            padded = self.token_buffer + [self.tokenizer.pad_id] * (
-                self.sequence_length - non_padding
-            )
-            self._append_sequence(padded, non_padding)
-        self.token_buffer.clear()
+        # drop_remainder only means something for ribbon mode's own leftover
+        # partial fragment. best_fit/bos_crop always flush their final packed
+        # batch regardless -- a padded row from either can still hold real,
+        # already-admitted document content (unlike ribbon's unambiguous
+        # leftover fragment), so there is no equivalent "discard it" option.
+        if self.packing == "ribbon":
+            if self.token_buffer and not drop_remainder:
+                non_padding = len(self.token_buffer)
+                padded = self.token_buffer + [self.tokenizer.pad_id] * (
+                    self.sequence_length - non_padding
+                )
+                self._append_sequence(padded, non_padding)
+            self.token_buffer.clear()
+        else:
+            self._pack_buffered_documents()
         self._flush()
         manifest = ShardManifest(
             PIPELINE_VERSION,
@@ -302,6 +365,7 @@ class TokenShardWriter:
             sum(record.sequences for record in self.records),
             self.total_tokens,
             tuple(self.records),
+            self.packing,
         )
         temporary = self.directory / ".manifest.tmp"
         manifest.write(temporary)
