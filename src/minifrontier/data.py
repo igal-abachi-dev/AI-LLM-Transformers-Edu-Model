@@ -65,6 +65,31 @@ FINEMATH_REVISION: Final = "e92b25a616738fe95dc186b64dfb19f9c8525594"
 SMOLLM_CORPUS_DATASET: Final = "HuggingFaceTB/smollm-corpus"
 SMOLLM_CORPUS_REVISION: Final = "3ba9d605774198c5868892d7a8deda78031a781f"
 COSMOPEDIA_V2_CONFIG: Final = "cosmopedia-v2"
+# MF-095's code component: Stack-Edu was dropped (real schema holds no code
+# text, and real content requires a credentialed AWS account -- a real
+# project-values decision against ever requiring paid/credentialed cloud
+# access to reproduce this pipeline, see MF-095/MF-110's backlog notes).
+# github-code is the real, verified, fully ungated replacement: a real `code`
+# field, streams with no credentials, and a real per-file `license` field.
+GITHUB_CODE_DATASET: Final = "codeparrot/github-code"
+GITHUB_CODE_REVISION: Final = "b5661e6b17396364b2bcf8e68977b0d28e1ebd19"
+# The dataset's own `languages=`/`licenses=` load_dataset kwargs were tested
+# directly against this exact revision under streaming=True and do NOT
+# actually filter (verified empirically, not assumed from the dataset card:
+# requesting languages=["Python"], licenses=["mit"] still returned
+# JavaScript/GPL-2.0 rows) -- iter_github_code filters client-side instead.
+# License strings are real, lowercase SPDX-style identifiers (verified via a
+# real shuffled sample); normalized to this project's own
+# PERMISSIVE_CODE_LICENSES spelling before being handed to Document.create,
+# which rejects source_type="code" outside that exact set.
+_GITHUB_CODE_PERMISSIVE_LICENSES: Final = {
+    "apache-2.0": "Apache-2.0",
+    "bsd-2-clause": "BSD-2-Clause",
+    "bsd-3-clause": "BSD-3-Clause",
+    "cc0-1.0": "CC0-1.0",
+    "mit": "MIT",
+    "unlicense": "Unlicense",
+}
 
 
 def content_sha256(text: str) -> str:
