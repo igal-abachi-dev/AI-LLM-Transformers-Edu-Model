@@ -11,6 +11,8 @@ from minifrontier.data import (
     FINEWEB_EDU_CONFIG,
     FINEWEB_EDU_DATASET,
     FINEWEB_EDU_REVISION,
+    GITHUB_CODE_DATASET,
+    GITHUB_CODE_REVISION,
     SMOLLM_CORPUS_DATASET,
     SMOLLM_CORPUS_REVISION,
     Document,
@@ -22,6 +24,7 @@ from minifrontier.data import (
     iter_dclm_edu,
     iter_finemath,
     iter_fineweb_edu,
+    iter_github_code,
     iter_jsonl_documents,
     pack_documents,
     split_documents,
@@ -223,6 +226,91 @@ def test_cosmopedia_v2_adapter_preserves_provenance(monkeypatch) -> None:
         "revision": SMOLLM_CORPUS_REVISION,
         "split": "train",
         "streaming": True,
+    }
+
+
+def test_github_code_adapter_admits_only_permissive_licenses(monkeypatch) -> None:
+    rows = [
+        {"code": "a", "repo_name": "x/a", "path": "a.py", "language": "Python", "license": "mit"},
+        {"code": "b", "repo_name": "x/b", "path": "b.py", "language": "Python", "license": "gpl-3.0"},
+        {
+            "code": "c",
+            "repo_name": "x/c",
+            "path": "c.py",
+            "language": "Python",
+            "license": "apache-2.0",
+        },
+        {"code": "d", "repo_name": "x/d", "path": "d.py", "language": "Python", "license": "isc"},
+    ]
+
+    def fake_load_dataset(*args, **kwargs):
+        return iter(rows)
+
+    monkeypatch.setattr("datasets.load_dataset", fake_load_dataset)
+    result = list(iter_github_code(limit=10))
+    assert [item.text for item in result] == ["a", "c"]
+    assert result[0].license == "MIT"
+    assert result[1].license == "Apache-2.0"
+    assert result[0].source == "https://github.com/x/a"
+    assert result[0].revision == GITHUB_CODE_REVISION
+    assert result[0].source_type == "code"
+
+
+def test_github_code_adapter_filters_by_language_and_repo_allowlist(monkeypatch) -> None:
+    rows = [
+        {"code": "a", "repo_name": "x/a", "path": "a.py", "language": "Python", "license": "mit"},
+        {
+            "code": "b",
+            "repo_name": "x/b",
+            "path": "b.js",
+            "language": "JavaScript",
+            "license": "mit",
+        },
+        {"code": "c", "repo_name": "y/c", "path": "c.py", "language": "Python", "license": "mit"},
+    ]
+
+    def fake_load_dataset(*args, **kwargs):
+        return iter(rows)
+
+    monkeypatch.setattr("datasets.load_dataset", fake_load_dataset)
+    result = list(iter_github_code(languages=["python"], repo_names=["x/a"], limit=10))
+    assert [item.text for item in result] == ["a"]
+
+
+def test_github_code_adapter_start_limit_count_only_admitted_rows(monkeypatch) -> None:
+    rows = [
+        {"code": "a", "repo_name": "x/a", "path": "a.py", "language": "Python", "license": "mit"},
+        {"code": "b", "repo_name": "x/b", "path": "b.py", "language": "Python", "license": "gpl-3.0"},
+        {"code": "c", "repo_name": "x/c", "path": "c.py", "language": "Python", "license": "mit"},
+        {"code": "d", "repo_name": "x/d", "path": "d.py", "language": "Python", "license": "mit"},
+    ]
+
+    def fake_load_dataset(*args, **kwargs):
+        return iter(rows)
+
+    monkeypatch.setattr("datasets.load_dataset", fake_load_dataset)
+    result = list(iter_github_code(start=1, limit=10))
+    assert [item.text for item in result] == ["c", "d"]
+
+
+def test_github_code_adapter_requests_streaming_and_trust_remote_code(monkeypatch) -> None:
+    request = {}
+
+    def fake_load_dataset(*args, **kwargs):
+        request["args"] = args
+        request["kwargs"] = kwargs
+        return iter([])
+
+    monkeypatch.setattr("datasets.load_dataset", fake_load_dataset)
+    assert list(iter_github_code(limit=1)) == []
+    assert request == {
+        "args": (GITHUB_CODE_DATASET,),
+        "kwargs": {
+            "revision": GITHUB_CODE_REVISION,
+            "split": "train",
+            "streaming": True,
+            "trust_remote_code": True,
+        },
     }
 
 

@@ -413,6 +413,87 @@ def iter_cosmopedia_v2(
         emitted += 1
 
 
+def iter_github_code(
+    *,
+    languages: Iterable[str] | None = None,
+    repo_names: Iterable[str] | None = None,
+    limit: int | None = None,
+    start: int = 0,
+    shuffle_seed: int | None = None,
+    shuffle_buffer: int = 10_000,
+) -> Iterator[Document]:
+    """Stream github-code, admitting only permissively-licensed rows.
+
+    Every row is filtered client-side (the dataset's own `languages=`/
+    `licenses=` `load_dataset` kwargs were verified empirically to NOT
+    filter under `streaming=True` on this pinned revision -- see
+    `_GITHUB_CODE_PERMISSIVE_LICENSES`'s comment). A row whose real license
+    does not normalize to one of this project's `PERMISSIVE_CODE_LICENSES`
+    is skipped before `Document.create` ever sees it -- letting the
+    exception path do this filtering would crash the whole stream on the
+    first non-permissive row instead of just skipping it.
+
+    `languages`, when given, restricts to those languages (matched
+    case-insensitively against the dataset's own `language` field, e.g.
+    `{"Python", "JavaScript"}`). `repo_names`, when given, restricts to
+    exactly those `owner/repo` strings -- the mechanism for pulling only a
+    curated allowlist of well-known repositories out of this otherwise huge
+    dataset, rather than an unfiltered crawl. Like `iter_dclm_edu`,
+    `start`/`limit` count only admitted (post-filter) rows, not raw stream
+    position -- appropriate here even more than for DCLM-Edu, since far more
+    of the raw stream gets rejected (wrong license, wrong language, or not
+    in the curated allowlist) than admitted.
+    """
+
+    from datasets import load_dataset
+
+    if limit is not None and limit < 0:
+        raise ValueError("limit cannot be negative")
+    if start < 0:
+        raise ValueError("start cannot be negative")
+    if shuffle_buffer <= 0:
+        raise ValueError("shuffle_buffer must be positive")
+    language_filter = {name.lower() for name in languages} if languages is not None else None
+    repo_filter = set(repo_names) if repo_names is not None else None
+    dataset = load_dataset(
+        GITHUB_CODE_DATASET,
+        revision=GITHUB_CODE_REVISION,
+        split="train",
+        streaming=True,
+        trust_remote_code=True,
+    )
+    if shuffle_seed is not None:
+        dataset = dataset.shuffle(seed=shuffle_seed, buffer_size=shuffle_buffer)
+    emitted = 0
+    admitted_index = 0
+    for row in dataset:
+        license_key = str(row["license"]).lower()
+        normalized_license = _GITHUB_CODE_PERMISSIVE_LICENSES.get(license_key)
+        if normalized_license is None:
+            continue
+        if language_filter is not None and str(row["language"]).lower() not in language_filter:
+            continue
+        if repo_filter is not None and str(row["repo_name"]) not in repo_filter:
+            continue
+        if admitted_index < start:
+            admitted_index += 1
+            continue
+        if limit is not None and emitted >= limit:
+            return
+        yield Document.create(
+            str(row["code"]),
+            source=f"https://github.com/{row['repo_name']}",
+            revision=GITHUB_CODE_REVISION,
+            license=normalized_license,
+            language=str(row["language"]),
+            record_id=f"{row['repo_name']}:{row['path']}",
+            path=str(row["path"]),
+            source_type="code",
+        )
+        admitted_index += 1
+        emitted += 1
+
+
 def filter_and_deduplicate(
     documents: Iterable[Document],
     *,
