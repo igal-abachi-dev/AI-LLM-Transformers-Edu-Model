@@ -22,7 +22,14 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from minifrontier.data import iter_fineweb_edu, iter_jsonl_documents, split_bucket
+from minifrontier.data import (
+    iter_cosmopedia_v2,
+    iter_dclm_edu,
+    iter_finemath,
+    iter_fineweb_edu,
+    iter_jsonl_documents,
+    split_bucket,
+)
 from minifrontier.shards import (
     AdmissionStats,
     DiskDeduplicator,
@@ -36,11 +43,28 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--manifest", type=Path)
-    source.add_argument("--source", choices=("fineweb-edu",))
+    source.add_argument(
+        "--source", choices=("fineweb-edu", "dclm-edu", "finemath", "cosmopedia-v2")
+    )
     parser.add_argument("--limit", type=int)
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--shuffle-seed", type=int)
     parser.add_argument("--shuffle-buffer", type=int, default=10_000)
+    parser.add_argument(
+        "--dclm-min-score",
+        type=int,
+        default=3,
+        help="Only meaningful with --source dclm-edu: minimum edu_int_score to admit "
+        "(the dataset's own real range is 2-5). 3 is the MF-094/MF-095 mixture "
+        "proposal's own cutoff.",
+    )
+    parser.add_argument(
+        "--finemath-config",
+        default="finemath-4plus",
+        choices=("finemath-3plus", "finemath-4plus", "infiwebmath-3plus", "infiwebmath-4plus"),
+        help="Only meaningful with --source finemath: which of the dataset's four real "
+        "subsets to use.",
+    )
     parser.add_argument("--tokenizer", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--sequence-length", type=int, required=True)
@@ -56,10 +80,33 @@ def document_stream(args: argparse.Namespace):
 
     if args.manifest is not None:
         if args.limit is not None or args.start or args.shuffle_seed is not None:
-            raise ValueError("FineWeb cursor/shuffle options require --source fineweb-edu")
+            raise ValueError("cursor/shuffle options require a streaming --source")
         return iter_jsonl_documents(args.manifest)
     if args.source == "fineweb-edu":
         return iter_fineweb_edu(
+            limit=args.limit,
+            start=args.start,
+            shuffle_seed=args.shuffle_seed,
+            shuffle_buffer=args.shuffle_buffer,
+        )
+    if args.source == "dclm-edu":
+        return iter_dclm_edu(
+            min_edu_int_score=args.dclm_min_score,
+            limit=args.limit,
+            start=args.start,
+            shuffle_seed=args.shuffle_seed,
+            shuffle_buffer=args.shuffle_buffer,
+        )
+    if args.source == "finemath":
+        return iter_finemath(
+            config=args.finemath_config,
+            limit=args.limit,
+            start=args.start,
+            shuffle_seed=args.shuffle_seed,
+            shuffle_buffer=args.shuffle_buffer,
+        )
+    if args.source == "cosmopedia-v2":
+        return iter_cosmopedia_v2(
             limit=args.limit,
             start=args.start,
             shuffle_seed=args.shuffle_seed,

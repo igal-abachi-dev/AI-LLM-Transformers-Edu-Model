@@ -48,6 +48,23 @@ PERMISSIVE_CODE_LICENSES = frozenset(
 FINEWEB_EDU_DATASET: Final = "HuggingFaceFW/fineweb-edu"
 FINEWEB_EDU_CONFIG: Final = "sample-10BT"
 FINEWEB_EDU_REVISION: Final = "87f09149ef4734204d70ed1d046ddc9ca3f2b8f9"
+# MF-095: the other three (of four) real, directly-streamable sources in the
+# SmolLM2-modeled mixture proposal, verified against each dataset's own real
+# HuggingFace Hub schema before writing any loader (not assumed from a
+# similarly-named dataset). Stack-Edu, the fourth (code) component, is NOT
+# here -- its own real schema turned out to hold only blob metadata, not code
+# text, requiring a separate Software Heritage S3 download pipeline this
+# project does not have; see MF-095's backlog status note.
+DCLM_EDU_DATASET: Final = "HuggingFaceTB/dclm-edu"
+DCLM_EDU_REVISION: Final = "dbad8ad71224482740cd9c9d353591adbf62fe04"
+FINEMATH_DATASET: Final = "HuggingFaceTB/finemath"
+FINEMATH_REVISION: Final = "e92b25a616738fe95dc186b64dfb19f9c8525594"
+# SmollM-Corpus is a multi-config repo; Cosmopedia v2 is one config inside it,
+# not a standalone dataset (the standalone "HuggingFaceTB/cosmopedia" repo is
+# a different, older dataset -- confirmed before use, not assumed from the name).
+SMOLLM_CORPUS_DATASET: Final = "HuggingFaceTB/smollm-corpus"
+SMOLLM_CORPUS_REVISION: Final = "3ba9d605774198c5868892d7a8deda78031a781f"
+COSMOPEDIA_V2_CONFIG: Final = "cosmopedia-v2"
 
 
 def content_sha256(text: str) -> str:
@@ -211,6 +228,162 @@ def iter_fineweb_edu(
             license="ODC-BY-1.0",
             language=str(row.get("language", "unknown")),
             record_id=str(row.get("id", index)),
+        )
+        emitted += 1
+
+
+def iter_dclm_edu(
+    *,
+    min_edu_int_score: int = 3,
+    limit: int | None = None,
+    start: int = 0,
+    shuffle_seed: int | None = None,
+    shuffle_buffer: int = 10_000,
+) -> Iterator[Document]:
+    """Stream DCLM-Edu, filtered to `edu_int_score >= min_edu_int_score`.
+
+    The real field name and range (`edu_int_score`, an int64 in 2-5) were
+    verified against the dataset's own real HuggingFace schema, not assumed
+    from FineWeb-Edu's differently-named quality field. `min_edu_int_score=3`
+    is the SmolLM2-modeled mixture's own proposed cutoff (MF-094's status
+    note). Unlike `iter_fineweb_edu` (which has no filter of its own, so
+    `start`/`limit` count raw stream position), `start`/`limit` here count
+    only documents that already passed the score filter -- a caller asking
+    for `limit=10_000` gets exactly 10,000 real usable documents, not some
+    unpredictable smaller number depending how many of the first N raw rows
+    happened to score high enough. A deliberate, documented divergence from
+    the raw-position convention, not an oversight.
+    """
+
+    from datasets import load_dataset
+
+    if limit is not None and limit < 0:
+        raise ValueError("limit cannot be negative")
+    if start < 0:
+        raise ValueError("start cannot be negative")
+    if shuffle_buffer <= 0:
+        raise ValueError("shuffle_buffer must be positive")
+    dataset = load_dataset(
+        DCLM_EDU_DATASET,
+        revision=DCLM_EDU_REVISION,
+        split="train",
+        streaming=True,
+    )
+    if shuffle_seed is not None:
+        dataset = dataset.shuffle(seed=shuffle_seed, buffer_size=shuffle_buffer)
+    emitted = 0
+    admitted_index = 0
+    for row in dataset:
+        if int(row["edu_int_score"]) < min_edu_int_score:
+            continue
+        if admitted_index < start:
+            admitted_index += 1
+            continue
+        if limit is not None and emitted >= limit:
+            return
+        yield Document.create(
+            str(row["text"]),
+            source=DCLM_EDU_DATASET,
+            revision=DCLM_EDU_REVISION,
+            license="CC-BY-4.0",
+            language=str(row.get("language", "unknown")),
+            record_id=str(row.get("id", admitted_index)),
+        )
+        admitted_index += 1
+        emitted += 1
+
+
+def iter_finemath(
+    *,
+    config: str = "finemath-4plus",
+    limit: int | None = None,
+    start: int = 0,
+    shuffle_seed: int | None = None,
+    shuffle_buffer: int = 10_000,
+) -> Iterator[Document]:
+    """Stream FineMath. `config` picks which of its four real subsets to use.
+
+    `finemath-4plus` (the stricter of the two FineMath thresholds) is this
+    project's own real, recorded default -- not the paper/dataset's own
+    "primary" recommendation, since none is stated; a real decision made
+    here, not silently assumed. The other three real configs
+    (`finemath-3plus`, `infiwebmath-3plus`, `infiwebmath-4plus`) remain
+    available via this same parameter.
+    """
+
+    from datasets import load_dataset
+
+    if limit is not None and limit < 0:
+        raise ValueError("limit cannot be negative")
+    if start < 0:
+        raise ValueError("start cannot be negative")
+    if shuffle_buffer <= 0:
+        raise ValueError("shuffle_buffer must be positive")
+    dataset = load_dataset(
+        FINEMATH_DATASET,
+        name=config,
+        revision=FINEMATH_REVISION,
+        split="train",
+        streaming=True,
+    )
+    if shuffle_seed is not None:
+        dataset = dataset.shuffle(seed=shuffle_seed, buffer_size=shuffle_buffer)
+    emitted = 0
+    for index, row in enumerate(dataset):
+        if index < start:
+            continue
+        if limit is not None and emitted >= limit:
+            return
+        yield Document.create(
+            str(row["text"]),
+            source=f"{FINEMATH_DATASET}/{config}",
+            revision=FINEMATH_REVISION,
+            license="ODC-BY-1.0",
+            language=str(row.get("language", "en")),
+            record_id=str(row.get("id", index)),
+        )
+        emitted += 1
+
+
+def iter_cosmopedia_v2(
+    *,
+    limit: int | None = None,
+    start: int = 0,
+    shuffle_seed: int | None = None,
+    shuffle_buffer: int = 10_000,
+) -> Iterator[Document]:
+    """Stream Cosmopedia v2 (fully synthetic; no quality-score field to filter on)."""
+
+    from datasets import load_dataset
+
+    if limit is not None and limit < 0:
+        raise ValueError("limit cannot be negative")
+    if start < 0:
+        raise ValueError("start cannot be negative")
+    if shuffle_buffer <= 0:
+        raise ValueError("shuffle_buffer must be positive")
+    dataset = load_dataset(
+        SMOLLM_CORPUS_DATASET,
+        name=COSMOPEDIA_V2_CONFIG,
+        revision=SMOLLM_CORPUS_REVISION,
+        split="train",
+        streaming=True,
+    )
+    if shuffle_seed is not None:
+        dataset = dataset.shuffle(seed=shuffle_seed, buffer_size=shuffle_buffer)
+    emitted = 0
+    for index, row in enumerate(dataset):
+        if index < start:
+            continue
+        if limit is not None and emitted >= limit:
+            return
+        yield Document.create(
+            str(row["text"]),
+            source=f"{SMOLLM_CORPUS_DATASET}/{COSMOPEDIA_V2_CONFIG}",
+            revision=SMOLLM_CORPUS_REVISION,
+            license="ODC-BY-1.0",
+            language="en",
+            record_id=str(index),
         )
         emitted += 1
 

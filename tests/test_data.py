@@ -3,14 +3,24 @@ import json
 import pytest
 
 from minifrontier.data import (
+    COSMOPEDIA_V2_CONFIG,
+    DCLM_EDU_DATASET,
+    DCLM_EDU_REVISION,
+    FINEMATH_DATASET,
+    FINEMATH_REVISION,
     FINEWEB_EDU_CONFIG,
     FINEWEB_EDU_DATASET,
     FINEWEB_EDU_REVISION,
+    SMOLLM_CORPUS_DATASET,
+    SMOLLM_CORPUS_REVISION,
     Document,
     PackedSequence,
     PackedTokenDataset,
     content_sha256,
     filter_and_deduplicate,
+    iter_cosmopedia_v2,
+    iter_dclm_edu,
+    iter_finemath,
     iter_fineweb_edu,
     iter_jsonl_documents,
     pack_documents,
@@ -144,6 +154,76 @@ def test_fineweb_adapter_requests_deterministic_stream_shuffle(monkeypatch) -> N
     monkeypatch.setattr("datasets.load_dataset", lambda *args, **kwargs: FakeDataset())
     assert len(list(iter_fineweb_edu(limit=1, shuffle_seed=7, shuffle_buffer=32))) == 1
     assert calls == [(7, 32)]
+
+
+def test_dclm_edu_adapter_filters_by_score_and_counts_only_admitted_rows(monkeypatch) -> None:
+    # Scores: 5, 1 (rejected), 4, 2 (rejected), 3 -- three real rows pass >=3.
+    rows = [
+        {"text": "a", "id": "0", "language": "en", "edu_int_score": 5},
+        {"text": "b", "id": "1", "language": "en", "edu_int_score": 1},
+        {"text": "c", "id": "2", "language": "en", "edu_int_score": 4},
+        {"text": "d", "id": "3", "language": "en", "edu_int_score": 2},
+        {"text": "e", "id": "4", "language": "en", "edu_int_score": 3},
+    ]
+    request = {}
+
+    def fake_load_dataset(*args, **kwargs):
+        request["args"] = args
+        request["kwargs"] = kwargs
+        return iter(rows)
+
+    monkeypatch.setattr("datasets.load_dataset", fake_load_dataset)
+    # start=1 skips the first *admitted* row ("a"), not the first raw row.
+    result = list(iter_dclm_edu(min_edu_int_score=3, start=1, limit=10))
+    assert [item.text for item in result] == ["c", "e"]
+    assert result[0].source == DCLM_EDU_DATASET
+    assert result[0].revision == DCLM_EDU_REVISION
+    assert result[0].license == "CC-BY-4.0"
+    assert request == {
+        "args": (DCLM_EDU_DATASET,),
+        "kwargs": {"revision": DCLM_EDU_REVISION, "split": "train", "streaming": True},
+    }
+
+
+def test_finemath_adapter_selects_the_requested_config(monkeypatch) -> None:
+    rows = [{"text": "row", "id": "0", "language": "en"}]
+    request = {}
+
+    def fake_load_dataset(*args, **kwargs):
+        request["args"] = args
+        request["kwargs"] = kwargs
+        return iter(rows)
+
+    monkeypatch.setattr("datasets.load_dataset", fake_load_dataset)
+    result = list(iter_finemath(config="infiwebmath-3plus", limit=1))
+    assert len(result) == 1
+    assert result[0].source == f"{FINEMATH_DATASET}/infiwebmath-3plus"
+    assert result[0].license == "ODC-BY-1.0"
+    assert request["kwargs"]["name"] == "infiwebmath-3plus"
+    assert request["kwargs"]["revision"] == FINEMATH_REVISION
+
+
+def test_cosmopedia_v2_adapter_preserves_provenance(monkeypatch) -> None:
+    rows = [{"text": "row"}]
+    request = {}
+
+    def fake_load_dataset(*args, **kwargs):
+        request["args"] = args
+        request["kwargs"] = kwargs
+        return iter(rows)
+
+    monkeypatch.setattr("datasets.load_dataset", fake_load_dataset)
+    result = list(iter_cosmopedia_v2(limit=1))
+    assert len(result) == 1
+    assert result[0].source == f"{SMOLLM_CORPUS_DATASET}/{COSMOPEDIA_V2_CONFIG}"
+    assert result[0].revision == SMOLLM_CORPUS_REVISION
+    assert result[0].license == "ODC-BY-1.0"
+    assert request["kwargs"] == {
+        "name": COSMOPEDIA_V2_CONFIG,
+        "revision": SMOLLM_CORPUS_REVISION,
+        "split": "train",
+        "streaming": True,
+    }
 
 
 def test_iterable_dataset_worker_sharding_is_deterministic(monkeypatch) -> None:
