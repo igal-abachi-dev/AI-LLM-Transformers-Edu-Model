@@ -232,7 +232,13 @@ def test_cosmopedia_v2_adapter_preserves_provenance(monkeypatch) -> None:
 def test_github_code_adapter_admits_only_permissive_licenses(monkeypatch) -> None:
     rows = [
         {"code": "a", "repo_name": "x/a", "path": "a.py", "language": "Python", "license": "mit"},
-        {"code": "b", "repo_name": "x/b", "path": "b.py", "language": "Python", "license": "gpl-3.0"},
+        {
+            "code": "b",
+            "repo_name": "x/b",
+            "path": "b.py",
+            "language": "Python",
+            "license": "gpl-3.0",
+        },
         {
             "code": "c",
             "repo_name": "x/c",
@@ -280,7 +286,13 @@ def test_github_code_adapter_filters_by_language_and_repo_allowlist(monkeypatch)
 def test_github_code_adapter_start_limit_count_only_admitted_rows(monkeypatch) -> None:
     rows = [
         {"code": "a", "repo_name": "x/a", "path": "a.py", "language": "Python", "license": "mit"},
-        {"code": "b", "repo_name": "x/b", "path": "b.py", "language": "Python", "license": "gpl-3.0"},
+        {
+            "code": "b",
+            "repo_name": "x/b",
+            "path": "b.py",
+            "language": "Python",
+            "license": "gpl-3.0",
+        },
         {"code": "c", "repo_name": "x/c", "path": "c.py", "language": "Python", "license": "mit"},
         {"code": "d", "repo_name": "x/d", "path": "d.py", "language": "Python", "license": "mit"},
     ]

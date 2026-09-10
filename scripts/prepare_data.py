@@ -144,6 +144,22 @@ def document_stream(args: argparse.Namespace):
             shuffle_seed=args.shuffle_seed,
             shuffle_buffer=args.shuffle_buffer,
         )
+    if args.source == "github-code":
+        repo_names = None
+        if args.github_repo_allowlist is not None:
+            repo_names = [
+                line.strip()
+                for line in args.github_repo_allowlist.read_text(encoding="utf-8").splitlines()
+                if line.strip() and not line.strip().startswith("#")
+            ]
+        return iter_github_code(
+            languages=args.github_languages,
+            repo_names=repo_names,
+            limit=args.limit,
+            start=args.start,
+            shuffle_seed=args.shuffle_seed,
+            shuffle_buffer=args.shuffle_buffer,
+        )
     raise ValueError(f"unsupported data source: {args.source}")
 
 

@@ -1,0 +1,205 @@
+# MF-095 curated code-repo allowlist for scripts/prepare_data.py --source
+# github-code --github-repo-allowlist.
+#
+# Real, popular, permissively-licensed repositories (Apache-2.0, BSD-2-Clause,
+# BSD-3-Clause, CC0-1.0, MIT, or Unlicense -- this project's own
+# PERMISSIVE_CODE_LICENSES gate rejects anything else regardless of what's
+# listed here, so a bad entry fails safe, not silently) across languages
+# weighted by real 2026 popularity evidence (GitHub Octoverse 2025, TIOBE
+# Sept 2026): Python/JS/TS get the most entries, Java/C++/C#/Go/Rust a solid
+# middle tier, Kotlin/Elixir/HTML/CSS fewer. Compiled 2026-09-10 from two
+# independent research passes (real WebSearch/WebFetch against GitHub) --
+# every entry here is either independently star-count-verified or a
+# widely-recognized, long-established real project; entries either fork
+# flagged as suspiciously star-farmed (e.g. accounts/repos with
+# implausible star counts for their visibility) or as non-permissively
+# licensed (GPL/LGPL/AGPL/MPL/EPL/BSL/Hippocratic/etc.) were excluded, not
+# silently included. This is a real starting list, not exhaustive --
+# extend it the same way if more coverage is wanted later.
+#
+# One "owner/repo" per line. Lines starting with # are comments.
+
+# --- Python ---
+django/django
+pallets/flask
+tiangolo/fastapi
+psf/requests
+numpy/numpy
+pandas-dev/pandas
+scikit-learn/scikit-learn
+pytest-dev/pytest
+sqlalchemy/sqlalchemy
+pydantic/pydantic
+pallets/click
+celery/celery
+scrapy/scrapy
+tornadoweb/tornado
+psf/black
+encode/httpx
+encode/starlette
+scipy/scipy
+TheAlgorithms/Python
+langchain-ai/langchain
+openai/whisper
+
+# --- JavaScript ---
+facebook/react
+vuejs/vue
+sveltejs/svelte
+expressjs/express
+fastify/fastify
+axios/axios
+lodash/lodash
+chartjs/Chart.js
+date-fns/date-fns
+reduxjs/redux
+webpack/webpack
+vitejs/vite
+eslint/eslint
+prettier/prettier
+jestjs/jest
+mochajs/mocha
+socketio/socket.io
+mrdoob/three.js
+leaflet/leaflet
+jquery/jquery
+vercel/next.js
+
+# --- TypeScript ---
+microsoft/TypeScript
+nestjs/nest
+prisma/prisma
+typeorm/typeorm
+angular/angular
+denoland/deno
+colinhacks/zod
+ReactiveX/rxjs
+drizzle-team/drizzle-orm
+trpc/trpc
+nrwl/nx
+typestack/class-validator
+microsoft/vscode
+excalidraw/excalidraw
+ant-design/ant-design
+tailwindlabs/tailwindcss
+mermaid-js/mermaid
+
+# --- Go ---
+golang/go
+gin-gonic/gin
+gorilla/mux
+spf13/cobra
+kubernetes/kubernetes
+moby/moby
+prometheus/prometheus
+etcd-io/etcd
+grpc/grpc-go
+gofiber/fiber
+redis/go-redis
+stretchr/testify
+ollama/ollama
+junegunn/fzf
+jesseduffield/lazygit
+traefik/traefik
+rclone/rclone
+
+# --- C# ---
+dotnet/runtime
+dotnet/aspnetcore
+dotnet/roslyn
+dotnet/efcore
+dotnet/maui
+AutoMapper/AutoMapper
+JamesNK/Newtonsoft.Json
+serilog/serilog
+NLog/NLog
+Humanizr/Humanizer
+FluentValidation/FluentValidation
+PowerShell/PowerShell
+files-community/Files
+
+# --- C++ ---
+nlohmann/json
+fmtlib/fmt
+google/googletest
+opencv/opencv
+microsoft/vcpkg
+abseil/abseil-cpp
+simdjson/simdjson
+Tencent/rapidjson
+taskflow/taskflow
+redis/redis
+ggml-org/llama.cpp
+godotengine/godot
+ocornut/imgui
+ggml-org/whisper.cpp
+
+# --- Rust ---
+rust-lang/rust
+tokio-rs/tokio
+serde-rs/serde
+actix/actix-web
+clap-rs/clap
+rayon-rs/rayon
+hyperium/hyper
+rust-lang/cargo
+BurntSushi/ripgrep
+sharkdp/bat
+sharkdp/fd
+tauri-apps/tauri
+astral-sh/ruff
+nushell/nushell
+ajeetdsouza/zoxide
+
+# --- Java ---
+spring-projects/spring-boot
+spring-projects/spring-framework
+apache/kafka
+google/guava
+square/okhttp
+square/retrofit
+FasterXML/jackson-databind
+apache/maven
+netty/netty
+google/gson
+ReactiveX/RxJava
+apache/hadoop
+apache/spark
+apache/dubbo
+apache/flink
+apache/rocketmq
+
+# --- Kotlin ---
+JetBrains/kotlin
+Kotlin/kotlinx.coroutines
+Kotlin/kotlinx.serialization
+ktorio/ktor
+InsertKoinIO/koin
+square/kotlinpoet
+JakeWharton/timber
+JetBrains/Exposed
+
+# --- Elixir ---
+elixir-lang/elixir
+phoenixframework/phoenix
+phoenixframework/phoenix_live_view
+elixir-ecto/ecto
+elixir-plug/plug
+elixir-lang/ex_doc
+livebook-dev/livebook
+absinthe-graphql/absinthe
+beam-telemetry/telemetry
+
+# --- HTML ---
+google/material-design-lite
+foundation/foundation-sites
+alpinejs/alpine
+
+# --- CSS ---
+necolas/normalize.css
+jgthms/bulma
+picocss/pico
+tachyons-css/tachyons
+twbs/bootstrap
+saadeghi/daisyui
+unocss/unocss
