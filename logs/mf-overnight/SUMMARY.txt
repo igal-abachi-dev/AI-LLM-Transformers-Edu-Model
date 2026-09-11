@@ -1,3 +1,16 @@
 ﻿
-=== MF-083 / MF-097 / MF-095 overnight run started 2026-09-11 02:57:38 ===
-[2026-09-11 02:57:38] START prep-mf097-best-fit
+=== MF-083 / MF-097 / MF-095 overnight run started 2026-09-11 11:19:49 ===
+[2026-09-11 11:19:49] START prep-mf097-best-fit
+[2026-09-11 11:19:51] FAILED prep-mf097-best-fit (exit 1) -- see logs\mf-overnight\prep-mf097-best-fit.log
+[2026-09-11 11:19:51] START prep-mf097-bos-crop
+[2026-09-11 11:19:53] FAILED prep-mf097-bos-crop (exit 1) -- see logs\mf-overnight\prep-mf097-bos-crop.log
+[2026-09-11 11:19:53] START prep-mf095-dclm-edu
+[2026-09-11 11:19:55] FAILED prep-mf095-dclm-edu (exit 1) -- see logs\mf-overnight\prep-mf095-dclm-edu.log
+[2026-09-11 11:19:55] START prep-mf095-finemath
+[2026-09-11 11:19:57] FAILED prep-mf095-finemath (exit 1) -- see logs\mf-overnight\prep-mf095-finemath.log
+[2026-09-11 11:19:57] START prep-mf095-cosmopedia-v2
+[2026-09-11 11:19:59] FAILED prep-mf095-cosmopedia-v2 (exit 1) -- see logs\mf-overnight\prep-mf095-cosmopedia-v2.log
+[2026-09-11 11:19:59] START prep-mf095-github-code
+[2026-09-11 11:20:01] FAILED prep-mf095-github-code (exit 1) -- see logs\mf-overnight\prep-mf095-github-code.log
+[2026-09-11 11:20:01] ALREADY DONE mf083-baseline (found artifacts/mf083-cautious-adamw/baseline/final/model.safetensors) -- skipping re-run
+[2026-09-11 11:20:01] START mf083-cautious

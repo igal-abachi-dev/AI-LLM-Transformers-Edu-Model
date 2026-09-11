@@ -18,6 +18,7 @@ from minifrontier.data import (
     Document,
     PackedSequence,
     PackedTokenDataset,
+    _strip_leading_license_comment,
     content_sha256,
     filter_and_deduplicate,
     iter_cosmopedia_v2,
@@ -227,6 +228,76 @@ def test_cosmopedia_v2_adapter_preserves_provenance(monkeypatch) -> None:
         "split": "train",
         "streaming": True,
     }
+
+
+def test_strip_leading_license_comment_removes_real_apache_c_style_header() -> None:
+    # Real text captured from a live github-code sample (Apache Software
+    # Foundation's own standard header, byte-for-byte identical across
+    # thousands of real repositories).
+    text = (
+        "/*\n"
+        " * Licensed to the Apache Software Foundation (ASF) under one\n"
+        " * or more contributor license agreements.  See the NOTICE file\n"
+        " * distributed with this work for additional information\n"
+        " * regarding copyright ownership.  The ASF licenses this file\n"
+        ' * to you under the Apache License, Version 2.0 (the "License");\n'
+        " */\n"
+        "\n"
+        "package org.apache.example;\n\npublic class Foo {}\n"
+    )
+    stripped = _strip_leading_license_comment(text)
+    assert stripped == "package org.apache.example;\n\npublic class Foo {}\n"
+
+
+def test_strip_leading_license_comment_removes_hash_style_header() -> None:
+    text = "# Copyright 2024 Example Corp.\n# Licensed under the MIT License.\n\nimport os\n"
+    assert _strip_leading_license_comment(text) == "import os\n"
+
+
+def test_strip_leading_license_comment_removes_docstring_style_header() -> None:
+    text = '"""Copyright 2024 Example Corp. Licensed under the MIT License."""\n\nimport os\n'
+    assert _strip_leading_license_comment(text) == "import os\n"
+
+
+def test_strip_leading_license_comment_removes_html_style_header() -> None:
+    text = "<!-- Copyright 2024 Example Corp. Licensed under the MIT License. -->\n<html></html>\n"
+    assert _strip_leading_license_comment(text) == "<html></html>\n"
+
+
+def test_strip_leading_license_comment_leaves_non_license_comments_untouched() -> None:
+    text = "// This module implements the widget factory.\n\nfunction make() {}\n"
+    assert _strip_leading_license_comment(text) == text
+
+
+def test_strip_leading_license_comment_leaves_code_with_no_leading_comment_untouched() -> None:
+    text = "import os\nprint('hello')\n"
+    assert _strip_leading_license_comment(text) == text
+
+
+def test_strip_leading_license_comment_leaves_unterminated_block_comment_untouched() -> None:
+    # A real */ never appears -- must not scan unboundedly or crash.
+    text = "/* Copyright Example Corp, license text with no closing marker\n" + "x\n" * 5
+    assert _strip_leading_license_comment(text) == text
+
+
+def test_github_code_adapter_strips_license_headers_from_admitted_rows(monkeypatch) -> None:
+    header = "# Copyright 2024 Example Corp.\n# Licensed under the MIT License.\n\nimport os\n"
+    rows = [
+        {
+            "code": header,
+            "repo_name": "x/a",
+            "path": "a.py",
+            "language": "Python",
+            "license": "mit",
+        }
+    ]
+
+    def fake_load_dataset(*args, **kwargs):
+        return iter(rows)
+
+    monkeypatch.setattr("datasets.load_dataset", fake_load_dataset)
+    result = list(iter_github_code(limit=10))
+    assert result[0].text == "import os\n"
 
 
 def test_github_code_adapter_admits_only_permissive_licenses(monkeypatch) -> None:
