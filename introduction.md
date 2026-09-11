@@ -226,6 +226,10 @@ Training can memory-map them (treat the file as if it were already in RAM).
 Works even if the whole dataset is bigger than your memory.
 
 Training can resume from an exact cursor (which shard + which row) if it gets interrupted.
+
+
+
+
 ---
 
 ## 1.2 The chat you see is a lie (a friendly one)
@@ -653,6 +657,16 @@ From `src/minifrontier/training.py`, the grown-up knobs:
 - **Warmup then cosine decay** — start with a tiny learning rate for the first 100 updates
   (big steps early on wreck a random model), ramp up, then smoothly slow down to almost
   nothing. `WarmupCosineSchedule`.
+- **Warmup-Stable-Decay (WSD)** — an alternative shape: warmup, then flat at the peak rate
+  for most of the run, then a short cosine-shaped drop only near the very end.
+  `WarmupStableDecaySchedule`, used for this project's own real release run. The reason
+  isn't that it trains a better model than cosine (published results put the two about
+  level) — it's operational. Cosine's whole curve is a function of the total update count,
+  so if a multi-day run gets interrupted partway through, resuming with a different total
+  would change the curve's shape retroactively. WSD's flat middle can just keep going at the
+  same rate after an interruption, with the decay only happening once, near the real end.
+  DeepSeek's own real tech report (checked directly by this project) describes using this
+  same warmup → long-flat → decay shape at their own, vastly larger scale.
 - **Gradient clipping at 1.0** — if a nudge is enormous, shrink it. Prevents one weird batch
   from destroying hours of training.
 - **Weight decay 0.1** — gently pull weights toward zero unless the data insists otherwise.
@@ -713,6 +727,42 @@ stores only the compact gradients, and lets the rest of the model’s backward r
 - The trainer still receives a **sum** of losses and a **count** of valid tokens so micro-batch accumulation stays exact.
 
 In short: the model still learns “guess the next token,” but the memory peak that used to come from materializing the full vocabulary scores is gone.
+
+
+
+
+### Packing strategies — how documents become rows
+
+The simplest way to turn many documents into fixed-length training rows is a **ribbon**:
+glue every document's tokens end to end into one long stream (with `<|eos|>` marking where
+one document ends and the next begins), then slice off `sequence_length`-sized chunks as
+they become available. Nothing is wasted, but most rows end with one document's tail
+immediately followed by an unrelated document's head — an artificial boundary the model has
+to learn to ignore, and whichever document happens to straddle a row boundary gets cut off
+arbitrarily.
+
+`packing.py` adds two real alternatives, each trading something different for cleaner
+boundaries:
+
+- **Best-fit packing** — instead of packing documents in arrival order, sort them by length
+  and slot each one into whichever partially-filled row has the least room left that can
+  still hold it (the classic "bin packing" problem). Documents almost never get split, and
+  essentially no tokens are wasted — DeepSeek's own real production tech report (checked
+  directly by this project, not just cited secondhand) confirms they use exactly this
+  technique too, with a measured padding rate under 0.01%.
+- **BOS-aligned crop** — each row starts completely fresh with a `<|bos|>` token plus one
+  whole document, best-fit-fills the rest of the row with more whole documents, and if the
+  next document doesn't fit and there's still room, its head is cropped to fill the row
+  exactly — the rest of that document is thrown away for good. Every row's boundaries are
+  now perfectly clean, at a real, measured cost: on this project's own data, cropping threw
+  away about half the tokens compared to the other two strategies.
+
+
+A related, separate idea: even with ribbon packing's messy boundaries, you can stop a token
+from *attending* across them — a real per-position mask so a document can never look at the
+document sitting next to it in the same row, without changing the packing itself. This is
+now standard practice at the frontier (Llama 3's own paper describes it plainly, and so does
+DeepSeek's tech report);
 
 ---
 

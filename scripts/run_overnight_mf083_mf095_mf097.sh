@@ -154,8 +154,38 @@ if [[ "${STATUS[prep-mf095-dclm-edu]:-}" == "SUCCESS" && "${STATUS[prep-mf095-fi
         --mixture "code;data/shards/mf095-github-code-train/train;0.15" \
         --mixture "math;data/shards/mf095-finemath-train/train;0.05" \
         --mixture "synthetic;data/shards/mf095-cosmopedia-v2-train/train;0.05"
+
+    # Real decay-phase curriculum test (MF-095's own core question, previously
+    # unexercised): reweight toward the highest-quality/most-curated sources
+    # (Cosmopedia-v2, FineMath) once WSD's decay phase starts. --decay-mixture
+    # requires --schedule wsd, so a matching wsd-schedule/fixed-mixture arm
+    # runs alongside it (not cosine) to isolate the curriculum's own real
+    # effect without also confounding it with a schedule-type change.
+    run_step "mf095-wsd-fixed" "artifacts/mf095-mixture/wsd-fixed/final/model.safetensors" "$PYTHON" train/pretrain.py \
+        --config configs/150m-modern.toml --output artifacts/mf095-mixture/wsd-fixed \
+        --updates 5000 --batch-size 2 --seed 42 --device cuda --keep-last-n-checkpoints 2 --schedule wsd \
+        --mixture "dclm;data/shards/mf095-dclm-edu-train/train;0.45" \
+        --mixture "web;data/shards/mf064-150m-train/train;0.30" \
+        --mixture "code;data/shards/mf095-github-code-train/train;0.15" \
+        --mixture "math;data/shards/mf095-finemath-train/train;0.05" \
+        --mixture "synthetic;data/shards/mf095-cosmopedia-v2-train/train;0.05"
+
+    run_step "mf095-wsd-decay-curriculum" "artifacts/mf095-mixture/wsd-decay-curriculum/final/model.safetensors" "$PYTHON" train/pretrain.py \
+        --config configs/150m-modern.toml --output artifacts/mf095-mixture/wsd-decay-curriculum \
+        --updates 5000 --batch-size 2 --seed 42 --device cuda --keep-last-n-checkpoints 2 --schedule wsd \
+        --mixture "dclm;data/shards/mf095-dclm-edu-train/train;0.45" \
+        --mixture "web;data/shards/mf064-150m-train/train;0.30" \
+        --mixture "code;data/shards/mf095-github-code-train/train;0.15" \
+        --mixture "math;data/shards/mf095-finemath-train/train;0.05" \
+        --mixture "synthetic;data/shards/mf095-cosmopedia-v2-train/train;0.05" \
+        --decay-mixture "dclm;0.35" \
+        --decay-mixture "web;0.15" \
+        --decay-mixture "math;0.15" \
+        --decay-mixture "synthetic;0.20"
 else
     skip_step "mf095-proposed-5-source" "one or more of its four data-prep steps did not succeed"
+    skip_step "mf095-wsd-fixed" "one or more of its four data-prep steps did not succeed"
+    skip_step "mf095-wsd-decay-curriculum" "one or more of its four data-prep steps did not succeed"
 fi
 
 run_step "mf095-fineweb-only" "artifacts/mf095-mixture/fineweb-only/final/model.safetensors" "$PYTHON" train/pretrain.py \

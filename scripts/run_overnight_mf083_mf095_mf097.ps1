@@ -186,8 +186,45 @@ if ($mixturePrepsOk) {
         "--mixture", "math;data/shards/mf095-finemath-train/train;0.05",
         "--mixture", "synthetic;data/shards/mf095-cosmopedia-v2-train/train;0.05"
     ) -AlreadyDoneMarker "artifacts/mf095-mixture/proposed-5-source/final/model.safetensors"
+
+    # Real decay-phase curriculum test (MF-095's own core question, previously
+    # unexercised): the same proposed mixture for the stable phase, reweighted
+    # toward the highest-quality/most-curated sources (Cosmopedia-v2, FineMath)
+    # once WSD's decay phase starts. --decay-mixture requires --schedule wsd,
+    # so a matching wsd-schedule/fixed-mixture arm is run alongside it (not
+    # cosine) -- comparing these two isolates the curriculum's own real effect
+    # without also confounding it with a schedule-type change.
+    Invoke-Step "mf095-wsd-fixed" @(
+        "train/pretrain.py", "--config", "configs/150m-modern.toml",
+        "--output", "artifacts/mf095-mixture/wsd-fixed",
+        "--updates", "5000", "--batch-size", "2", "--seed", "42", "--device", "cuda",
+        "--keep-last-n-checkpoints", "2", "--schedule", "wsd",
+        "--mixture", "dclm;data/shards/mf095-dclm-edu-train/train;0.45",
+        "--mixture", "web;data/shards/mf064-150m-train/train;0.30",
+        "--mixture", "code;data/shards/mf095-github-code-train/train;0.15",
+        "--mixture", "math;data/shards/mf095-finemath-train/train;0.05",
+        "--mixture", "synthetic;data/shards/mf095-cosmopedia-v2-train/train;0.05"
+    ) -AlreadyDoneMarker "artifacts/mf095-mixture/wsd-fixed/final/model.safetensors"
+
+    Invoke-Step "mf095-wsd-decay-curriculum" @(
+        "train/pretrain.py", "--config", "configs/150m-modern.toml",
+        "--output", "artifacts/mf095-mixture/wsd-decay-curriculum",
+        "--updates", "5000", "--batch-size", "2", "--seed", "42", "--device", "cuda",
+        "--keep-last-n-checkpoints", "2", "--schedule", "wsd",
+        "--mixture", "dclm;data/shards/mf095-dclm-edu-train/train;0.45",
+        "--mixture", "web;data/shards/mf064-150m-train/train;0.30",
+        "--mixture", "code;data/shards/mf095-github-code-train/train;0.15",
+        "--mixture", "math;data/shards/mf095-finemath-train/train;0.05",
+        "--mixture", "synthetic;data/shards/mf095-cosmopedia-v2-train/train;0.05",
+        "--decay-mixture", "dclm;0.35",
+        "--decay-mixture", "web;0.15",
+        "--decay-mixture", "math;0.15",
+        "--decay-mixture", "synthetic;0.20"
+    ) -AlreadyDoneMarker "artifacts/mf095-mixture/wsd-decay-curriculum/final/model.safetensors"
 } else {
     Skip-Step "mf095-proposed-5-source" "one or more of its four data-prep steps did not succeed"
+    Skip-Step "mf095-wsd-fixed" "one or more of its four data-prep steps did not succeed"
+    Skip-Step "mf095-wsd-decay-curriculum" "one or more of its four data-prep steps did not succeed"
 }
 
 Invoke-Step "mf095-fineweb-only" @(
@@ -219,7 +256,8 @@ $order = @(
     "prep-mf097-best-fit", "prep-mf097-bos-crop", "prep-mf095-dclm-edu", "prep-mf095-finemath",
     "prep-mf095-cosmopedia-v2", "prep-mf095-github-code",
     "mf083-baseline", "mf083-cautious", "mf097-ribbon", "mf097-best-fit", "mf097-bos-crop",
-    "mf095-proposed-5-source", "mf095-fineweb-only", "mf095-web-code-70-30"
+    "mf095-proposed-5-source", "mf095-wsd-fixed", "mf095-wsd-decay-curriculum",
+    "mf095-fineweb-only", "mf095-web-code-70-30"
 )
 foreach ($name in $order) {
     $value = "NOT RUN"
