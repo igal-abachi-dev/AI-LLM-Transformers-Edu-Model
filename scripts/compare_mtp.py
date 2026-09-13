@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -34,7 +35,13 @@ from minifrontier.mtp import MTPHeads
 from minifrontier.reproducibility import seed_everything
 from minifrontier.shards import PackedShardDataset, ShardBatchProvider
 from minifrontier.tokenizer import MiniFrontierTokenizer
-from minifrontier.training import TrainingConfig, build_adamw, train_updates
+from minifrontier.training import (
+    LearningRateSchedule,
+    TrainingConfig,
+    TrainingState,
+    build_adamw,
+    train_updates,
+)
 
 VALIDATION_BATCH_SIZE = 8
 
@@ -66,6 +73,24 @@ def parse_args() -> argparse.Namespace:
         help="which arm(s) to run -- e.g. '--arms mtp' to retry just the mtp arm "
         "after an interrupted run already produced a real 'baseline' checkpoint",
     )
+    parser.add_argument(
+        "--progress-interval",
+        type=int,
+        default=100,
+        help="Print a real progress line (update count, loss, tokens/s so far) every "
+        "this many updates. MF-129: this script previously gave zero signal until an "
+        "entire arm finished, which made a real, unexpectedly long run indistinguishable "
+        "from a hang. Set to a value >= --updates to disable.",
+    )
+    parser.add_argument(
+        "--checkpoint-interval",
+        type=int,
+        default=None,
+        help="MF-129: also save a real, resumable-by-hand partial checkpoint (overwriting "
+        "the same '<arm>-partial' directory each time, not accumulating one per interval) "
+        "every this many updates. None (the default) disables partial checkpointing -- "
+        "only the progress line above.",
+    )
     return parser.parse_args()
 
 
@@ -75,6 +100,10 @@ def main() -> None:
         raise ValueError("updates and batch size must be positive")
     if args.mtp_extra_heads <= 0 or args.mtp_loss_weight <= 0:
         raise ValueError("mtp-extra-heads and mtp-loss-weight must be positive")
+    if args.progress_interval <= 0:
+        raise ValueError("progress-interval must be positive")
+    if args.checkpoint_interval is not None and args.checkpoint_interval <= 0:
+        raise ValueError("checkpoint-interval must be positive when provided")
     config = ModelConfig.from_toml(args.config)
     dataset = PackedShardDataset(args.train_shards)
     args.output.mkdir(parents=True, exist_ok=True)
@@ -121,13 +150,67 @@ def main() -> None:
                 {"params": list(mtp_heads.parameters()), "weight_decay": training.weight_decay}
             )
         provider = ShardBatchProvider(dataset, batch_size=args.batch_size, seed=args.seed)
+        arm_name = f"seed-{args.seed}-{label}"
         started = time.perf_counter()
+
+        def update_callback(
+            current_model: MiniFrontier,
+            current_optimizer: torch.optim.Optimizer,
+            current_schedule: LearningRateSchedule,
+            current_state: TrainingState,
+            *,
+            _arm_name: str = arm_name,
+            _mtp_extra_heads: int = mtp_extra_heads,
+            _mtp_loss_weight: float = mtp_loss_weight,
+            _mtp_heads: MTPHeads | None = mtp_heads,
+            _names: list[str] = names,
+            _provider: ShardBatchProvider = provider,
+            _training: TrainingConfig = training,
+            _started: float = started,
+        ) -> None:
+            # MF-129: this callback is the only thing standing between "a real,
+            # unexpectedly long run" and "indistinguishable from a hang" -- both
+            # this print and (optionally) the partial checkpoint below exist
+            # specifically because a real retrain ran 190+ minutes with zero
+            # signal, and had to be killed unresolved rather than diagnosed.
+            if current_state.completed_updates % args.progress_interval == 0:
+                arm_elapsed = time.perf_counter() - _started
+                tokens_per_second = (
+                    current_state.consumed_target_tokens / arm_elapsed if arm_elapsed > 0 else 0.0
+                )
+                print(
+                    f"[{_arm_name}] {current_state.completed_updates}/{args.updates} updates, "
+                    f"loss={current_state.last_loss:.6f}, "
+                    f"tokens/s={tokens_per_second:.1f}, elapsed={arm_elapsed:.1f}s",
+                    flush=True,
+                )
+            if (
+                args.checkpoint_interval is not None
+                and current_state.completed_updates % args.checkpoint_interval == 0
+            ):
+                save_training_checkpoint(
+                    args.output / f"{_arm_name}-partial",
+                    current_model,
+                    optimizer=current_optimizer,
+                    scheduler=current_schedule,
+                    trainer_state={
+                        "training_state": current_state.to_dict(),
+                        "training_config": asdict(_training),
+                        "mtp_extra_heads": _mtp_extra_heads,
+                        "mtp_loss_weight": _mtp_loss_weight,
+                        "adamw_param_group_names": _names,
+                    },
+                    data_cursor=_provider.state_dict(),
+                    mtp_heads=_mtp_heads,
+                )
+
         optimizer, schedule, state, _ = train_updates(
             model,
             provider,
             training,
             device=args.device,
             optimizer=optimizer,
+            update_callback=update_callback,
             mtp_heads=mtp_heads,
         )
         elapsed = time.perf_counter() - started
@@ -151,7 +234,6 @@ def main() -> None:
                 "bits_per_byte": metrics.bits_per_byte,
                 "predicted_tokens": metrics.predicted_tokens,
             }
-        arm_name = f"seed-{args.seed}-{label}"
         save_training_checkpoint(
             args.output / arm_name,
             model,
@@ -167,6 +249,10 @@ def main() -> None:
             data_cursor=provider.state_dict(),
             mtp_heads=mtp_heads,
         )
+        if args.checkpoint_interval is not None:
+            partial_dir = args.output / f"{arm_name}-partial"
+            if partial_dir.exists():
+                shutil.rmtree(partial_dir)
         results.append(
             {
                 "arm": arm_name,

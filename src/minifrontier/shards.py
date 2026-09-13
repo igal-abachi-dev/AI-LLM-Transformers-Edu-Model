@@ -37,6 +37,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
+import pyarrow as pa
+import pyarrow.parquet as pq
 import torch
 from torch.utils.data import Dataset
 
@@ -77,14 +79,34 @@ def hamming_distance(left: int, right: int) -> int:
 
 
 class DiskDeduplicator:
-    """SQLite-backed exact/near signature index that retains no document text."""
+    """SQLite-backed exact/near signature index that retains no document text.
 
-    def __init__(self, path: str | Path, *, max_hamming_distance: int = 3) -> None:
+    Commits are batched (``commit_batch_size`` new signatures per commit,
+    default 1000, matching ``ParquetDocumentWriter``'s own batching) rather
+    than one `fsync`-forcing commit per document. Safe to batch: `classify`
+    and `add` share one live connection throughout a run, and SQLite always
+    sees its own connection's uncommitted writes, so within-run duplicate
+    detection is exactly as correct as committing every row -- deferring
+    `commit()` only changes *durability* (what survives an actual crash), and
+    `prepare_data.py`'s own pipeline already has no per-document resume; a
+    killed run's output is entirely discarded and restarted, not resumed row
+    by row, regardless of how often this class commits. ``close``/``__exit__``
+    always flushes any remaining uncommitted batch first, so a run that
+    completes normally never loses its own tail end.
+    """
+
+    def __init__(
+        self, path: str | Path, *, max_hamming_distance: int = 3, commit_batch_size: int = 1000
+    ) -> None:
         if not 0 <= max_hamming_distance <= 8:
             raise ValueError("max_hamming_distance must be in [0, 8]")
+        if commit_batch_size <= 0:
+            raise ValueError("commit_batch_size must be positive")
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.max_hamming_distance = max_hamming_distance
+        self.commit_batch_size = commit_batch_size
+        self._pending_commits = 0
         self.connection = sqlite3.connect(self.path)
         self.connection.execute("CREATE TABLE IF NOT EXISTS exact(hash TEXT PRIMARY KEY)")
         self.connection.execute(
@@ -120,9 +142,15 @@ class DiskDeduplicator:
             "INSERT INTO bands(band, value, signature) VALUES (?, ?, ?)",
             [(band, value, f"{signature:016x}") for band, value in self._bands(signature)],
         )
-        self.connection.commit()
+        self._pending_commits += 1
+        if self._pending_commits >= self.commit_batch_size:
+            self.connection.commit()
+            self._pending_commits = 0
 
     def close(self) -> None:
+        if self._pending_commits > 0:
+            self.connection.commit()
+            self._pending_commits = 0
         self.connection.close()
 
     def __enter__(self) -> DiskDeduplicator:
@@ -371,6 +399,89 @@ class TokenShardWriter:
         manifest.write(temporary)
         os.replace(temporary, self.directory / "manifest.json")
         return manifest
+
+
+_DOCUMENT_PARQUET_SCHEMA = pa.schema(
+    [
+        (field_name, pa.string())
+        for field_name in (
+            "text",
+            "source",
+            "revision",
+            "license",
+            "language",
+            "record_id",
+            "content_hash",
+            "path",
+            "source_type",
+            "split",
+            "parent_content_hash",
+            "transform",
+        )
+    ]
+)
+
+
+class ParquetDocumentWriter:
+    """Snapshot admitted, pre-tokenization ``Document`` rows to a single Parquet file.
+
+    This is a *publish-oriented* export, not a training input: it captures the
+    same admitted-document stream `TokenShardWriter` tokenizes and packs, in
+    the same pass, before tokenization -- not by reading the token shards back
+    (MF-125, 2026-09-12 decision, see ``docs/IMPLEMENTATION_DECISIONS.md``).
+    Raw text plus every provenance field survives, matching the real Parquet
+    convention every one of this project's own upstream sources uses on the
+    HF Hub (FineWeb-Edu, DCLM-Edu, FineMath) -- unlike the npy token shards,
+    a Parquet export commits to no tokenizer/vocabulary/packing choice, so it
+    is the right artifact if the admitted corpus is ever published for other
+    consumers to retokenize themselves.
+
+    Buffers ``batch_size`` rows in memory before each flush, so exporting this
+    alongside token-shard writing does not multiply this project's memory
+    footprint by corpus size the way accumulating every row until the end
+    would. An explicit, fixed schema (every field is a nullable string) avoids
+    a real pyarrow pitfall: inferring the schema fresh from each batch can
+    silently disagree across batches when an optional column (``path``,
+    ``split``, ...) happens to be all-``None`` in one batch and not another.
+    """
+
+    def __init__(self, path: str | Path, *, batch_size: int = 1000) -> None:
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        self.path = Path(path)
+        self.batch_size = batch_size
+        self._temporary_path = self.path.with_name(f".{self.path.name}.tmp")
+        self._buffer: list[dict[str, Any]] = []
+        self._writer: pq.ParquetWriter | None = None
+        self._row_count = 0
+
+    def add(self, document: Document) -> None:
+        self._buffer.append(asdict(document))
+        if len(self._buffer) >= self.batch_size:
+            self._flush()
+
+    def _flush(self) -> None:
+        if not self._buffer:
+            return
+        table = pa.Table.from_pylist(self._buffer, schema=_DOCUMENT_PARQUET_SCHEMA)
+        if self._writer is None:
+            self._writer = pq.ParquetWriter(self._temporary_path, _DOCUMENT_PARQUET_SCHEMA)
+        self._writer.write_table(table)
+        self._row_count += len(self._buffer)
+        self._buffer.clear()
+
+    def finalize(self) -> int:
+        """Flush, close, and atomically publish the file. Returns the total row count."""
+
+        self._flush()
+        if self._writer is None:
+            # No rows were ever added -- still produce a real, valid, empty-schema
+            # Parquet file rather than silently leaving no file at all.
+            pq.ParquetWriter(self._temporary_path, _DOCUMENT_PARQUET_SCHEMA).close()
+        else:
+            self._writer.close()
+        os.replace(self._temporary_path, self.path)
+        return self._row_count
 
 
 class PackedShardDataset(Dataset[tuple[torch.Tensor, int]]):

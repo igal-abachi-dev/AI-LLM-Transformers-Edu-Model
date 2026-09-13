@@ -90,6 +90,54 @@ class MiniFrontierEvalLM(LM):
 
     @torch.inference_mode()
     def _score(self, prefix: list[int], continuation: list[int]) -> tuple[float, bool]:
+        """Log-probability of ``continuation`` given ``prefix``, teacher-forced.
+
+        The whole (prefix, continuation) sequence is already fully known --
+        nothing here is generated or sampled -- so this never needs a KV-cache
+        or a token-by-token loop at all: one forward pass already returns
+        logits at *every* position (``[B, S, vocab]``), and position ``i``'s
+        logits are exactly the prediction for position ``i + 1``. Reading off
+        the continuation's log-probabilities from that single pass is both
+        simpler and far faster than MF-113's original per-token loop, which
+        recomputed the entire growing context from scratch at every step.
+        """
+
+        if not continuation:
+            return 0.0, True
+        full_sequence = [self.tokenizer.bos_id, *prefix, *continuation]
+        if len(full_sequence) > self.max_length:
+            return self._score_sliding_window(prefix, continuation)
+        tokens = torch.tensor([full_sequence], dtype=torch.long, device=self.device)
+        logits = self.model(tokens).logits[0].float()  # [S, vocab]
+        continuation_length = len(continuation)
+        # logits[-continuation_length - 1 : -1] are the positions that predict
+        # the continuation tokens (each predicts the *next* position).
+        predicting_logits = logits[-continuation_length - 1 : -1]
+        targets = torch.tensor(continuation, dtype=torch.long, device=self.device)
+        log_probs = torch.log_softmax(predicting_logits, dim=-1)
+        token_log_probs = log_probs.gather(-1, targets.unsqueeze(-1)).squeeze(-1)
+        is_greedy = bool((predicting_logits.argmax(dim=-1) == targets).all())
+        return float(token_log_probs.sum().cpu()), is_greedy
+
+    @torch.inference_mode()
+    def _score_sliding_window(
+        self, prefix: list[int], continuation: list[int]
+    ) -> tuple[float, bool]:
+        """Rare fallback: (prefix, continuation) exceeds ``max_length``.
+
+        Kept as the original per-token loop rather than folded into the fast
+        path above, since the fast path's single fixed truncation window
+        would give *earlier* continuation tokens less prefix context than
+        this sliding window does (it drops the oldest tokens one at a time as
+        the loop progresses, rather than all at once) -- a real behavior
+        difference, not just a speed one, when truncation actually triggers.
+        Every real task this project evaluates uses short (sentence-length)
+        examples well under any real ``max_length``, so this path is not
+        expected to run in practice; it exists so a future oversized example
+        degrades to the slow-but-correct original path instead of silently
+        changing what gets scored.
+        """
+
         history = [self.tokenizer.bos_id, *prefix]
         log_probability = 0.0
         is_greedy = True

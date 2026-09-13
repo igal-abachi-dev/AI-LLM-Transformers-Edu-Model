@@ -17,3 +17,5 @@ tie_embeddings = true
 attention_impl = "auto"
 layer_norm_scaling = true
 gated_attention = true
+head_dim_override = 96
+

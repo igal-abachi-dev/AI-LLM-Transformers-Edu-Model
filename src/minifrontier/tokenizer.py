@@ -62,12 +62,12 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 from tokenizers import Regex, Tokenizer
 from tokenizers.decoders import ByteLevel as ByteLevelDecoder
 from tokenizers.models import BPE
-from tokenizers.pre_tokenizers import ByteLevel, Sequence, Split
+from tokenizers.pre_tokenizers import ByteLevel, Digits, Sequence, Split
 from tokenizers.trainers import BpeTrainer
 
 # Frozen for the whole project. Commercial models use 100k-200k; the idea is the
@@ -86,6 +86,16 @@ _DIGIT_SPLIT_PATTERNS: Final[dict[str, Regex]] = {
     "no_leading_space": Regex(r"\d{1,3}"),
     "leading_space": Regex(r" ?\d{1,3}"),
 }
+# "individual": every digit isolated one at a time (MF-100's research pass:
+# confirmed independently across StarCoder2, Llama/Llama-2, Mistral Tekken,
+# and SmolLM2's own real tokenizers -- a broad, repeated industry convention,
+# not an isolated choice). Uses the stock `Digits(individual_digits=True)`
+# pre-tokenizer class, not a regex `Split` like the two variants above, so it
+# is handled specially in `train_byte_bpe`'s pipeline construction rather
+# than living in `_DIGIT_SPLIT_PATTERNS`. A genuinely different granularity
+# from the two variants above (which group up to 3 digits) -- never tested
+# in this project in any form.
+_DIGIT_SPLIT_MODES: Final[frozenset[str]] = frozenset(_DIGIT_SPLIT_PATTERNS) | {"individual"}
 DIGIT_SPLIT_MODE: Final = "none"
 # GPT-4/cl100k_base's real pre-tokenization regex (MF-100), verified directly
 # against tiktoken's own primary source (openai/tiktoken's
@@ -107,7 +117,54 @@ _GPT4_REGEX_PATTERN: Final[Regex] = Regex(
     r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}"""
     r"""| ?[^\s\p{L}\p{N}]+[\r\n]*|\s+$|\s*[\r\n]|\s+(?!\S)|\s"""
 )
+#(adapted from PCRE possessive quantifiers to standard greedy quantifiers so Hugging Face’s tokenizers engine can parse it properly). ,(words, numbers ≤ 3 digits, punctuation, whitespace)
+#It matches text using 8 branches separated by | (alternation)
+#Matches an apostrophe ' followed by common English contraction endings case insensitive: 's, 'd, 'm, 't, 'll, 've, or 're.
+#Matches 1 or more Unicode letters (across all human languages) with optional leading space
+#Matches any Unicode number character  at least 1 and at most 3 digits.
+#One or more characters that are not whitespace, letters, or numbers (i.e., punctuation, symbols, math operators, emojis) followed by optional newline
+#partition all forms of whitespace cleanly
+#GPT-2 Regex Limitations vs. GPT-4:
+#Uncapped digits (\p{N}+): GPT-2 lets long numbers like "123456789" stay together as a single pre-token, causing BPE to merge arbitrary multi-digit numbers and hurting arithmetic reasoning. GPT-4 fixes this by capping digit runs to \p{N}{1,3}.
+#Case-sensitive contractions: GPT-2 only matches lowercase contractions ('s, 'm, 'll), missing uppercase contractions like 'S or 'LL. GPT-4 uses (?i:...).
+#Leading characters: GPT-2 only allows an ASCII space ? before letters/symbols, whereas GPT-4 uses [^\r\n\p{L}\p{N}]? to prevent newlines from accidentally binding to the start of words.
+
+#The main pathology of legacy tokenizers (like GPT-2) was unbounded digit runs (\p{N}+), which merged arbitrary phone numbers, timestamps, and IDs into monolithic tokens. 
+#Because _GPT4_REGEX_PATTERN already includes \p{N}{1,3}, it isolates numbers into small, predictable chunks at the root stage. A second split stage was redundant at best.
+
+
+
+
+# GPT-4o/o200k_base's real pre-tokenization regex (MF-100's wider tokenizer
+# survey), verified directly against tiktoken's own primary source
+# (openai/tiktoken's tiktoken_ext/openai_public.py), already in plain greedy
+# form (no possessive-quantifier porting needed, unlike cl100k_base above).
+# Genuinely different from cl100k_base, not just a bigger vocab on the same
+# pattern: explicit case-transition splitting via two alternatives (an
+# uppercase/titlecase run followed by lowercase, and vice versa) instead of
+# cl100k's single undifferentiated `\p{L}+` clause -- a real, more refined
+# rule for camelCase/PascalCase-style word boundaries, confirmed empirically
+# ("camelCaseWord" -> "camel"+"Case"+"Word", "PascalCase" -> "Pascal"+"Case").
+# Digit cap stays `\p{N}{1,3}`, same as cl100k.
+_O200K_REGEX_PATTERN: Final[Regex] = Regex(
+    r"""[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?"""
+    r"""|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?"""
+    r"""|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+"""
+)
+# this has Vocabulary Fragmentation at Smaller Scales , so gpt4 is better for smaller models, (CamelCase splits, word-attached contractions)
+
+
 PRETOKENIZER_MODE: Final = "gpt2"
+# MF-100 (2026-09-12): gpt4-style regex is the real, adopted default for Modern
+# specifically (`reports/mf100-stage2-comparison.md` -- a real, corroborated
+# fertility-and-BPB win), Edu keeps the plain default above unaffected. Two
+# named constants, not a preset parameter on `train_byte_bpe` itself: this
+# low-level function has no preset awareness by design, the same followed
+# convention `TrainingConfig` already uses for WSD/cautious-weight-decay
+# (`AGENTS.md`) -- preset selection belongs in a caller (`scripts/
+# train_tokenizer.py`'s `--preset` flag), not baked into the trainer.
+EDU_PRETOKENIZER_MODE: Final = "gpt2"
+MODERN_PRETOKENIZER_MODE: Final = "gpt4"
 # Bumped 2026-09-09 (MF-103/MF-104): three tokens (<|eot|>, <|file_sep|>,
 # <|repo_name|>) appended after the original eleven. Purely additive -- IDs
 # 0-10 are unchanged -- but this is real metadata for anyone inspecting a
@@ -274,6 +331,14 @@ class MiniFrontierTokenizer:
         return instance
 
 
+#A pre-tokenizer acts as a hard boundary maker:
+#It splits raw text into a sequence of isolated chunks (matches).
+#BPE merges are strictly forbidden from crossing chunk boundaries.
+#This guarantees that:
+#Letters don't merge with numbers.
+#Words don't merge with punctuation or newlines.
+#Contractions (e.g., 's, 'll) are isolated.
+#Numbers are capped at 1–3 digits to facilitate mathematical and digit-level reasoning.
 def train_byte_bpe(
     texts: Iterable[str],
     *,
@@ -295,56 +360,74 @@ def train_byte_bpe(
     ``digit_split`` selects the pre-tokenizer's digit-isolation rule: the frozen
     default ``"none"`` (no digit isolation at all, GPT-2-style long digit runs
     merge freely -- what every real checkpoint this project has trained uses),
-    or two evaluated-but-not-adopted variants, ``"no_leading_space"``
+    two evaluated-but-not-adopted grouped variants, ``"no_leading_space"``
     (``"\\d{1,3}"``) and ``"leading_space"`` (``" ?\\d{1,3}"``, which avoids
-    wasting a lone-space token before a number). MF-090's real comparison found
-    both variants cost fertility relative to no digit-splitting, and neither
-    was ever tested for a trained-quality effect (digit-splitting's actual
-    purpose is arithmetic capability, not fertility) -- they remain available
-    for a future properly isolated test, not for casual use.
+    wasting a lone-space token before a number), or ``"individual"`` (every
+    digit isolated one at a time, via `Digits(individual_digits=True)` -- a
+    genuinely different, untested granularity; see `_DIGIT_SPLIT_MODES`'s own
+    comment for the real StarCoder2/Llama/Tekken/SmolLM2 precedent). MF-090's
+    real comparison found the two grouped variants cost fertility relative to
+    no digit-splitting, and none of the three has ever been tested for a
+    trained-quality effect (digit-splitting's actual purpose is arithmetic
+    capability, not fertility) -- they remain available for a future properly
+    isolated test, not for casual use.
 
-    ``pretokenizer`` selects the pre-tokenization regex family: the frozen
-    default ``"gpt2"`` (this project's own regex, via `ByteLevel`'s built-in
-    pattern -- what every real checkpoint this project has trained uses), or
-    ``"gpt4"`` (MF-100, the real cl100k_base pattern, richer contraction/
-    digit/punctuation handling -- see `_GPT4_REGEX_PATTERN`'s own comment for
-    the verification trail). ``"gpt4"`` requires ``digit_split="none"``: the
-    GPT-4 pattern already caps digit runs at 1-3 itself, and stacking a
-    second, different digit-isolation rule on top was never tested and has
-    no clear semantics.
+    ``pretokenizer`` selects the pre-tokenization regex family: ``"gpt2"``
+    (this project's own regex, via `ByteLevel`'s built-in pattern -- Edu's
+    real default, `EDU_PRETOKENIZER_MODE`), ``"gpt4"`` (MF-100, the real
+    cl100k_base pattern, richer contraction/digit/punctuation handling --
+    see `_GPT4_REGEX_PATTERN`'s own comment for the verification trail; a
+    real, adopted win for Modern, `MODERN_PRETOKENIZER_MODE`,
+    `reports/mf100-stage2-comparison.md`), or ``"o200k"`` (MF-100's wider
+    survey, the real GPT-4o/o200k_base pattern -- adds explicit
+    case-transition splitting on top of cl100k's own refinements, see
+    `_O200K_REGEX_PATTERN`'s comment; won on fertility, lost on real trained
+    BPB, not adopted).
+
+    ``"gpt4"``/``"o200k"`` may be combined with a non-``"none"`` ``digit_split``
+    (2026-09-12, previously rejected as an untested combination): the digit
+    -split stage runs *after* the chosen regex, further splitting whatever
+    digit groups that regex already produced (both cap at 1-3 digits
+    themselves, so e.g. ``digit_split="individual"`` on top of ``"gpt4"``
+    means "gpt4's own richer contraction/whitespace/punctuation splitting,
+    but every digit isolated one at a time instead of grouped up to 3" --
+    the two axes are independent and compose in the order they run).
     """
 
-    # Every one of the 256 byte values needs a slot, plus the 11 markers, or some
+    # Every one of the 256 byte values needs a slot, plus the 14 markers, or some
     # inputs would be impossible to encode at all.
     minimum_vocab = len(SPECIAL_TOKENS) + len(ByteLevel.alphabet())
     if vocab_size < minimum_vocab:
         raise ValueError(f"vocab_size must be at least {minimum_vocab} for byte coverage")
     if min_frequency <= 0:
         raise ValueError("min_frequency must be positive")
-    if digit_split != "none" and digit_split not in _DIGIT_SPLIT_PATTERNS:
-        allowed = sorted(_DIGIT_SPLIT_PATTERNS)
+    if digit_split != "none" and digit_split not in _DIGIT_SPLIT_MODES:
+        allowed = sorted(_DIGIT_SPLIT_MODES)
         raise ValueError(f"digit_split must be 'none' or one of {allowed}, got {digit_split!r}")
-    if pretokenizer not in ("gpt2", "gpt4"):
-        raise ValueError(f"pretokenizer must be 'gpt2' or 'gpt4', got {pretokenizer!r}")
-    if pretokenizer == "gpt4" and digit_split != "none":
-        raise ValueError("pretokenizer='gpt4' requires digit_split='none' (untested combination)")
+    if pretokenizer not in ("gpt2", "gpt4", "o200k"):
+        raise ValueError(f"pretokenizer must be 'gpt2', 'gpt4', or 'o200k', got {pretokenizer!r}")
     # unk_token=None: with full byte coverage there is no such thing as an unknown
     # character, so an "unknown" token would only ever hide a bug.
     backend = Tokenizer(BPE(unk_token=None))
-    if pretokenizer == "gpt4":
-        # The GPT-4 regex is the entire pre-tokenization rule here -- ByteLevel's
-        # own GPT-2 regex must stay off, or it would re-split each already-split
-        # piece a second time under a different rule.
-        backend.pre_tokenizer = Sequence(
-            [
-                Split(_GPT4_REGEX_PATTERN, behavior="isolated"),
-                ByteLevel(add_prefix_space=False, use_regex=False),
-            ]
-        )
+    if pretokenizer in ("gpt4", "o200k"):
+        # The chosen regex runs first; an additional digit-split stage (if
+        # requested) further splits whatever digit groups it already produced,
+        # then ByteLevel's own GPT-2 regex must stay off, or it would re-split
+        # each already-split piece a second time under a third, different rule.
+        regex_pattern = _GPT4_REGEX_PATTERN if pretokenizer == "gpt4" else _O200K_REGEX_PATTERN
+        stages: list[Any] = [Split(regex_pattern, behavior="isolated")]
+        if digit_split == "individual":
+            stages.append(Digits(individual_digits=True))
+        elif digit_split != "none":
+            stages.append(Split(_DIGIT_SPLIT_PATTERNS[digit_split], behavior="isolated"))
+        stages.append(ByteLevel(add_prefix_space=False, use_regex=False))
+        backend.pre_tokenizer = Sequence(stages)
     else:
         byte_level = ByteLevel(add_prefix_space=False, use_regex=True)
         if digit_split == "none":
             backend.pre_tokenizer = byte_level
+        elif digit_split == "individual":
+            backend.pre_tokenizer = Sequence([Digits(individual_digits=True), byte_level])
         else:
             backend.pre_tokenizer = Sequence(
                 [Split(_DIGIT_SPLIT_PATTERNS[digit_split], behavior="isolated"), byte_level]

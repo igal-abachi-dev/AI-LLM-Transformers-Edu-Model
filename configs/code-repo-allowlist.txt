@@ -27,6 +27,7 @@ psf/requests
 numpy/numpy
 pandas-dev/pandas
 scikit-learn/scikit-learn
+tensorflow/tensorflow
 pytest-dev/pytest
 sqlalchemy/sqlalchemy
 pydantic/pydantic
@@ -41,6 +42,10 @@ scipy/scipy
 TheAlgorithms/Python
 langchain-ai/langchain
 openai/whisper
+pallets/jinja
+Textualize/rich
+streamlit/streamlit
+huggingface/transformers
 
 # --- JavaScript ---
 facebook/react
@@ -64,6 +69,8 @@ mrdoob/three.js
 leaflet/leaflet
 jquery/jquery
 vercel/next.js
+d3/d3
+pnpm/pnpm
 
 # --- TypeScript ---
 microsoft/TypeScript
@@ -86,6 +93,8 @@ mermaid-js/mermaid
 
 # --- Go ---
 golang/go
+caddyserver/caddy
+cli/cli
 gin-gonic/gin
 gorilla/mux
 spf13/cobra
@@ -102,6 +111,17 @@ junegunn/fzf
 jesseduffield/lazygit
 traefik/traefik
 rclone/rclone
+charmbracelet/bubbletea
+spf13/viper
+go-gorm/gorm
+labstack/echo
+uber-go/zap
+sirupsen/logrus
+gohugoio/hugo
+helm/helm
+containerd/containerd
+urfave/cli
+argoproj/argo-cd
 
 # --- C# ---
 dotnet/runtime
@@ -117,6 +137,52 @@ Humanizr/Humanizer
 FluentValidation/FluentValidation
 PowerShell/PowerShell
 files-community/Files
+xunit/xunit
+moq/moq
+App-vNext/Polly
+StackExchange/StackExchange.Redis
+AvaloniaUI/Avalonia
+microsoft/PowerToys
+CommunityToolkit/dotnet
+dotnet/eShop
+jasontaylordev/CleanArchitecture
+ardalis/CleanArchitecture
+DevToys-app/DevToys
+DapperLib/Dapper
+microsoft/semantic-kernel
+QuantConnect/Lean
+microsoft/FASTER
+icsharpcode/ILSpy
+microsoft/garnet
+dotnet/orleans
+MassTransit/MassTransit
+dotnet/yarp
+dotnet/sdk
+kgrzybek/modular-monolith-with-ddd
+openiddict/openiddict-core
+domaindrivendev/Swashbuckle.AspNetCore
+SignalR/SignalR
+protobuf-net/protobuf-net
+MessagePack-CSharp/MessagePack-CSharp
+grpc/grpc-dotnet
+nodatime/nodatime
+cefsharp/CefSharp
+microsoft/kernel-memory
+dotnet/machinelearning
+ZeBobo5/Vlc.DotNet
+OpenTK/OpenTK
+quartznet/quartznet
+dotnet/reactive
+Azure/azure-sdk-for-net
+aws/aws-sdk-net
+dotnet/BenchmarkDotNet
+DuendeArchive/IdentityServer4
+auth0/auth0.net
+auth0/auth0-aspnetcore-authentication
+AzureAD/microsoft-authentication-library-for-dotnet
+AzureAD/microsoft-identity-web
+aspnet-contrib/AspNet.Security.OAuth.Providers
+microsoft/aspire
 
 # --- C++ ---
 nlohmann/json
@@ -133,6 +199,14 @@ ggml-org/llama.cpp
 godotengine/godot
 ocornut/imgui
 ggml-org/whisper.cpp
+protocolbuffers/protobuf
+grpc/grpc
+microsoft/onnxruntime
+facebook/folly
+envoyproxy/envoy
+microsoft/terminal
+google/leveldb
+skypjack/entt
 
 # --- Rust ---
 rust-lang/rust
@@ -150,6 +224,16 @@ tauri-apps/tauri
 astral-sh/ruff
 nushell/nushell
 ajeetdsouza/zoxide
+starship/starship
+qdrant/qdrant
+bytecodealliance/wasmtime
+wasmerio/wasmer
+rust-lang/rust-analyzer
+tikv/tikv
+swc-project/swc
+alacritty/alacritty
+dtolnay/anyhow
+dtolnay/syn
 
 # --- Java ---
 spring-projects/spring-boot
@@ -168,6 +252,16 @@ apache/spark
 apache/dubbo
 apache/flink
 apache/rocketmq
+apache/zookeeper
+apache/lucene
+apache/pulsar
+mockito/mockito
+mybatis/mybatis-3
+quarkusio/quarkus
+micronaut-projects/micronaut-core
+redisson/redisson
+bazelbuild/bazel
+gradle/gradle
 
 # --- Kotlin ---
 JetBrains/kotlin
@@ -178,6 +272,12 @@ InsertKoinIO/koin
 square/kotlinpoet
 JakeWharton/timber
 JetBrains/Exposed
+square/leakcanary
+cashapp/sqldelight
+JetBrains/compose-multiplatform
+coil-kt/coil
+detekt/detekt
+arrow-kt/arrow
 
 # --- Elixir ---
 elixir-lang/elixir
@@ -203,3 +303,353 @@ tachyons-css/tachyons
 twbs/bootstrap
 saadeghi/daisyui
 unocss/unocss
+
+# --- MF-121 additions (2026-09-12) ---
+# Real gaps found against StarCoder2's own real 32-language training-data
+# table (arXiv:2402.19173, page 5, verified via direct PDF extraction, not
+# paraphrased): C, SQL, Markdown, Dockerfile, CMake, PowerShell, Shell,
+# Batchfile, and TeX were all real, substantial categories in a real
+# production code corpus that this list's original 12-language selection
+# (built around primary application languages) didn't deliberately target.
+# Every entry below is chosen the same way the original 161 were: real,
+# well-known, widely-used real-world popularity for that repo specifically
+# -- NOT weighted toward StarCoder2's own internal byte-size distribution
+# across categories (e.g. CMake was their single largest row by size, but
+# that is not a reason to add a disproportionate number of CMake repos
+# here). Every license below is a real, direct GitHub API
+# `license.spdx_id` check at addition time, not assumed from name
+# recognition -- several otherwise-obvious, very popular candidates
+# (curl/curl, nodejs/node, facebook/zstd, libevent/libevent,
+# lz4/lz4, lua/lua, chocolatey/choco) were checked and rejected here
+# because the GitHub API reports NOASSERTION or no license at all for
+# them, matching this project's own "reject missing provenance" rule
+# rather than assuming a well-known project must be permissively licensed.
+# PowerShell/PowerShell (already in the C# section above) and
+# microsoft/vcpkg (C++ section, CMake-heavy) already gave some real,
+# opportunistic coverage of two of these categories before this addition.
+
+# --- C ---
+libuv/libuv
+DaveGamble/cJSON
+openssl/openssl
+
+# --- SQL ---
+supabase/supabase
+sqlfluff/sqlfluff
+
+# --- Markdown ---
+public-apis/public-apis
+sindresorhus/awesome
+
+# --- Dockerfile ---
+docker-library/official-images
+docker/awesome-compose
+
+# --- CMake ---
+Kitware/CMake
+
+# --- PowerShell ---
+PowerShell/PSScriptAnalyzer
+
+# --- Shell ---
+ohmyzsh/ohmyzsh
+nvm-sh/nvm
+
+# --- Batchfile ---
+apache/tomcat
+
+# --- TeX ---
+Wandmalfarbe/pandoc-latex-template
+
+# --- AI/ML libraries gap (MF-121), added alongside the 9 categories above ---
+# tensorflow/tensorflow: real, verified Apache-2.0 (GitHub API license.spdx_id).
+# matplotlib/matplotlib and pytorch/pytorch were checked and NOT added: GitHub's
+# own API reports no detected license (null) and NOASSERTION respectively --
+# both are genuinely open-source in practice, but this project's license gate
+# relies on clean, machine-verifiable metadata, matching the same real rejection
+# already applied above to curl/node/zstd/libevent/lz4/lua/chocolatey.
+
+# --- Further real-world-popularity additions (2026-09-12), found via a real
+# awesome-list/top-repo research pass, each independently license-verified: ---
+# pallets/jinja (BSD-3-Clause), Textualize/rich (MIT), streamlit/streamlit
+# (Apache-2.0), huggingface/transformers (Apache-2.0) -- added to the Python
+# section above. caddyserver/caddy (Apache-2.0), cli/cli, the real GitHub CLI
+# (MIT) -- added to the Go section above.
+#
+# python-pillow/Pillow was checked and NOT added: its real license (the
+# historic PIL/MIT-CMU license) is genuinely permissive but, like
+# matplotlib's own custom license text, is non-standard wording that
+# automated detectors (and this project's own dataset-field-based filter)
+# may not resolve cleanly -- not added without further, more careful
+# verification, matching the same caution already applied to matplotlib.
+#
+# starship/starship and d3/d3 both use the real ISC license, which is not
+# currently one of this project's six accepted license strings
+# (Apache-2.0/BSD-2-Clause/BSD-3-Clause/CC0-1.0/MIT/Unlicense) despite being
+# functionally near-identical to MIT -- a real, possibly systemic gap in the
+# license list itself, not a repo-level decision; recorded but not resolved
+# here (see MF-121's backlog entry for the open question).
+
+# --- Third research pass additions (2026-09-12) ---
+# ISC was added to PERMISSIVE_CODE_LICENSES this session, resolving the open
+# question directly above: starship/starship (real ISC, directly confirmed by
+# both the GitHub API license.spdx_id field and a raw LICENSE fetch, 59.8k
+# real stars) and d3/d3 (real ISC, raw LICENSE fetch confirmed, 113.7k real
+# stars) are both added below -- to the Rust and JavaScript sections above,
+# respectively -- now that ISC is accepted.
+#
+# This pass targeted real, verified gaps in Rust/Go/Java/Kotlin/C++/C#
+# specifically (per awesome-rust/awesome-go/awesome-java/awesome-kotlin/
+# awesome-cpp and direct GitHub-popularity checks), since the first two
+# passes weighted Python/JS/TS most heavily and left these ecosystems
+# comparatively thin. Every entry below was independently confirmed via a
+# direct raw LICENSE(.txt/.md/-MIT) file fetch (not just the GitHub API
+# spdx_id field, per this project's own stricter rule) and a real star count
+# pulled from the live GitHub repo page at addition time. All are added to
+# their respective language sections above:
+#
+# Rust (+10): starship/starship (ISC, 59.8k), qdrant/qdrant (Apache-2.0,
+# 34.5k, vector DB), bytecodealliance/wasmtime (Apache-2.0, 18.6k, WASM
+# runtime), wasmerio/wasmer (MIT, 21.0k, WASM runtime -- kept alongside
+# wasmtime as a genuinely distinct, independently popular project, not
+# redundant coverage), rust-lang/rust-analyzer (MIT, 16.8k, the de facto
+# Rust LSP), tikv/tikv (Apache-2.0, 16.8k, CNCF-graduated distributed KV
+# store), swc-project/swc (Apache-2.0, 34.2k, the Rust compiler behind
+# Next.js's build pipeline), alacritty/alacritty (Apache-2.0/MIT dual,
+# 65.7k, terminal emulator), dtolnay/anyhow (MIT, 6.7k) and dtolnay/syn
+# (MIT, 3.4k -- modest stars but one of the single most-depended-upon
+# crates in the entire ecosystem via proc-macros; real usefulness, not
+# star count, is this project's own stated rule).
+#
+# Go (+11): charmbracelet/bubbletea (MIT, 44.9k, the dominant Go TUI
+# framework), spf13/viper (MIT, 30.5k, config), go-gorm/gorm (MIT, 40.0k,
+# the dominant Go ORM -- a real prior gap), labstack/echo (MIT, 32.7k, web
+# framework), uber-go/zap (MIT, 24.7k) and sirupsen/logrus (MIT, 25.7k,
+# both real gaps -- structured logging was entirely missing from the prior
+# Go list despite being near-universal in real Go services), gohugoio/hugo
+# (Apache-2.0, 89.8k, the dominant Go static site generator), helm/helm
+# (Apache-2.0, 30.2k, the standard Kubernetes package manager),
+# containerd/containerd (Apache-2.0, 21.3k, core container runtime),
+# urfave/cli (MIT, 24.2k, the other major Go CLI framework alongside the
+# already-listed cobra), argoproj/argo-cd (Apache-2.0, 24.1k, GitOps).
+#
+# Java (+10): apache/zookeeper (Apache-2.0, 12.8k), apache/lucene
+# (Apache-2.0, 3.6k -- modest GitHub stars because its real-world adoption
+# long predates GitHub star culture and flows mostly through Maven/Solr/
+# Elasticsearch, not direct stars; kept on real-world-usefulness grounds),
+# apache/pulsar (Apache-2.0, 15.3k), mockito/mockito (MIT, 15.5k, the
+# dominant Java mocking framework -- a real gap; junit5 was checked
+# alongside and rejected, see below), mybatis/mybatis-3 (Apache-2.0, 20.4k),
+# quarkusio/quarkus (Apache-2.0, 15.9k) and micronaut-projects/micronaut-core
+# (Apache-2.0, 6.4k, both real modern JVM framework alternatives to the
+# already-listed Spring), redisson/redisson (Apache-2.0, 24.4k),
+# bazelbuild/bazel (Apache-2.0, 25.8k) and gradle/gradle (Apache-2.0,
+# 18.8k, both real build-tool gaps alongside the already-listed maven).
+#
+# Kotlin (+6): square/leakcanary (Apache-2.0, 30.0k), cashapp/sqldelight
+# (Apache-2.0, 6.9k), JetBrains/compose-multiplatform (Apache-2.0, 19.4k),
+# coil-kt/coil (Apache-2.0, 11.9k), detekt/detekt (Apache-2.0, 7.0k),
+# arrow-kt/arrow (Apache-2.0, 6.6k) -- this was the thinnest section
+# (8 entries) before this pass; all six are real, well-known, widely-used
+# Kotlin-first libraries, not padding.
+#
+# C++ (+8): protocolbuffers/protobuf (BSD-3-Clause, 72.0k), grpc/grpc
+# (Apache-2.0, 45.3k -- the C++ core; grpc-go was already listed separately
+# in the Go section), microsoft/onnxruntime (MIT, 21.8k), facebook/folly
+# (Apache-2.0, 30.5k), envoyproxy/envoy (Apache-2.0, 28.9k),
+# microsoft/terminal (MIT, 104.9k), google/leveldb (BSD-3-Clause, 39.4k),
+# skypjack/entt (MIT, 13.1k).
+#
+# C# (+7): xunit/xunit (Apache-2.0, 4.6k -- modest stars but the standard
+# .NET test framework, same real-usefulness-over-stars reasoning as syn/
+# lucene above; a real gap since no xUnit-family framework was listed),
+# moq/moq (BSD-3-Clause, 6.4k, the dominant .NET mocking framework),
+# App-vNext/Polly (BSD-3-Clause, 14.2k, resilience/retry), StackExchange/
+# StackExchange.Redis (MIT, 6.2k), AvaloniaUI/Avalonia (MIT, 31.5k, the
+# dominant cross-platform .NET UI framework), microsoft/PowerToys (MIT,
+# 138.6k -- a large, obviously-missing top .NET repo), CommunityToolkit/
+# dotnet (MIT, 3.8k, official Microsoft MVVM/source-generator toolkit).
+#
+# JavaScript (+2, beyond the ISC-driven d3/d3 addition above): pnpm/pnpm
+# (MIT, 36.5k) -- a real, obviously-missing major package manager; npm's
+# own CLI was not re-checked (out of scope this pass) and yarn was left
+# alone since its classic v1 line is already a well-known BSD-2-Clause/
+# yarnpkg-berry split not cleanly a single verified license without more
+# work than this pass's marginal-value bar justified.
+#
+# Rejected this pass (checked, NOT added, with reasons):
+# - meilisearch/meilisearch: raw LICENSE fetch shows "MIT AND BUSL-1.1"
+#   (Business Source License covers the enterprise-feature code in the
+#   same repo) -- genuinely mixed-licensed like lz4/lz4 above, not a clean
+#   single permissive license.
+# - junit-team/junit5: raw LICENSE.md fetch confirms Eclipse Public License
+#   2.0 -- not one of this project's seven accepted licenses (EPL was never
+#   added; not to be confused with the already-accepted ISC).
+# - catchorg/Catch2: raw LICENSE.txt fetch confirms Boost Software License
+#   1.0 -- genuinely permissive in spirit but not one of the seven accepted
+#   license strings; not added, matching the same strict-list rule applied
+#   to ISC before this session's addition.
+# - glfw/glfw: raw LICENSE.md fetch confirms the Zlib License -- likewise
+#   genuinely permissive but not one of the seven accepted strings.
+# - DapperLib/Dapper and jbogard/MediatR: both report NOASSERTION on the
+#   GitHub API license field; Dapper's own License.txt merely points to
+#   "the Apache 2.0 license" by reference rather than embedding recognized
+#   license text, and MediatR has no LICENSE file at its expected path at
+#   all. Both are very likely genuinely permissively-licensed in practice
+#   (same real-world situation as curl/lua/pytorch/zstd/libevent/
+#   chocolatey above), but adding them cleanly would need a manual
+#   override entry in src/minifrontier/data.py's override table, which is
+#   out of scope for an allowlist-only change -- rejected here on the same
+#   "reject missing provenance" grounds as those six, not re-litigated.
+# - tj/commander.js and npm's own CLI: considered for the package-manager/
+#   CLI-tooling angle but not independently verified this pass (JS/TS was
+#   already the deepest-covered pair of sections coming in); left for a
+#   future pass rather than added on partial verification.
+
+# --- C# candidate-list additions (2026-09-12), from a user-supplied list of
+# ~55 raw candidate strings, several containing typos/wrong-owner guesses ---
+# 39 real, license-verified repos added to the C# section above (20 -> 59).
+# Every license verified by a direct raw LICENSE-family file fetch (not just
+# the GitHub API spdx_id field), plus a real star count and, for several
+# ambiguous names, a redirect/existence check against the live repo.
+#
+# Real owner/name corrections found and used (the user's given string either
+# does not exist or is stale; the repo below is the actual current one):
+# dotnet/aspire -> microsoft/aspire (redirects; MIT, LICENSE.TXT, 6.3k stars);
+# Orleans/orleans -> dotnet/orleans (MIT, 10.9k); yarp/yarp -> dotnet/yarp
+# (MIT, 9.6k); microsoft/KernelMemory -> microsoft/kernel-memory (MIT, 2.2k);
+# BenchmarkDotNet/BenchmarkDotNet -> dotnet/BenchmarkDotNet (MIT, 11.5k);
+# AspNet-Security-OAuth-Providers (no owner given) ->
+# aspnet-contrib/AspNet.Security.OAuth.Providers (Apache-2.0, 2.5k);
+# vlc-dotnet/vlc-dotnet (does not exist) -> ZeBobo5/Vlc.DotNet, the real,
+# long-established VLC .NET wrapper (MIT, a modest-but-real 964 stars --
+# added on real-world-usefulness grounds, same reasoning already used for
+# dtolnay/syn and apache/lucene above, not padding).
+# openiddict/openiddict-core appeared twice in the user's list (typo); added
+# once (Apache-2.0, 5.2k stars).
+#
+# The remaining 32 additions needed no name correction: dotnet/eShop (MIT),
+# jasontaylordev/CleanArchitecture (MIT, 20.5k) and ardalis/CleanArchitecture
+# (MIT, 18.5k) -- two genuinely distinct, independently popular Clean
+# Architecture templates by different authors, not redundant with each
+# other; DevToys-app/DevToys (MIT, 32.0k); DapperLib/Dapper (see manual
+# override note below); microsoft/semantic-kernel (MIT, 28.6k);
+# QuantConnect/Lean (Apache-2.0, 21.6k); microsoft/FASTER (MIT, 6.6k);
+# icsharpcode/ILSpy (MIT, 26.1k); microsoft/garnet (MIT, 12.0k);
+# MassTransit/MassTransit (Apache-2.0, 7.8k); dotnet/sdk (MIT, 3.2k);
+# kgrzybek/modular-monolith-with-ddd (MIT, 14.0k, a genuinely different
+# architectural-reference repo from the Clean Architecture templates above);
+# openiddict/openiddict-core (Apache-2.0, 5.2k);
+# domaindrivendev/Swashbuckle.AspNetCore (MIT, 5.5k, the standard ASP.NET
+# Core Swagger/OpenAPI generator); SignalR/SignalR (see manual override note
+# below); protobuf-net/protobuf-net (see manual override note below);
+# MessagePack-CSharp/MessagePack-CSharp (see manual override note below);
+# grpc/grpc-dotnet (Apache-2.0, 4.5k -- the C# gRPC implementation, a real,
+# distinct codebase from the already-listed grpc/grpc C++ core);
+# nodatime/nodatime (Apache-2.0, 3.0k); cefsharp/CefSharp (see manual
+# override note below); dotnet/machinelearning (MIT, 9.4k); OpenTK/OpenTK
+# (see manual override note below); quartznet/quartznet (Apache-2.0, 7.1k);
+# dotnet/reactive (MIT, 7.2k, Rx.NET); Azure/azure-sdk-for-net (MIT, 6.0k);
+# aws/aws-sdk-net (Apache-2.0 -- a real, official, heavily-used SDK despite
+# a modest 140 GitHub stars, same real-world-usefulness-over-stars reasoning
+# as above); DuendeArchive/IdentityServer4 (Apache-2.0, 64 stars -- the
+# original, pre-relicense IdentityServer4, archived by Duende when they
+# moved to a reciprocal-license model for their successor products, but its
+# own real LICENSE file still shows the clean, original Apache-2.0 text, both
+# the GitHub API and a raw fetch agree); auth0/auth0.net (MIT, 362);
+# auth0/auth0-aspnetcore-authentication (see manual override note below);
+# AzureAD/microsoft-authentication-library-for-dotnet (MIT, 1.5k);
+# AzureAD/microsoft-identity-web (MIT, 786).
+#
+# Manual-override entries added to src/minifrontier/data.py's
+# _MANUALLY_VERIFIED_REPO_LICENSES this pass (GitHub API reports
+# NOASSERTION for all seven, but each has a clean, unambiguous, real
+# permissive license confirmed by direct means): DapperLib/Dapper
+# (Apache-2.0 -- the repo's own License.txt only points to the license by
+# reference rather than embedding it, same situation flagged and rejected in
+# the prior pass above, but this time corroborated by nuget.org's own
+# official, maintainer-set `licenseExpression: Apache-2.0` field on the
+# real Dapper package, itself authored by Sam Saffron/Marc Gravell/Nick
+# Craver -- new, genuinely citable proof that was not checked last time, so
+# this reverses the prior rejection rather than re-litigating it without
+# cause); SignalR/SignalR (Apache-2.0, clean embedded .NET Foundation
+# notice -- the legacy pre-ASP.NET-Core SignalR; kept as a real, distinct
+# codebase from the SignalR implementation bundled in the already-listed
+# dotnet/aspnetcore, not a redundant duplicate); protobuf-net/protobuf-net
+# (Apache-2.0, clean embedded Marc Gravell copyright notice in Licence.txt
+# -- note the British spelling filename, which is likely why automated
+# detection misses it); MessagePack-CSharp/MessagePack-CSharp (MIT -- the
+# primary, clearly-stated project license; the same LICENSE file also
+# properly attributes two small embedded third-party components under
+# their own separate permissive licenses, BSD-2-Clause (lz4net) and
+# Apache-2.0 (.NET Foundation's BufferWriter.cs) -- unlike the already
+# -rejected lz4/lz4 and meilisearch/meilisearch, every license actually
+# present here is permissive, so this is not a mixed-license rejection
+# case); cefsharp/CefSharp (BSD-3-Clause, clean embedded text, standard
+# three-clause structure); OpenTK/OpenTK (MIT, clean embedded text); and
+# auth0/auth0-aspnetcore-authentication (MIT, clean embedded Auth0, Inc.
+# copyright notice, followed by an auto-generated third-party
+# dependency-license inventory that is not part of the repo's own license
+# and does not change it).
+#
+# Rejected this pass (checked, NOT added, with reasons):
+# - abpframework/abp: real GitHub API license.spdx_id is LGPL-3.0 -- not one
+#   of the seven accepted strings.
+# - TheAlgorithms/C-Sharp: real GitHub API license.spdx_id is GPL-3.0 (unlike
+#   the already-listed TheAlgorithms/Python, which is MIT -- each
+#   TheAlgorithms-org repo sets its own license independently; verified by
+#   raw LICENSE fetch, genuinely the full GPLv3 text, not a detection error).
+# - dneimke/MediatR: does not exist (confirmed 404) -- a typo or unrelated,
+#   unfindable repo, not added under the real project's name. The real,
+#   canonical MediatR repo (formerly jbogard/MediatR, already checked and
+#   rejected in a prior pass for having no LICENSE file) has since
+#   transferred ownership to LuckyPennySoftware/MediatR, whose LICENSE.md
+#   now makes the license unambiguous: Reciprocal Public License 1.5
+#   (RPL-1.5), a real, non-permissive reciprocal license -- not one of the
+#   seven accepted strings. This is now a confirmed rejection on real
+#   license grounds, not just an absent-metadata one.
+# - dnSpyEx/dnSpy: real GitHub API license.spdx_id is GPL-3.0.
+# - jellyfin/jellyfin: real GitHub API license.spdx_id is GPL-2.0.
+# - shadowsocks/shadowsocks-windows: raw LICENSE.txt fetch confirms the full
+#   GNU GPL-3.0 text -- rejected on real license grounds (this repo was also
+#   separately flagged for erring toward rejection on any ambiguity; the
+#   license itself settles it either way).
+# - antlr/antlr4: real, popular (19.0k stars), genuinely BSD-3-Clause -- but
+#   the repo is primarily the Java ANTLR tool plus multiple language-runtime
+#   targets (Java, C#, Python, JS, Go, C++, Swift, PHP, Dart, ...); the C#
+#   runtime is a small fraction of the repository, so it does not belong in
+#   this file's own per-repo language categorization the way every other C#
+#   entry does. Not added to the C# section for that reason; out of scope
+#   for this C#-only pass to add elsewhere.
+# - dotnet/csharplang: no LICENSE file found at any common path (confirmed
+#   404 across LICENSE/LICENSE.md/LICENSE.txt/License.txt/COPYING), and the
+#   GitHub API reports no license at all -- rejected on missing-provenance
+#   grounds. (It is also mostly language-design-proposal Markdown, not C#
+#   source, a second, independent reason it would add little real value
+#   even if licensed.)
+# - amantinband/CleanArchitecture: does not exist (confirmed 404) -- likely
+#   the user conflating this GitHub handle with the two real, already-added
+#   Clean Architecture templates (jasontaylordev's and ardalis's) above.
+# - gitextensions/gitextensions: raw LICENSE.md fetch confirms the full GNU
+#   GPL-3.0 text.
+# - Accord-net/framework (real casing: accord-net/framework): real GitHub
+#   API license.spdx_id is LGPL-2.1, and the repo is archived (unmaintained)
+#   -- rejected on license grounds regardless of its unmaintained status.
+# - ravendb/ravendb: raw LICENSE.txt fetch shows a proprietary End User
+#   License Agreement -- only the client library is MIT, the server
+#   software itself is AGPLv3-or-commercial-license, neither option
+#   permissive for the bulk of the codebase -- rejected.
+# - hangfireio/hangfire: raw LICENSE.md fetch confirms a real dual license,
+#   LGPL v3 OR a paid commercial license -- neither option is one of the
+#   seven accepted strings.
+# - duendesoftware/products (real casing: DuendeSoftware/products): a real
+#   source-code repository (not just marketing), but its own LICENSE file
+#   is a proprietary, custom "Duende Products" license requiring agreement
+#   to duendesoftware.com/license terms -- confirms the reciprocal/
+#   source-available relicensing this pass was warned to check for;
+#   rejected.
+# - duendesoftware/BFF: redirects to DuendeArchive/BFF (archived 2025-01-24,
+#   folded into the products repo above) -- no LICENSE file found at any
+#   common path and none shown on the repo page; rejected on
+#   missing-provenance grounds, consistent with the products rejection
+#   directly above.

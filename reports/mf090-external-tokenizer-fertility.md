@@ -78,6 +78,16 @@ one input to quality, not the same thing as it (this report's own methodology no
 token budget. A production tokenizer's fertility edge here does not predict it would win a real trained
 comparison at our budget any more than our own 32k variant's fertility edge did.
 
+## Follow-up (2026-09-11): digit-splitting is not the explanation for StarCoder2's edge
+
+`reports/mf100-fertility-triage.md`'s own-corpus isolated test found
+individual-digit splitting (the mechanism StarCoder2's real tokenizer
+uses) costs fertility on its own (+2.88% more tokens at matched 16k
+vocab/corpus) rather than helping it. Since StarCoder2 still comes out
+8.12% *ahead* of ours despite using that same costly mechanism, its real
+advantage is carried entirely by vocabulary size and/or corpus/merge
+quality, not digit-splitting -- see that report for the full reasoning.
+
 ## Caveats
 
 - Single held-out sample (FineWeb-Edu web text only) — no code, no math, no multilingual text. StarCoder2's

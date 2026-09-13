@@ -210,17 +210,84 @@ def test_pretokenizer_rejects_invalid_value() -> None:
         train_byte_bpe(_gpt4_corpus(), vocab_size=320, min_frequency=1, pretokenizer="gpt3")
 
 
-def test_pretokenizer_gpt4_rejects_combination_with_digit_split() -> None:
-    with pytest.raises(ValueError, match="untested combination"):
-        train_byte_bpe(
-            _gpt4_corpus(),
-            vocab_size=320,
-            min_frequency=1,
-            pretokenizer="gpt4",
-            digit_split="no_leading_space",
-        )
+def test_pretokenizer_gpt4_composes_with_individual_digit_split() -> None:
+    # 2026-09-12: gpt4/o200k + digit_split used to be rejected outright; now the
+    # digit-split stage runs after the regex, further splitting whatever digit
+    # groups the regex already produced. gpt4 alone caps at <=3 digits; stacking
+    # "individual" on top should isolate every digit instead.
+    tokenizer = train_byte_bpe(
+        _gpt4_corpus(),
+        vocab_size=320,
+        min_frequency=1,
+        pretokenizer="gpt4",
+        digit_split="individual",
+    )
+    assert _pretokenize(tokenizer, "123456789") == ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+
+
+def test_pretokenizer_gpt4_composes_with_grouped_digit_split() -> None:
+    tokenizer = train_byte_bpe(
+        _gpt4_corpus(),
+        vocab_size=320,
+        min_frequency=1,
+        pretokenizer="gpt4",
+        digit_split="no_leading_space",
+    )
+    # gpt4 alone would cap at 3 ("123456789" -> "123","456","789"); no_leading_space
+    # groups at <=3 too, so composing the two here should be a no-op on top of
+    # gpt4's own cap -- a real, checkable case where the two stages don't conflict.
+    assert _pretokenize(tokenizer, "123456789") == ["123", "456", "789"]
+    # gpt4's own contraction/whitespace handling still applies unchanged.
+    assert _pretokenize(tokenizer, "don't") == ["don", "'t"]
 
 
 def test_train_byte_bpe_rejects_unknown_digit_split_mode() -> None:
     with pytest.raises(ValueError, match="digit_split"):
         train_byte_bpe(["abc"], vocab_size=280, min_frequency=1, digit_split="bogus")
+
+
+def test_pretokenizer_o200k_caps_digit_runs_at_three() -> None:
+    tokenizer = train_byte_bpe(
+        _gpt4_corpus(), vocab_size=320, min_frequency=1, pretokenizer="o200k"
+    )
+    assert _pretokenize(tokenizer, "123456789") == ["123", "456", "789"]
+
+
+def test_pretokenizer_o200k_splits_on_case_transitions() -> None:
+    corpus = [*_gpt4_corpus(), "camelCaseWord and more camelCaseWord text " * 5]
+    tokenizer = train_byte_bpe(corpus, vocab_size=320, min_frequency=1, pretokenizer="o200k")
+    assert _pretokenize(tokenizer, "camelCaseWord") == ["camel", "Case", "Word"]
+
+
+def test_pretokenizer_o200k_still_round_trips_arbitrary_text() -> None:
+    tokenizer = train_byte_bpe(
+        _gpt4_corpus(), vocab_size=320, min_frequency=1, pretokenizer="o200k"
+    )
+    text = "Hello, world! 123456789 don't stop.\nNew line here."
+    assert tokenizer.decode(tokenizer.encode(text)) == text
+
+
+def test_pretokenizer_o200k_composes_with_individual_digit_split() -> None:
+    tokenizer = train_byte_bpe(
+        _gpt4_corpus(),
+        vocab_size=320,
+        min_frequency=1,
+        pretokenizer="o200k",
+        digit_split="individual",
+    )
+    assert _pretokenize(tokenizer, "123456789") == ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    # o200k's own case-transition splitting still applies unchanged.
+    assert _pretokenize(tokenizer, "camelCaseWord123") == ["camel", "Case", "Word", "1", "2", "3"]
+
+
+def test_digit_split_individual_isolates_every_digit() -> None:
+    corpus = ["the year 2026 was great " * 5, "digits 123456789 and more " * 5]
+    tokenizer = train_byte_bpe(corpus, vocab_size=300, min_frequency=1, digit_split="individual")
+    assert _pretokenize(tokenizer, "2026") == ["2", "0", "2", "6"]
+
+
+def test_digit_split_individual_still_round_trips_arbitrary_text() -> None:
+    corpus = ["the year 2026 was great " * 5, "digits 123456789 and more " * 5]
+    tokenizer = train_byte_bpe(corpus, vocab_size=300, min_frequency=1, digit_split="individual")
+    text = "the year 2026 was great, digits 123456789 and more."
+    assert tokenizer.decode(tokenizer.encode(text)) == text

@@ -21,7 +21,19 @@ import json
 from collections.abc import Iterator
 from pathlib import Path
 
-from minifrontier.tokenizer import DIGIT_SPLIT_MODE, PRETOKENIZER_MODE, VOCAB_SIZE, train_byte_bpe
+from minifrontier.tokenizer import (
+    DIGIT_SPLIT_MODE,
+    EDU_PRETOKENIZER_MODE,
+    MODERN_PRETOKENIZER_MODE,
+    PRETOKENIZER_MODE,
+    VOCAB_SIZE,
+    train_byte_bpe,
+)
+
+_PRESET_PRETOKENIZER: dict[str, str] = {
+    "edu": EDU_PRETOKENIZER_MODE,
+    "modern": MODERN_PRETOKENIZER_MODE,
+}
 
 
 def iter_input_text(paths: list[Path], *, jsonl_field: str) -> Iterator[str]:
@@ -49,17 +61,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--jsonl-field", default="text")
     parser.add_argument(
         "--digit-split",
-        choices=("none", "no_leading_space", "leading_space"),
+        choices=("none", "no_leading_space", "leading_space", "individual"),
         default=DIGIT_SPLIT_MODE,
         help="digit pre-tokenization rule; the default is the only one used by real training",
     )
     parser.add_argument(
         "--pretokenizer",
-        choices=("gpt2", "gpt4"),
-        default=PRETOKENIZER_MODE,
+        choices=("gpt2", "gpt4", "o200k"),
+        default=None,
         help=(
-            "pre-tokenization regex family (MF-100); 'gpt2' is the only one used by "
-            "real training so far -- 'gpt4' requires --digit-split none"
+            "pre-tokenization regex family (MF-100); overrides --preset's own default "
+            "when given explicitly. 'gpt4' is the real, adopted Modern default "
+            "(reports/mf100-stage2-comparison.md); 'gpt2' is Edu's default"
+        ),
+    )
+    parser.add_argument(
+        "--preset",
+        choices=("edu", "modern"),
+        default=None,
+        help=(
+            "sets --pretokenizer's default to the real, adopted per-preset choice "
+            "(edu='gpt2', modern='gpt4') -- an explicit --pretokenizer still wins over this"
         ),
     )
     return parser.parse_args()
@@ -67,12 +89,18 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.pretokenizer is not None:
+        pretokenizer = args.pretokenizer
+    elif args.preset is not None:
+        pretokenizer = _PRESET_PRETOKENIZER[args.preset]
+    else:
+        pretokenizer = PRETOKENIZER_MODE
     tokenizer = train_byte_bpe(
         iter_input_text(args.inputs, jsonl_field=args.jsonl_field),
         vocab_size=args.vocab_size,
         min_frequency=args.min_frequency,
         digit_split=args.digit_split,
-        pretokenizer=args.pretokenizer,
+        pretokenizer=pretokenizer,
     )
     tokenizer.save(args.output)
     print(f"saved tokenizer with {tokenizer.vocab_size:,} entries to {args.output}")

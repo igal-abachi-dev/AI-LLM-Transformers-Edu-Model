@@ -26,19 +26,24 @@ def test_frozen_edu_parameter_targets(filename: str, expected: int) -> None:
 
 
 @pytest.mark.parametrize(
-    "filename",
+    ("filename", "expected_head_dim"),
     [
-        "50m-edu.toml",
-        "50m-modern.toml",
-        "150m-edu.toml",
-        "150m-modern.toml",
-        "350m-modern.toml",
-        "500m-modern.toml",
+        ("50m-edu.toml", 64),
+        ("50m-modern.toml", 96),
+        ("150m-edu.toml", 64),
+        ("150m-modern.toml", 96),
+        ("350m-modern.toml", 96),
+        ("500m-modern.toml", 96),
     ],
 )
-def test_all_frozen_presets_validate(filename: str) -> None:
+def test_all_frozen_presets_validate(filename: str, expected_head_dim: int) -> None:
+    # MF-108 (2026-09-13): head_dim_override=96 adopted as the real Modern
+    # default (a real, measured -0.4447% BPB win at 150M scale, see
+    # reports/mf108-head-dim-comparison.md) -- Edu stays at its own derived
+    # head_dim=64, unaffected, matching every other MF-081-class item's
+    # Edu/Modern split.
     config = ModelConfig.from_toml(ROOT / "configs" / filename)
-    assert config.head_dim == 64
+    assert config.head_dim == expected_head_dim
 
 
 def test_config_rejects_incompatible_heads() -> None:

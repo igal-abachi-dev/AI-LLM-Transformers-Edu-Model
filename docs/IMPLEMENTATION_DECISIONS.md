@@ -401,14 +401,25 @@ independently re-checked against the actual source before any action.
   150m-modern: 138,630,640 (was 138,446,080, +0.133%); 350m-modern: 332,919,744 (was 332,460,544,
   +0.138%); 500m-modern: 444,244,380 (was 443,621,760, +0.140%). `layer_norm_scaling` adds zero
   parameters (a fixed, non-learned multiply).
-- **GQA ratio stays at each preset's existing default (3:1) — not changed.** The real 2-arm sweep
-  (`reports/mf081-gqa-sweep.md`) found 6:1 statistically indistinguishable from 3:1 at 150M scale
-  (-0.015% CE, inside the noise floor) and 12:1/MQA a small, plausibly-real regression (+0.24% CE).
-  Nothing between 6:1 and 12:1 was tested, this is single-seed at 150M scale on a ~10.24M-token
-  budget (not the 350M scale or 3B-token release budget this decision will actually govern), and
+- **GQA ratio stays at each preset's own existing default — not changed.** The real 2-arm sweep
+  (`reports/mf081-gqa-sweep.md`) built its arms from the 150M preset's own 3:1 baseline (12
+  heads/4 KV heads) and found 6:1 statistically indistinguishable from 3:1 at 150M scale (-0.015%
+  CE, inside the noise floor) and 12:1/MQA a small, plausibly-real regression (+0.24% CE). Nothing
+  between 6:1 and 12:1 was tested, this is single-seed at 150M scale on a ~10.24M-token budget, and
   6:1 showed no quality upside over 3:1 to justify switching on its own — only a KV-cache memory
-  argument, which this project has not needed. Kept at 3:1 pending either a stronger reason to move
-  or a real test at 350M scale.
+  argument, which this project has not needed.
+  **Correction (2026-09-13):** this entry previously implied a uniform "3:1" was kept across every
+  preset, including the 350M scale this decision is meant to inform. That is not accurate: the
+  350M preset's own pre-existing configuration is 16 heads/4 KV heads (4:1), not 3:1, and always
+  was — it predates this ablation and was never itself the tested configuration (16 is not evenly
+  divisible by 3, so an exact 3:1 is not achievable at 16 heads without also changing `n_heads`).
+  50M is likewise 4:1 (8/2); only 150M and 500M are actually 3:1 (12/4, 18/6). The real, tested
+  result is still directionally relevant to 350M regardless of the exact ratio label: 4:1 is a much
+  smaller step away from 150M's 3:1 baseline than the tested-and-neutral 6:1 arm, and the only
+  measured regression was at 12:1/MQA — so there is no real evidence this ablation produced against
+  350M's own existing 4:1, but it was never the literal arm tested either. Kept unchanged at each
+  preset's own existing ratio pending either a stronger reason to move or a real test built from
+  the 350M preset itself.
 
 ## 2026-09-09 — MF-105: MTP enabled for the real 350M/release run
 
@@ -444,3 +455,179 @@ independently re-checked against the actual source before any action.
   `scripts/sample.py` whenever a release has trained heads and the request is genuinely greedy —
   structurally Modern-only (Edu never has heads to export) rather than via a preset check. Full
   detail in `tasks/backlog.md`'s `MF-109` entry.
+
+## 2026-09-12 — MF-100: gpt4-style (cl100k_base) pre-tokenizer regex adopted for Modern only
+
+- **Modern's default pre-tokenizer regex changes from the plain GPT-2-style pattern to the real
+  cl100k_base (GPT-4) pattern.** Edu is unaffected — keeps the plain GPT-2-style regex, matching
+  `AGENTS.md`'s existing "Edu stays exactly the classic architecture" framing for every other
+  bounded-ablation item adopted this session. The frozen 16,384 vocabulary and 14-token
+  special-token contract are unchanged either way; only the pre-tokenization splitting rule
+  differs.
+- **Why**: real, bounded, matched-token comparison (`reports/mf100-stage2-comparison.md`) found a
+  genuine, small, corroborated improvement — gpt4-style's regex needs fewer tokens for the same
+  real text (stage 1's fertility check, `reports/mf100-fertility-triage.md`: +0.73% fewer tokens),
+  *and* that fertility advantage carries over to real trained quality (−0.162% relative bits-per
+  -byte against the current gpt2-style default, ~3.5x this project's own established noise floor).
+  Both lines of evidence point the same direction, which is why this crosses this project's own
+  adoption bar — a single-metric win alone (as o200k_base showed on fertility, then lost on trained
+  BPB) would not have.
+- **Caveats accepted, not overlooked**: single seed, single ~10.8M-token bounded budget, not yet
+  confirmed at [[MF-070]]'s real 3B-token release scale. The magnitude (−0.162%) is real but modest
+  — a repeat at a different seed or larger budget could shift it, though the *direction* is
+  independently corroborated by fertility, which is the reason this is being adopted now rather than
+  held for a bigger, more expensive confirmation first.
+
+## 2026-09-12 — MF-107: full RoPE confirmed as the default, partial RoPE rejected
+
+- **Full RoPE (`rope_fraction=1.0`) stays the default for both presets.** Edu was never a
+  candidate either way — the field is already structurally rejected there (`ModelConfig.__post_init__`),
+  alongside every other Modern-only bounded-ablation item. For Modern, this is a real, measured
+  confirmation, not an assumption carried over unchanged.
+- **Why**: a real, bounded comparison (`reports/mf107-partial-rope-comparison.md`) tested three
+  partial fractions (25%, 50%, 75%) against the existing full-RoPE baseline (reusing
+  `mf097-packing/ribbon`'s exact-match checkpoint rather than retraining). Every fraction was a
+  real, consistent loss on held-out bits-per-byte (+1.511%/+1.099%/+0.891% respectively, 19-33x
+  this project's own established noise floor), with a clean monotonic trend and no sign of an
+  intermediate optimum — closer to full rotation is simply better, all the way to 100%.
+- **Caveats accepted, not overlooked**: single seed, single scale, single ~10.24M-token bounded
+  budget. Real external precedent exists for partial RoPE working well elsewhere (DeepSeek-V4's
+  own last-64-dimensions convention; Qwen3-Next's real, verified `partial_rotary_factor: 0.25`) —
+  neither transferred as a win here, consistent with this project's own repeated finding that a
+  real external precedent for an architectural idea is not itself evidence at this project's own
+  scale/data/budget, and needs its own real, own-corpus test regardless.
+
+## 2026-09-12 — MF-095: data mixture adopted for the real MF-070 release run
+
+- **`general-purpose-optimized` (DCLM-Edu 35% / FineWeb-Edu 25% / GitHub-code 20% / FineMath 15% /
+  Cosmopedia-v2 5%) is the real, adopted data mixture for [[MF-070]]'s eventual 3B-token release
+  run**, replacing the originally-proposed SmolLM2-modeled ratio (`wsd-fixed`) after a real,
+  complete bounded comparison across four candidates.
+- **Why**: `reports/mf095-mixture-comparison.md`'s real, complete broader-eval harness pass (BLiMP,
+  ARC-Easy, HellaSwag, PIQA, WinoGrande, OpenBookQA, CommonsenseQA, BoolQ, lambada_openai, GSM8K,
+  `--limit 100`) across all four real candidates found essentially zero discriminating signal on
+  any standard end-task metric -- GSM8K/BoolQ/CommonsenseQA scored *exactly identical* across all
+  four arms, confirming [[MF-116]]'s eval-sensitivity finding for real rather than just predicting
+  it. The only place real, trustworthy signal exists is a domain-specific held-out CE comparison,
+  which shows a clean, monotonic tradeoff: more math/code share costs FineWeb-Edu-flavored CE and
+  buys math-flavored CE, in direct proportion. `general-purpose-optimized` is the middle point on
+  that real curve -- a real, meaningful math/code improvement over the original SmolLM2-style
+  ratio (Math CE 3.9750 vs. 4.3357) at a moderate, not extreme, general-text cost (FineWeb-Edu CE
+  5.2337 vs. 5.1493) -- chosen over the more math/code-heavy `math-code-heavy` candidate (which
+  pushed the same tradeoff further, at a steeper general-text cost) and over plain `fineweb-only`
+  (best general-text CE, but gives up the real math/code improvement entirely), matching this
+  project's own stated usefulness priorities: math/code capability matters, broad multilingual
+  generality does not.
+- **Caveats accepted, not overlooked**: single seed, single scale, single ~10.23M-token bounded
+  budget for every arm this decision rests on -- real and trustworthy for what it measures
+  (predictive quality on held-out text in each domain), but this is a proxy for downstream
+  capability, not a direct measurement of it (the broader end-task harness that would measure
+  capability directly could not discriminate at this budget, the central finding driving this
+  whole comparison). Decay-phase-specific reweighting (this task's original framing) stays
+  separately rejected -- a real, negative, isolated result independent of this ratio decision.
+- **Follow-up still open, real, not yet done**: [[MF-119]]'s production-tokenizer regeneration
+  should use `wsd-fixed`'s own ratios for its training corpus specifically (not this adopted
+  model-mixture ratio) -- a deliberately different, already-recorded decision; the two do not need
+  to match.
+
+## 2026-09-12 — Data storage format: streaming ingestion, no persisted raw JSONL/Parquet cache; packed-token `.npy` shards are the only on-disk training artifact
+
+- **Decision**: none of the five mixture sources (DCLM-Edu, FineWeb-Edu, GitHub-code, FineMath,
+  Cosmopedia-v2) get bulk-downloaded or cached locally in any raw form (JSONL, Parquet, or
+  otherwise). `iter_dclm_edu`/`iter_fineweb_edu`/`iter_finemath`/`iter_cosmopedia_v2`/
+  `iter_github_code` all call `datasets.load_dataset(..., streaming=True)` against a pinned
+  `revision` hash, filter/dedup/license-gate on the fly, and hand admitted rows straight to
+  `Document` -- verified directly in `src/minifrontier/data.py` (identical `streaming=True` pattern
+  at all five call sites) and confirmed empirically for GitHub-code: after a real 2,000,000-row
+  scan of `codeparrot/github-code`, the local HuggingFace cache held only the dataset's tiny loader
+  script (`github-code.py`), no bulk Parquet/Arrow content. The *only* thing that persists to disk
+  from any of this is `scripts/prepare_data.py`'s own final output: tokenized, packed, fixed-length
+  sequences as `shard-NNNNN.tokens.npy`/`.counts.npy` (uint16, memory-mapped, zero per-step
+  tokenization cost) plus a `metadata.json` recording per-shard SHA-256, packing strategy,
+  admission/rejection counts, and the exact `source_start`/`source_limit`/`shuffle_seed` used.
+- **Why**: this is the only choice consistent with `AGENTS.md`'s standing rule ("stream large
+  public datasets; never commit corpora, checkpoints, caches"). It is also not a real loss:
+  caching the *raw*, pre-filter form of any of these sources would mean persisting mostly-discarded
+  data (GitHub-code alone rejects everything outside a ~276-repo allowlist plus a strict
+  license gate), and the final packed-shard format is strictly better than JSONL/Parquet for this
+  project's actual read pattern -- one fixed tokenizer, one training loop, no need to re-tokenize
+  or redistribute the corpus, so there is nothing to gain from an intermediate, more general/
+  columnar interchange format. Upstream, Parquet is the real modern standard for hosting
+  pretraining-scale corpora (FineWeb, DCLM, RedPajama-v2, Dolma, The Stack v2 all ship this way on
+  the HF Hub) and Arrow is `datasets`' own in-memory/local-cache representation when *not*
+  streaming -- neither is relevant here because this project never materializes either form
+  locally. The packed-`.npy`-shard convention instead mirrors minimal, from-scratch pretraining
+  codebases (nanoGPT's flat `.bin` token memmap, llm.c's binary shards), matching this project's
+  own "explainable, no heavy framework dependency" ethos more directly than adopting the
+  Arrow/`datasets`-library machinery would.
+- **Caveat**: re-running the same `prepare_data.py` invocation re-streams and re-filters from
+  scratch every time (no intermediate cache layer) -- a real, accepted network/CPU cost, not an
+  oversight, in exchange for never holding a redundant raw-corpus copy on disk.
+- **Follow-up (2026-09-12), a real distinction worth keeping separate**: the packed-`.npy`-shard
+  format is correct for this project's own training reads, but it is the wrong artifact if the
+  admitted, filtered, deduplicated mixed corpus is ever published to the HF Hub for other
+  consumers -- confirmed directly against the real upstream hosting format of every one of this
+  project's own sources (`HuggingFaceTB/dclm-edu`, `HuggingFaceFW/fineweb-edu`,
+  `HuggingFaceTB/finemath`, all genuinely Parquet-backed on the Hub, verified by URL). Parquet
+  (raw, untokenized `text` plus provenance columns -- almost exactly `Document`'s own field set)
+  is the right choice for a publishable artifact, precisely because it doesn't commit to this
+  project's own tokenizer/packing choices the way `.npy` shards do.
+- **Built (2026-09-12, MF-125)**: `ParquetDocumentWriter` in `src/minifrontier/shards.py`, wired
+  into `scripts/prepare_data.py` as an optional `--export-parquet-dir DIR` flag, writing
+  `DIR/train-00000-of-00001.parquet` and `DIR/validation-00000-of-00001.parquet`. It snapshots the
+  admitted, post-filter, post-dedup `Document` rows (raw text plus every provenance field) in the
+  same pass `TokenShardWriter` tokenizes and packs, not by reading the shards back -- purely
+  additive; omitting the flag reproduces the exact prior shards-only behavior. Real memory-safety
+  and correctness details (batched writes, an explicit fixed pyarrow schema rather than per-batch
+  inference, atomic temp-then-`os.replace` publication matching `TokenShardWriter`'s own
+  convention) are recorded in MF-125's own backlog entry. `pyarrow` was added as an explicit direct
+  dependency in `pyproject.toml` (it was already present transitively via `datasets`).
+- **Redesigned same session, after further user input**: the user clarified they'll publish
+  manually via the Hub's own web UI and asked what the real standard multi-source HF layout is.
+  Fetched the real, current HF docs (`datasets-manual-configuration`) rather than guess: each
+  source becomes its own named **config** (`configs:` YAML block, one `config_name`/`data_dir`
+  pair per source), and `train-*`/`validation-*` is the Hub's own auto-detected split-file naming
+  -- together these need no loading script on the Hub side. `scripts/build_dataset_card.py`
+  (MF-126) generates this real, YAML-validated frontmatter plus a "Repository layout" section
+  telling the user exactly which folder each source's export belongs in before upload.
+
+## 2026-09-13 — MF-108: `head_dim_override=96` adopted as the real Modern default
+
+- **`head_dim_override=96` is now the real default on every frozen Modern preset**
+  (`configs/50m-modern.toml`/`150m-modern.toml`/`350m-modern.toml`/`500m-modern.toml`), widening
+  Q/K/V/`out_proj` from each preset's own derived `head_dim=64` (`d_model // n_heads`, uniform
+  across all four presets before this override) to 96. Edu is unaffected -- unchanged at its own
+  derived `head_dim=64`, matching every other Modern-only bounded-ablation item.
+- **Why**: a real, matched-token bounded comparison at 150M scale (`reports/mf108-head-dim-comparison.md`,
+  5,000 updates/10,230,000 tokens, seed 42, `data/shards/mf064-150m-train`) found `head_dim=96`
+  beats the `head_dim=64` baseline on real held-out quality: cross-entropy 5.077986 vs. 5.100674,
+  perplexity 160.45 vs. 164.13, bits/byte 1.70826 vs. 1.71589 -- a real **-0.4447%** relative
+  BPB/CE improvement, ~9.7x this project's own measured single-config noise floor (~0.046%,
+  `reports/mf088-seed-variance.md`). Comparable in magnitude to, or larger than, several other
+  already-adopted findings this session (LN-scaling -0.35%, gated-attention -0.67%).
+- **Real, accepted cost, not a free change**: +11.35% parameters (154,360,560 vs. 138,630,640 at
+  150M) and a real ~23% training-throughput cost (~3,106.8 vs. 4,057.9 tok/s on the reference RTX
+  2070 Super) -- a genuine, recurring compute cost for the rest of this project's training budget,
+  weighed against the real quality win and accepted deliberately, not overlooked.
+- **`head_dim=128` was tested alongside and rejected outright, on cost alone.** Real live
+  monitoring (the run was intentionally stopped before completion, `KeyboardInterrupt`, not a
+  crash) found peak VRAM at 90-95% of this card's 8,192 MB physical total (~7,440-7,739 MB vs.
+  the baseline's 5,158.9 MB, a real +44.6% increase) and throughput collapsing to ~625 tok/s
+  (~6.5x slower) -- far more than pure compute scaling from doubling `head_dim` could explain,
+  and consistent with this project's own already-documented "8GB ceiling silently pages rather
+  than OOMs" finding (`AGENTS.md`; first measured in MF-050's real 8K-context test). `head_dim=96`
+  lands in a comparable VRAM range (~7,737 MB) but shows nothing like 128's throughput collapse --
+  the VRAM-pressure mechanism is real and directionally correct, but evidently not a simple linear
+  threshold; not independently diagnosed further. `head_dim=128`'s own quality was never
+  measured, on purpose, since its cost alone was disqualifying.
+- **Caveat, real and not yet resolved**: only the 150M preset was actually measured. All four
+  frozen presets derived the identical `head_dim=64` before this override, so applying the same
+  96 value to 50M/350M/500M is a consistent architectural generalization, not independent
+  per-scale verification -- 350M in particular (the real target of the eventual MF-070 scale
+  check) has less VRAM headroom to begin with than 150M does, and its own real VRAM/throughput
+  behavior at `head_dim=96` is untested. Worth a real, cheap check before MF-070's real run locks
+  in on this config.
+- **Open, in-progress research (2026-09-13, user-directed)**: close some of the real ~23%
+  throughput gap on this specific hardware before treating the current number as final -- see
+  MF-108's own backlog entry for the real diagnostic investigation (attention-kernel selection,
+  gradient-accumulation amortization) this prompted.

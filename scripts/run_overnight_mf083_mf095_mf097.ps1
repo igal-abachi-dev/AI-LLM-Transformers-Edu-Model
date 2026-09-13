@@ -71,35 +71,35 @@ Invoke-Step "prep-mf097-best-fit" @(
     "--shuffle-seed", "123", "--shuffle-buffer", "10000", "--tokenizer", "data/tokenizer",
     "--output", "data/shards/mf097-best-fit-train", "--sequence-length", "1024",
     "--validation-fraction", "0.01", "--packing", "best_fit"
-)
+) -AlreadyDoneMarker "data/shards/mf097-best-fit-train/metadata.json"
 
 Invoke-Step "prep-mf097-bos-crop" @(
     "scripts/prepare_data.py", "--source", "fineweb-edu", "--start", "5000", "--limit", "42000",
     "--shuffle-seed", "123", "--shuffle-buffer", "10000", "--tokenizer", "data/tokenizer",
     "--output", "data/shards/mf097-bos-crop-train", "--sequence-length", "1024",
     "--validation-fraction", "0.01", "--packing", "bos_crop"
-)
+) -AlreadyDoneMarker "data/shards/mf097-bos-crop-train/metadata.json"
 
 Invoke-Step "prep-mf095-dclm-edu" @(
     "scripts/prepare_data.py", "--source", "dclm-edu", "--dclm-min-score", "3", "--limit", "2500",
     "--shuffle-seed", "123", "--tokenizer", "data/tokenizer",
     "--output", "data/shards/mf095-dclm-edu-train", "--sequence-length", "1024",
     "--validation-fraction", "0.01"
-)
+) -AlreadyDoneMarker "data/shards/mf095-dclm-edu-train/metadata.json"
 
 Invoke-Step "prep-mf095-finemath" @(
     "scripts/prepare_data.py", "--source", "finemath", "--finemath-config", "finemath-4plus",
     "--limit", "2500", "--shuffle-seed", "123", "--tokenizer", "data/tokenizer",
     "--output", "data/shards/mf095-finemath-train", "--sequence-length", "1024",
     "--validation-fraction", "0.01"
-)
+) -AlreadyDoneMarker "data/shards/mf095-finemath-train/metadata.json"
 
 Invoke-Step "prep-mf095-cosmopedia-v2" @(
     "scripts/prepare_data.py", "--source", "cosmopedia-v2", "--limit", "2500",
     "--shuffle-seed", "123", "--tokenizer", "data/tokenizer",
     "--output", "data/shards/mf095-cosmopedia-v2-train", "--sequence-length", "1024",
     "--validation-fraction", "0.01"
-)
+) -AlreadyDoneMarker "data/shards/mf095-cosmopedia-v2-train/metadata.json"
 
 Invoke-Step "prep-mf095-github-code" @(
     "scripts/prepare_data.py", "--source", "github-code",
@@ -107,7 +107,7 @@ Invoke-Step "prep-mf095-github-code" @(
     "--shuffle-seed", "123", "--tokenizer", "data/tokenizer",
     "--output", "data/shards/mf095-github-code-train", "--sequence-length", "1024",
     "--validation-fraction", "0.01"
-)
+) -AlreadyDoneMarker "data/shards/mf095-github-code-train/metadata.json"
 
 # --- Step 2: GPU training arms, strictly one at a time ---
 # --keep-last-n-checkpoints 2 on every arm: tonight's first real run showed

@@ -785,6 +785,28 @@ to "read one new line and glance at your notes".
 The price is memory — the cache grows with every token, for every layer. Remember this
 sentence. It's the reason `tiny_modern` exists.
 
+## Grading a known answer needs no notebook at all
+
+The KV cache above exists because *generating* writes brand-new words one at a time — the
+model doesn't know word 100 until it has actually picked it. But some tasks never ask the
+model to write anything. Many multiple-choice-style benchmarks instead hand it a whole
+sentence that's already finished — one of the candidate answers, word for word — and ask
+"how surprised would you be by this exact sentence?"
+
+Since every word is already fixed, there's nothing left to invent one word at a time. The
+model can read the entire sentence in a single pass — the same way you can read a whole
+finished paragraph in one go, instead of covering it up and guessing each next word
+yourself. One pass through all the layers hands back a prediction for *every* position at
+once, and comparing those predictions against the words that actually come next (already
+known, nothing to wait for) is all "scoring" needs.
+
+So the honest answer to "shouldn't scoring reuse the same KV-cache notebook as generation?"
+is: it doesn't need to. It needs *less* machinery than generation, not more — no notebook,
+no one-word-at-a-time loop, because nothing is being generated. MiniFrontier's own
+evaluation code (`src/minifrontier/evaluation/language.py`) scores exactly this way: one
+forward pass reads off a candidate answer's likelihood all at once, instead of re-deriving
+it one word at a time the way generation has to.
+
 ---
 
 # Part 3 — `tiny_modern`: four upgrades and why

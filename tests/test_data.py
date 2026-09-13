@@ -23,6 +23,7 @@ from minifrontier.data import (
     filter_and_deduplicate,
     iter_cosmopedia_v2,
     iter_dclm_edu,
+    iter_ebook_markdown,
     iter_finemath,
     iter_fineweb_edu,
     iter_github_code,
@@ -317,7 +318,14 @@ def test_github_code_adapter_admits_only_permissive_licenses(monkeypatch) -> Non
             "language": "Python",
             "license": "apache-2.0",
         },
-        {"code": "d", "repo_name": "x/d", "path": "d.py", "language": "Python", "license": "isc"},
+        {
+            "code": "d",
+            "repo_name": "x/d",
+            "path": "d.py",
+            "language": "Python",
+            "license": "lgpl-3.0",
+        },
+        {"code": "e", "repo_name": "x/e", "path": "e.py", "language": "Python", "license": "isc"},
     ]
 
     def fake_load_dataset(*args, **kwargs):
@@ -325,12 +333,47 @@ def test_github_code_adapter_admits_only_permissive_licenses(monkeypatch) -> Non
 
     monkeypatch.setattr("datasets.load_dataset", fake_load_dataset)
     result = list(iter_github_code(limit=10))
-    assert [item.text for item in result] == ["a", "c"]
+    assert [item.text for item in result] == ["a", "c", "e"]
     assert result[0].license == "MIT"
     assert result[1].license == "Apache-2.0"
+    assert result[2].license == "ISC"
     assert result[0].source == "https://github.com/x/a"
     assert result[0].revision == GITHUB_CODE_REVISION
     assert result[0].source_type == "code"
+
+
+def test_github_code_adapter_manual_license_override_admits_a_stale_dataset_field(
+    monkeypatch,
+) -> None:
+    # curl/curl is a real entry in _MANUALLY_VERIFIED_REPO_LICENSES (MIT,
+    # independently verified) -- the dataset's own reported field for it is
+    # deliberately something unresolved here, matching the real
+    # NOASSERTION/empty behavior that motivated adding the override at all.
+    rows = [
+        {
+            "code": "a",
+            "repo_name": "curl/curl",
+            "path": "a.c",
+            "language": "C",
+            "license": "other",
+        },
+        {
+            "code": "b",
+            "repo_name": "some/unrelated-repo",
+            "path": "b.c",
+            "language": "C",
+            "license": "other",
+        },
+    ]
+
+    def fake_load_dataset(*args, **kwargs):
+        return iter(rows)
+
+    monkeypatch.setattr("datasets.load_dataset", fake_load_dataset)
+    result = list(iter_github_code(limit=10))
+    assert [item.text for item in result] == ["a"]
+    assert result[0].license == "MIT"
+    assert result[0].source == "https://github.com/curl/curl"
 
 
 def test_github_code_adapter_filters_by_language_and_repo_allowlist(monkeypatch) -> None:
@@ -395,6 +438,78 @@ def test_github_code_adapter_requests_streaming_and_trust_remote_code(monkeypatc
             "trust_remote_code": True,
         },
     }
+
+
+def _write_book(tmp_path, book_id: str, text: str) -> None:
+    book_dir = tmp_path / "md" / book_id
+    book_dir.mkdir(parents=True)
+    (book_dir / "book.md").write_text(text, encoding="utf-8")
+
+
+def test_iter_ebook_markdown_reads_book_md_and_ignores_other_pipeline_outputs(tmp_path) -> None:
+    _write_book(tmp_path, "alice-in-wonderland", "Chapter One\n\nDown the rabbit hole.")
+    _write_book(tmp_path, "moby-dick", "Call me Ishmael.")
+    # Real pdf-to-markdown-rag output also includes chunks/ and metadata/ trees --
+    # iter_ebook_markdown must not need or touch either.
+    (tmp_path / "chunks" / "moby-dick").mkdir(parents=True)
+    (tmp_path / "chunks" / "moby-dick" / "chunks.jsonl").write_text("{}", encoding="utf-8")
+    (tmp_path / "metadata" / "moby-dick").mkdir(parents=True)
+    (tmp_path / "metadata" / "moby-dick" / "license.json").write_text("{}", encoding="utf-8")
+
+    documents = list(iter_ebook_markdown(tmp_path))
+
+    assert [document.record_id for document in documents] == ["alice-in-wonderland", "moby-dick"]
+    assert documents[0].text == "Chapter One\n\nDown the rabbit hole."
+    assert documents[0].source == "ebook:alice-in-wonderland"
+    assert documents[0].license == "Public Domain"
+    assert documents[0].revision == "n/a"
+    assert documents[0].language == "English"
+    assert documents[0].source_type == "text"
+
+
+def test_iter_ebook_markdown_applies_custom_license_revision_and_language(tmp_path) -> None:
+    _write_book(tmp_path, "hebrew-book", "שלום עולם")
+
+    [document] = list(
+        iter_ebook_markdown(
+            tmp_path,
+            license="CC0-1.0",
+            revision="1st-edition-1922",
+            language="Hebrew",
+        )
+    )
+
+    assert document.license == "CC0-1.0"
+    assert document.revision == "1st-edition-1922"
+    assert document.language == "Hebrew"
+
+
+def test_iter_ebook_markdown_skips_empty_books(tmp_path) -> None:
+    _write_book(tmp_path, "empty-book", "   \n\n  ")
+    _write_book(tmp_path, "real-book", "Real content.")
+
+    documents = list(iter_ebook_markdown(tmp_path))
+
+    assert [document.record_id for document in documents] == ["real-book"]
+
+
+def test_iter_ebook_markdown_start_limit_and_shuffle(tmp_path) -> None:
+    for letter in "abcde":
+        _write_book(tmp_path, f"book-{letter}", f"Content {letter}")
+
+    assert [document.record_id for document in iter_ebook_markdown(tmp_path, start=1, limit=2)] == [
+        "book-b",
+        "book-c",
+    ]
+    shuffled = [document.record_id for document in iter_ebook_markdown(tmp_path, shuffle_seed=1)]
+    assert shuffled == ["book-c", "book-d", "book-e", "book-a", "book-b"]
+
+
+def test_iter_ebook_markdown_rejects_negative_limit_or_start(tmp_path) -> None:
+    with pytest.raises(ValueError, match="limit"):
+        list(iter_ebook_markdown(tmp_path, limit=-1))
+    with pytest.raises(ValueError, match="start"):
+        list(iter_ebook_markdown(tmp_path, start=-1))
 
 
 def test_iterable_dataset_worker_sharding_is_deterministic(monkeypatch) -> None:

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import re
 from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass, replace
@@ -44,8 +45,13 @@ from torch.utils.data import IterableDataset, get_worker_info
 from minifrontier.tokenizer import MiniFrontierTokenizer
 
 PERMISSIVE_CODE_LICENSES = frozenset(
-    {"Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CC0-1.0", "MIT", "Unlicense"}
+    {"Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CC0-1.0", "ISC", "MIT", "Unlicense"}
 )
+# ISC added 2026-09-12 (MF-121 follow-up): a real, OSI-approved, functionally
+# near-identical simplification of MIT/BSD-2-Clause (fewer words, same
+# permissions) -- verified before adding, not assumed. Found via two real
+# repos (starship/starship, d3/d3) that were otherwise excluded purely
+# because ISC wasn't accepted, not because they were actually non-permissive.
 FINEWEB_EDU_DATASET: Final = "HuggingFaceFW/fineweb-edu"
 FINEWEB_EDU_CONFIG: Final = "sample-10BT"
 FINEWEB_EDU_REVISION: Final = "87f09149ef4734204d70ed1d046ddc9ca3f2b8f9"
@@ -88,8 +94,88 @@ _GITHUB_CODE_PERMISSIVE_LICENSES: Final = {
     "bsd-2-clause": "BSD-2-Clause",
     "bsd-3-clause": "BSD-3-Clause",
     "cc0-1.0": "CC0-1.0",
+    "isc": "ISC",
     "mit": "MIT",
     "unlicense": "Unlicense",
+}
+# MF-121 follow-up (2026-09-12): `codeparrot/github-code`'s own per-row
+# `license` field is built from GitHub's BigQuery `github_repos` export,
+# which historically sources its own license value from the same automated
+# detection GitHub's own API exposes -- a real, known source of false
+# negatives (a genuinely permissive LICENSE file that the detector doesn't
+# recognize as a template match, e.g. a non-canonical file location, an
+# unusual preamble, or wording that is functionally but not literally
+# identical to the standard text). Thirteen repos hit exactly this (six
+# from the original pass, seven more added 2026-09-12 alongside the C#
+# allowlist additions -- see `configs/code-repo-allowlist.txt`'s own
+# comment for that pass): GitHub's own API reports no resolvable license
+# for all thirteen, yet each was independently verified here by reading the
+# actual real LICENSE file content directly (not GitHub's automated
+# detection) and confirmed genuinely permissive.
+# This dict lets a specific, individually-verified repo's real license
+# override the dataset's own (possibly stale or undetected) field, rather
+# than silently rejecting real, permissively-licensed content -- scoped
+# narrowly to exactly these repos, not a general bypass of the license gate.
+_MANUALLY_VERIFIED_REPO_LICENSES: Final[dict[str, str]] = {
+    # MIT, confirmed via the real COPYING file text (exact clause quoted).
+    "curl/curl": "MIT",
+    # MIT, confirmed via lua.org (the canonical, authoritative source) --
+    # the GitHub mirror simply has no LICENSE file at the path GitHub's
+    # detector looks for, not an actual licensing ambiguity.
+    "lua/lua": "MIT",
+    # BSD-3-Clause, confirmed via the real LICENSE file -- standard 3-clause
+    # structure; the non-canonical multi-party copyright header (Facebook,
+    # DeepMind, NYU, NEC, IDIAP) is what confuses automated matching, not
+    # the substance of the license itself.
+    "pytorch/pytorch": "BSD-3-Clause",
+    # Real dual license (BSD-3-Clause OR GPL-2.0); the permissive option is
+    # explicitly offered by the project itself, confirmed via the real
+    # LICENSE file, and is the option used here.
+    "facebook/zstd": "BSD-3-Clause",
+    # BSD-3-Clause is the real, primary license covering the bulk of the
+    # codebase (confirmed via the real LICENSE file); a few minor
+    # sub-components carry their own separate (also permissive) licenses.
+    "libevent/libevent": "BSD-3-Clause",
+    # Apache-2.0, confirmed via the real LICENSE file -- clean, unambiguous.
+    "chocolatey/choco": "Apache-2.0",
+    # C# allowlist additions (2026-09-12, MF-121 follow-up). Each of the
+    # seven entries below reports NOASSERTION via the GitHub API but has a
+    # clean, unambiguous, real permissive license confirmed by direct means.
+    #
+    # Apache-2.0, confirmed via nuget.org's own official, maintainer-set
+    # `licenseExpression` field on the real Dapper package (authored by Sam
+    # Saffron/Marc Gravell/Nick Craver) -- the repo's own License.txt only
+    # points to the license by reference ("licenced under Apache 2.0: URL")
+    # rather than embedding it, which is why a prior pass rejected this repo;
+    # the nuget metadata is new, genuinely citable, authoritative proof.
+    "DapperLib/Dapper": "Apache-2.0",
+    # Apache-2.0, confirmed via the real LICENSE.txt file -- a clean, short
+    # .NET Foundation copyright notice. This is the legacy pre-ASP.NET-Core
+    # SignalR codebase, genuinely distinct from the SignalR implementation
+    # bundled inside the already-listed dotnet/aspnetcore.
+    "SignalR/SignalR": "Apache-2.0",
+    # Apache-2.0, confirmed via the real Licence.txt file (note the British
+    # spelling, likely why automated detection misses it) -- a clean Marc
+    # Gravell copyright notice using the standard Apache-2.0 boilerplate.
+    "protobuf-net/protobuf-net": "Apache-2.0",
+    # MIT, confirmed via the real LICENSE file -- the primary, clearly
+    # stated project license. The same file also properly attributes two
+    # small embedded third-party components under their own separate
+    # permissive licenses (BSD-2-Clause for lz4net, Apache-2.0 for .NET
+    # Foundation's BufferWriter.cs); unlike the already-rejected lz4/lz4 and
+    # meilisearch/meilisearch, every license actually present here is
+    # permissive, so this is not a mixed-license case.
+    "MessagePack-CSharp/MessagePack-CSharp": "MIT",
+    # BSD-3-Clause, confirmed via the real LICENSE file -- standard,
+    # unambiguous three-clause structure.
+    "cefsharp/CefSharp": "BSD-3-Clause",
+    # MIT, confirmed via the real LICENSE.md file -- clean, standard text.
+    "OpenTK/OpenTK": "MIT",
+    # MIT, confirmed via the real LICENSE file -- a clean Auth0, Inc.
+    # copyright notice followed by an auto-generated third-party
+    # dependency-license inventory that is not part of, and does not
+    # change, the repo's own license.
+    "auth0/auth0-aspnetcore-authentication": "MIT",
 }
 
 
@@ -521,7 +607,11 @@ def iter_github_code(
     does not normalize to one of this project's `PERMISSIVE_CODE_LICENSES`
     is skipped before `Document.create` ever sees it -- letting the
     exception path do this filtering would crash the whole stream on the
-    first non-permissive row instead of just skipping it.
+    first non-permissive row instead of just skipping it. `repo_name` is
+    checked against `_MANUALLY_VERIFIED_REPO_LICENSES` first, overriding the
+    dataset's own (possibly stale or undetected) `license` field for the
+    small, explicit set of repos independently verified there -- see that
+    dict's own comment for why and how each was checked.
 
     `languages`, when given, restricts to those languages (matched
     case-insensitively against the dataset's own `language` field, e.g.
@@ -557,13 +647,16 @@ def iter_github_code(
     emitted = 0
     admitted_index = 0
     for row in dataset:
-        license_key = str(row["license"]).lower()
-        normalized_license = _GITHUB_CODE_PERMISSIVE_LICENSES.get(license_key)
+        repo_name = str(row["repo_name"])
+        normalized_license = _MANUALLY_VERIFIED_REPO_LICENSES.get(repo_name)
+        if normalized_license is None:
+            license_key = str(row["license"]).lower()
+            normalized_license = _GITHUB_CODE_PERMISSIVE_LICENSES.get(license_key)
         if normalized_license is None:
             continue
         if language_filter is not None and str(row["language"]).lower() not in language_filter:
             continue
-        if repo_filter is not None and str(row["repo_name"]) not in repo_filter:
+        if repo_filter is not None and repo_name not in repo_filter:
             continue
         if admitted_index < start:
             admitted_index += 1
@@ -572,15 +665,82 @@ def iter_github_code(
             return
         yield Document.create(
             _strip_leading_license_comment(str(row["code"])),
-            source=f"https://github.com/{row['repo_name']}",
+            source=f"https://github.com/{repo_name}",
             revision=GITHUB_CODE_REVISION,
             license=normalized_license,
             language=str(row["language"]),
-            record_id=f"{row['repo_name']}:{row['path']}",
+            record_id=f"{repo_name}:{row['path']}",
             path=str(row["path"]),
             source_type="code",
         )
         admitted_index += 1
+        emitted += 1
+
+
+def iter_ebook_markdown(
+    directory: str | Path,
+    *,
+    license: str = "Public Domain",
+    revision: str = "n/a",
+    language: str = "English",
+    limit: int | None = None,
+    start: int = 0,
+    shuffle_seed: int | None = None,
+) -> Iterator[Document]:
+    """Read already-produced ``book.md`` files from a local ebook-ingestion output tree.
+
+    This is a filesystem adapter, not a network source: it reads the plain
+    Markdown files an already-completed run of the standalone
+    ``pdf-to-markdown-rag`` pipeline (``docs/pdf-to-markdown-rag.zip``) wrote to
+    ``directory``, at ``directory/md/<book-id>/book.md`` per book. It never
+    imports that pipeline's own code and never touches its retrieval-oriented
+    outputs (``chunks/*/chunks.jsonl``, the optional SQLite FTS5/vector corpus)
+    -- those serve RAG retrieval at inference time, a different consumption
+    pattern than pretraining, which just wants each book as one continuous
+    document (MF-124, 2026-09-12 decision).
+
+    The pipeline's own per-book ``metadata/<book-id>/license.json`` sidecar is
+    deliberately not read either: MF-124 restricts real ingestion to books
+    whose public-domain status is asserted by the person curating the input
+    ``directory`` before this function ever runs, not detected from a file --
+    the same explicit assertion this project already leans on for the
+    ``_MANUALLY_VERIFIED_REPO_LICENSES`` override table. ``license``,
+    ``revision``, and ``language`` therefore apply uniformly to every book
+    this call yields; run it once per language/rights-basis batch if a real
+    corpus needs to mix them.
+
+    ``revision`` has no natural meaning for an ebook (no repository commit or
+    dataset snapshot to pin) -- the default ``"n/a"`` is a placeholder that
+    only needs to be non-empty to satisfy ``Document.__post_init__``.
+    """
+
+    if limit is not None and limit < 0:
+        raise ValueError("limit cannot be negative")
+    if start < 0:
+        raise ValueError("start cannot be negative")
+    book_paths = sorted(Path(directory).glob("md/*/book.md"))
+    if shuffle_seed is not None:
+        random.Random(shuffle_seed).shuffle(book_paths)
+    emitted = 0
+    for index, book_path in enumerate(book_paths):
+        if index < start:
+            continue
+        if limit is not None and emitted >= limit:
+            return
+        text = book_path.read_text(encoding="utf-8")
+        if not text.strip():
+            continue
+        book_id = book_path.parent.name
+        yield Document.create(
+            text,
+            source=f"ebook:{book_id}",
+            revision=revision,
+            license=license,
+            language=language,
+            record_id=book_id,
+            path=str(book_path),
+            source_type="text",
+        )
         emitted += 1
 
 

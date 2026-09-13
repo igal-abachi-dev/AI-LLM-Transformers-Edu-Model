@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
 import numpy as np
+import pyarrow.parquet as pq
 import pytest
 import torch
 
 from minifrontier.data import Document
 from minifrontier.shards import (
+    _DOCUMENT_PARQUET_SCHEMA,
     AdmissionStats,
     CurriculumMixtureProvider,
     DiskDeduplicator,
     MixtureBatchProvider,
     PackedShardDataset,
+    ParquetDocumentWriter,
     ShardBatchProvider,
     ShardManifest,
     ShardRecord,
@@ -54,6 +58,49 @@ def test_disk_dedup_and_contamination_counters(tmp_path) -> None:
     assert stats.admitted == 1
     assert stats.reasons == {"exact_duplicate": 1, "evaluation_near_overlap": 1}
     assert normalized_sha256(first.text) == normalized_sha256(normalized_duplicate.text)
+
+
+def test_disk_dedup_rejects_non_positive_commit_batch_size(tmp_path) -> None:
+    with pytest.raises(ValueError, match="commit_batch_size"):
+        DiskDeduplicator(tmp_path / "dedup.sqlite", commit_batch_size=0)
+
+
+def test_disk_dedup_batches_commits_and_flushes_the_remainder_on_close(tmp_path) -> None:
+    path = tmp_path / "dedup.sqlite"
+    with DiskDeduplicator(path, commit_batch_size=3) as dedup:
+        for index in range(5):
+            _, exact, signature = dedup.classify(f"document number {index} has real content")
+            dedup.add(exact, signature)
+        # Only 2 batches' worth (index 0-2) have been committed; a fresh
+        # connection to the same file must not see the still-pending index 3-4
+        # rows while the writer connection stays open.
+        reader = sqlite3.connect(path)
+        assert reader.execute("SELECT COUNT(*) FROM exact").fetchone()[0] == 3
+        reader.close()
+    # After the writer's own `close()` (via __exit__), the remaining partial
+    # batch (index 3-4) must be flushed -- nothing lost from a normal exit.
+    reader = __import__("sqlite3").connect(path)
+    assert reader.execute("SELECT COUNT(*) FROM exact").fetchone()[0] == 5
+    reader.close()
+
+
+def test_disk_dedup_detects_duplicates_within_a_run_across_a_batch_boundary(tmp_path) -> None:
+    """`classify`/`add` share one live connection throughout a run, so SQLite
+    sees its own uncommitted writes -- batching `commit()` must not weaken
+    in-run duplicate detection, only defer durability."""
+
+    with DiskDeduplicator(tmp_path / "dedup.sqlite", commit_batch_size=2) as dedup:
+        stats = AdmissionStats()
+        documents = [
+            make_document("A sufficiently long document with normalized spacing.", "1"),
+            make_document("A completely different second document here.", "2"),
+            # Exact duplicate of "1", arriving after commit_batch_size=2 has
+            # already triggered one real commit -- still must be caught.
+            make_document("A sufficiently long document with normalized spacing.", "3"),
+        ]
+        admitted = list(admit_documents(documents, dedup, stats=stats))
+    assert [document.record_id for document in admitted] == ["1", "2"]
+    assert stats.reasons == {"exact_duplicate": 1}
 
 
 def test_immutable_shards_hashes_and_exact_provider_resume(tmp_path, mini_tokenizer) -> None:
@@ -188,6 +235,47 @@ def test_shard_manifest_defaults_packing_to_ribbon_for_backward_compatibility() 
     values["shards"] = tuple(ShardRecord(**item) for item in values["shards"])
     manifest = ShardManifest(**values)
     assert manifest.packing == "ribbon"
+
+
+def test_parquet_document_writer_round_trips_every_provenance_field(tmp_path) -> None:
+    output_path = tmp_path / "corpus.parquet"
+    writer = ParquetDocumentWriter(output_path, batch_size=2)
+    documents = [make_document(f"text {index}", f"doc-{index}") for index in range(5)]
+    for document in documents:
+        writer.add(document)
+    row_count = writer.finalize()
+
+    assert row_count == 5
+    assert output_path.exists()
+    assert not output_path.with_name(f".{output_path.name}.tmp").exists()
+
+    table = pq.read_table(output_path)
+    assert table.num_rows == 5
+    rows = table.to_pylist()
+    assert [row["record_id"] for row in rows] == [f"doc-{index}" for index in range(5)]
+    assert [row["text"] for row in rows] == [f"text {index}" for index in range(5)]
+    for row in rows:
+        assert row["source"] == "fixture"
+        assert row["license"] == "Apache-2.0"
+        assert row["path"] is None
+        assert row["split"] is None
+
+
+def test_parquet_document_writer_with_no_rows_still_writes_a_valid_empty_file(tmp_path) -> None:
+    output_path = tmp_path / "empty.parquet"
+    writer = ParquetDocumentWriter(output_path)
+
+    row_count = writer.finalize()
+
+    assert row_count == 0
+    table = pq.read_table(output_path)
+    assert table.num_rows == 0
+    assert table.schema.names == list(_DOCUMENT_PARQUET_SCHEMA.names)
+
+
+def test_parquet_document_writer_rejects_non_positive_batch_size(tmp_path) -> None:
+    with pytest.raises(ValueError, match="batch_size"):
+        ParquetDocumentWriter(tmp_path / "x.parquet", batch_size=0)
 
 
 def test_shard_shuffle_is_deterministic_complete_and_resume_policy_bound(

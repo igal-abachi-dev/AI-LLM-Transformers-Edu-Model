@@ -33,7 +33,7 @@ from jinja2 import Environment, StrictUndefined
 
 from minifrontier.model import MiniFrontier
 from minifrontier.mtp import MTPHeads
-from minifrontier.speculative_decoding import speculative_generate
+from minifrontier.speculative_decoding import speculative_generate, speculative_generate_sampled
 from minifrontier.tokenizer import SPECIAL_TOKEN_IDS, MiniFrontierTokenizer
 
 Role = Literal["system", "user", "assistant"]
@@ -168,20 +168,44 @@ def complete_text(
     top_p: float = 1.0,
     seed: int = 42,
     mtp_heads: MTPHeads | None = None,
+    sampled_speculative: bool = False,
 ) -> str:
     token_ids = tokenizer.encode(prompt, add_bos=True)
     tokens = torch.tensor([token_ids], dtype=torch.long, device=model.token_embedding.weight.device)
-    # Self-speculative decoding (MF-093/MF-105) is only exact for greedy
-    # decoding -- its acceptance rule has no probability-ratio correction for
-    # sampling yet. Any non-default temperature/top-k/top-p silently falls
-    # back to plain decoding rather than producing an approximation under a
-    # decoding mode the guarantee doesn't cover.
+    # Self-speculative decoding (MF-093/MF-105) is exact for greedy decoding
+    # (bit-identical to plain decode), so it is unconditionally on whenever
+    # heads are available. MF-118 adds a distributionally-exact (rejection-
+    # sampling) variant for temperature-only sampling, but that one stays
+    # OFF unless a caller explicitly opts in via `sampled_speculative` --
+    # same "opt-in until proven" bar as every other experimental feature
+    # this project has added (MTP itself, gated attention, etc.): a real
+    # speedup/correctness measurement has to justify making it a default,
+    # not just existing. top_k/top_p always fall back to plain decoding
+    # either way: truncating the vocabulary changes the accept-ratio math,
+    # a separate, not-yet-implemented extension.
     if mtp_heads is not None and temperature == 0.0 and top_k is None and top_p == 1.0:
         generated, _stats = speculative_generate(
             model, mtp_heads, tokens, max_new_tokens=max_new_tokens, eos_id=tokenizer.eos_id
         )
         return tokenizer.decode(generated[0].tolist(), skip_special_tokens=True)
     generator = torch.Generator(device=tokens.device).manual_seed(seed)
+    if (
+        sampled_speculative
+        and mtp_heads is not None
+        and temperature > 0.0
+        and top_k is None
+        and top_p == 1.0
+    ):
+        generated, _stats = speculative_generate_sampled(
+            model,
+            mtp_heads,
+            tokens,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            eos_id=tokenizer.eos_id,
+            generator=generator,
+        )
+        return tokenizer.decode(generated[0].tolist(), skip_special_tokens=True)
     generated = model.generate(
         tokens,
         max_new_tokens=max_new_tokens,

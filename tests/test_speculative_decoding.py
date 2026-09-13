@@ -8,8 +8,10 @@ from minifrontier.model import MiniFrontier
 from minifrontier.mtp import MTPHeads
 from minifrontier.speculative_decoding import (
     SpeculativeStats,
+    _rejection_sample,
     _speculative_append_is_safe,
     speculative_generate,
+    speculative_generate_sampled,
 )
 
 
@@ -129,3 +131,134 @@ def test_speculative_append_is_safe_becomes_false_exactly_at_the_ring_wrap_bound
 
 def test_speculative_stats_acceptance_rate_handles_zero_proposed() -> None:
     assert SpeculativeStats(proposed=0, accepted=0).acceptance_rate == 0.0
+
+
+# --- MF-118: exact rejection sampling for temperature-only sampling ---
+
+
+def test_rejection_sample_reproduces_the_target_distribution_exactly() -> None:
+    """The core distributional-equivalence proof, at the mechanism level, not
+    through a full model -- so it can use arbitrary, deliberately mismatched
+    target/draft distributions rather than whatever a random tiny transformer
+    happens to produce. This is the real check MF-118's acceptance criterion
+    asks for: a many-sample empirical comparison, not a single-sample match
+    (sampling is inherently random, so bit-identity is the wrong bar here --
+    see `speculative_generate`'s own greedy tests for that different bar).
+
+    A chi-squared goodness-of-fit test against the *exact* target distribution
+    `p` (not another empirical sample) removes double-sampling noise from one
+    side of the comparison. `target` and `draft` are deliberately different
+    random distributions -- if the accept/reject/resample math were wrong
+    (e.g. resampling from raw `p` instead of the residual), the draft's own
+    skew would leak into the output and this test would fail; a correct
+    implementation reproduces `p` regardless of what `draft` looks like.
+    """
+
+    torch.manual_seed(0)
+    vocab = 12
+    target_probabilities = torch.softmax(torch.randn(1, vocab) * 2.0, dim=-1)
+    draft_probabilities = torch.softmax(torch.randn(1, vocab) * 2.0, dim=-1)
+
+    generator = torch.Generator().manual_seed(123)
+    trials = 20_000
+    counts = torch.zeros(vocab)
+    for _ in range(trials):
+        draft_token = torch.multinomial(draft_probabilities, num_samples=1, generator=generator)
+        token, _accepted = _rejection_sample(
+            target_probabilities, draft_token, draft_probabilities, generator=generator
+        )
+        counts[token.item()] += 1
+
+    expected = target_probabilities.squeeze(0) * trials
+    chi_squared = ((counts - expected) ** 2 / expected).sum().item()
+    # 11 degrees of freedom (vocab - 1); the real critical value at p=0.001 is
+    # ~31.26 -- 45 gives real margin against a flaky false failure while still
+    # being a meaningful, real bound (a genuinely wrong resample formula
+    # produces a statistic in the hundreds or more at this sample size, not a
+    # borderline one).
+    assert chi_squared < 45.0, f"chi-squared={chi_squared} -- output does not match target p"
+
+
+def test_rejection_sample_always_accepts_when_draft_and_target_agree() -> None:
+    # p == q everywhere: min(1, p/q) == 1 for whatever token got drafted, so
+    # acceptance is certain regardless of the random draw -- a direct check of
+    # the clamp(max=1.0) behavior, not just the general distributional test.
+    probabilities = torch.softmax(torch.randn(1, 16), dim=-1)
+    generator = torch.Generator().manual_seed(1)
+    for _ in range(50):
+        draft_token = torch.multinomial(probabilities, num_samples=1, generator=generator)
+        token, accepted = _rejection_sample(
+            probabilities, draft_token, probabilities, generator=generator
+        )
+        assert accepted is True
+        assert torch.equal(token, draft_token)
+
+
+def _tiny_hybrid_model_and_heads_wide_vocab(seed: int = 0) -> tuple[MiniFrontier, MTPHeads]:
+    # A wider vocabulary than the module-level helper's default 64 gives the
+    # accept/reject test below more real opportunities to exercise both
+    # branches within a short, fast generation.
+    torch.manual_seed(seed)
+    config = ModelConfig.tiny_modern(vocab_size=256, max_seq_len=128, local_window=16)
+    model = MiniFrontier(config).eval()
+    mtp_heads = MTPHeads(d_model=config.d_model, vocab_size=config.vocab_size, n_extra_heads=1)
+    return model, mtp_heads
+
+
+def test_speculative_generate_sampled_runs_end_to_end_and_is_reproducible() -> None:
+    model, mtp_heads = _tiny_hybrid_model_and_heads_wide_vocab()
+    prompt = torch.tensor([[1, 2, 3, 4]])
+
+    generator_a = torch.Generator().manual_seed(99)
+    tokens_a, stats_a = speculative_generate_sampled(
+        model, mtp_heads, prompt.clone(), max_new_tokens=24, temperature=0.8, generator=generator_a
+    )
+    generator_b = torch.Generator().manual_seed(99)
+    tokens_b, stats_b = speculative_generate_sampled(
+        model, mtp_heads, prompt.clone(), max_new_tokens=24, temperature=0.8, generator=generator_b
+    )
+    # Same seed, same everything else -> bit-identical output. Not the
+    # exactness guarantee this technique is actually about (that's the
+    # distributional test above), just ordinary, expected determinism.
+    assert torch.equal(tokens_a, tokens_b)
+    assert tokens_a.shape == (1, 4 + 24)
+    # A real generation this long, on a hybrid model whose local layers never
+    # wrap (max_seq_len=128 > 4+24), should genuinely exercise drafting.
+    assert stats_a.proposed > 0
+    assert stats_a == stats_b
+
+
+def test_speculative_generate_sampled_validates_arguments() -> None:
+    model, mtp_heads = _tiny_hybrid_model_and_heads_wide_vocab()
+    with pytest.raises(ValueError, match="single stream"):
+        speculative_generate_sampled(
+            model, mtp_heads, torch.tensor([[1], [2]]), max_new_tokens=1, temperature=0.8
+        )
+    empty_prompt = torch.zeros((1, 0), dtype=torch.long)
+    with pytest.raises(ValueError, match="non-empty"):
+        speculative_generate_sampled(
+            model, mtp_heads, empty_prompt, max_new_tokens=1, temperature=0.8
+        )
+    with pytest.raises(ValueError, match="negative"):
+        speculative_generate_sampled(
+            model, mtp_heads, torch.tensor([[1]]), max_new_tokens=-1, temperature=0.8
+        )
+    with pytest.raises(ValueError, match="vocabulary"):
+        speculative_generate_sampled(
+            model, mtp_heads, torch.tensor([[1]]), max_new_tokens=1, temperature=0.8, eos_id=99999
+        )
+    with pytest.raises(ValueError, match="temperature > 0"):
+        speculative_generate_sampled(
+            model, mtp_heads, torch.tensor([[1]]), max_new_tokens=1, temperature=0.0
+        )
+
+
+def test_speculative_generate_sampled_zero_new_tokens_returns_prompt_unchanged() -> None:
+    model, mtp_heads = _tiny_hybrid_model_and_heads_wide_vocab()
+    prompt = torch.tensor([[1, 2, 3]])
+    tokens, stats = speculative_generate_sampled(
+        model, mtp_heads, prompt, max_new_tokens=0, temperature=0.8
+    )
+    assert torch.equal(tokens, prompt)
+    assert stats.proposed == 0
+    assert stats.accepted == 0

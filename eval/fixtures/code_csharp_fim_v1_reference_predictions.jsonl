@@ -1,0 +1,5 @@
+{"id":"completion-add-cs-v1","prediction":"return a + b;\n}\n"}
+{"id":"fim-evens-cs-v1","prediction":"n % 2 == 0"}
+{"id":"repair-semicolon-cs-v1","prediction":"int Square(int x)\n{\n    return x * x;\n}\n"}
+{"id":"completion-switch-cs-v1","prediction":"> 0 => \"positive\",\n    _ => \"negative\"\n};\n"}
+{"id":"completion-hasduplicate-cs-v1","prediction":"return true;\n        }\n    }\n    return false;\n}\n"}

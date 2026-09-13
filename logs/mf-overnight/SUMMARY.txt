@@ -1,16 +1,48 @@
 ﻿
-=== MF-083 / MF-097 / MF-095 overnight run started 2026-09-11 11:19:49 ===
-[2026-09-11 11:19:49] START prep-mf097-best-fit
-[2026-09-11 11:19:51] FAILED prep-mf097-best-fit (exit 1) -- see logs\mf-overnight\prep-mf097-best-fit.log
-[2026-09-11 11:19:51] START prep-mf097-bos-crop
-[2026-09-11 11:19:53] FAILED prep-mf097-bos-crop (exit 1) -- see logs\mf-overnight\prep-mf097-bos-crop.log
-[2026-09-11 11:19:53] START prep-mf095-dclm-edu
-[2026-09-11 11:19:55] FAILED prep-mf095-dclm-edu (exit 1) -- see logs\mf-overnight\prep-mf095-dclm-edu.log
-[2026-09-11 11:19:55] START prep-mf095-finemath
-[2026-09-11 11:19:57] FAILED prep-mf095-finemath (exit 1) -- see logs\mf-overnight\prep-mf095-finemath.log
-[2026-09-11 11:19:57] START prep-mf095-cosmopedia-v2
-[2026-09-11 11:19:59] FAILED prep-mf095-cosmopedia-v2 (exit 1) -- see logs\mf-overnight\prep-mf095-cosmopedia-v2.log
-[2026-09-11 11:19:59] START prep-mf095-github-code
-[2026-09-11 11:20:01] FAILED prep-mf095-github-code (exit 1) -- see logs\mf-overnight\prep-mf095-github-code.log
-[2026-09-11 11:20:01] ALREADY DONE mf083-baseline (found artifacts/mf083-cautious-adamw/baseline/final/model.safetensors) -- skipping re-run
-[2026-09-11 11:20:01] START mf083-cautious
+=== MF-083 / MF-097 / MF-095 overnight run started 2026-09-11 11:54:33 ===
+[2026-09-11 11:54:33] ALREADY DONE prep-mf097-best-fit (found data/shards/mf097-best-fit-train/metadata.json) -- skipping re-run
+[2026-09-11 11:54:33] ALREADY DONE prep-mf097-bos-crop (found data/shards/mf097-bos-crop-train/metadata.json) -- skipping re-run
+[2026-09-11 11:54:33] ALREADY DONE prep-mf095-dclm-edu (found data/shards/mf095-dclm-edu-train/metadata.json) -- skipping re-run
+[2026-09-11 11:54:33] ALREADY DONE prep-mf095-finemath (found data/shards/mf095-finemath-train/metadata.json) -- skipping re-run
+[2026-09-11 11:54:33] ALREADY DONE prep-mf095-cosmopedia-v2 (found data/shards/mf095-cosmopedia-v2-train/metadata.json) -- skipping re-run
+[2026-09-11 11:54:33] ALREADY DONE prep-mf095-github-code (found data/shards/mf095-github-code-train/metadata.json) -- skipping re-run
+[2026-09-11 11:54:33] ALREADY DONE mf083-baseline (found artifacts/mf083-cautious-adamw/baseline/final/model.safetensors) -- skipping re-run
+[2026-09-11 11:54:33] START mf083-cautious
+[2026-09-11 12:43:03] SUCCESS mf083-cautious (log: logs\mf-overnight\mf083-cautious.log)
+[2026-09-11 12:43:03] START mf097-ribbon
+[2026-09-11 13:25:24] SUCCESS mf097-ribbon (log: logs\mf-overnight\mf097-ribbon.log)
+[2026-09-11 13:25:24] START mf097-best-fit
+[2026-09-11 14:08:21] SUCCESS mf097-best-fit (log: logs\mf-overnight\mf097-best-fit.log)
+[2026-09-11 14:08:21] START mf097-bos-crop
+[2026-09-11 14:51:02] SUCCESS mf097-bos-crop (log: logs\mf-overnight\mf097-bos-crop.log)
+[2026-09-11 14:51:02] START mf095-proposed-5-source
+[2026-09-11 15:33:50] SUCCESS mf095-proposed-5-source (log: logs\mf-overnight\mf095-proposed-5-source.log)
+[2026-09-11 15:33:50] START mf095-wsd-fixed
+[2026-09-11 16:16:36] SUCCESS mf095-wsd-fixed (log: logs\mf-overnight\mf095-wsd-fixed.log)
+[2026-09-11 16:16:36] START mf095-wsd-decay-curriculum
+[2026-09-11 16:59:43] SUCCESS mf095-wsd-decay-curriculum (log: logs\mf-overnight\mf095-wsd-decay-curriculum.log)
+[2026-09-11 16:59:43] START mf095-fineweb-only
+[2026-09-11 17:42:27] SUCCESS mf095-fineweb-only (log: logs\mf-overnight\mf095-fineweb-only.log)
+[2026-09-11 17:42:27] START mf095-web-code-70-30
+[2026-09-11 18:25:12] SUCCESS mf095-web-code-70-30 (log: logs\mf-overnight\mf095-web-code-70-30.log)
+
+=== Overnight run finished 2026-09-11 18:25:12 ===
+
+Step                          Status
+----------------------------- -------
+prep-mf097-best-fit            SUCCESS
+prep-mf097-bos-crop            SUCCESS
+prep-mf095-dclm-edu            SUCCESS
+prep-mf095-finemath            SUCCESS
+prep-mf095-cosmopedia-v2       SUCCESS
+prep-mf095-github-code         SUCCESS
+mf083-baseline                 SUCCESS
+mf083-cautious                 SUCCESS
+mf097-ribbon                   SUCCESS
+mf097-best-fit                 SUCCESS
+mf097-bos-crop                 SUCCESS
+mf095-proposed-5-source        SUCCESS
+mf095-wsd-fixed                SUCCESS
+mf095-wsd-decay-curriculum     SUCCESS
+mf095-fineweb-only             SUCCESS
+mf095-web-code-70-30           SUCCESS

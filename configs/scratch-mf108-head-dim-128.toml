@@ -15,7 +15,14 @@ global_position_encoding = "rope"
 dropout = 0.0
 tie_embeddings = true
 attention_impl = "auto"
+layer_norm_scaling = true
+gated_attention = true
 # MF-108: head_dim=128 (via head_dim_override) instead of this preset's
 # derived 64 (768/12). n_heads/n_kv_heads unchanged -- Q/K/V/out_proj widen
 # from 12*64=768 to 12*128=1536, a real disclosed parameter/compute increase.
+# layer_norm_scaling/gated_attention added 2026-09-13 to match the current
+# 150m-modern.toml baseline exactly (this scratch config predated their
+# 2026-09-09 adoption and was missing them, which would have confounded this
+# comparison with two changed variables instead of one -- caught before any
+# GPU time was spent).
 head_dim_override = 128

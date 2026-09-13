@@ -25,6 +25,7 @@ from pathlib import Path
 from minifrontier.data import (
     iter_cosmopedia_v2,
     iter_dclm_edu,
+    iter_ebook_markdown,
     iter_finemath,
     iter_fineweb_edu,
     iter_github_code,
@@ -34,6 +35,7 @@ from minifrontier.data import (
 from minifrontier.shards import (
     AdmissionStats,
     DiskDeduplicator,
+    ParquetDocumentWriter,
     TokenShardWriter,
     admit_documents,
 )
@@ -46,7 +48,14 @@ def parse_args() -> argparse.Namespace:
     source.add_argument("--manifest", type=Path)
     source.add_argument(
         "--source",
-        choices=("fineweb-edu", "dclm-edu", "finemath", "cosmopedia-v2", "github-code"),
+        choices=(
+            "fineweb-edu",
+            "dclm-edu",
+            "finemath",
+            "cosmopedia-v2",
+            "github-code",
+            "ebook-markdown",
+        ),
     )
     parser.add_argument("--limit", type=int)
     parser.add_argument("--start", type=int, default=0)
@@ -80,6 +89,35 @@ def parse_args() -> argparse.Namespace:
         "per line, restricting the stream to exactly this curated set of repositories "
         "instead of an unfiltered crawl of the whole dataset.",
     )
+    parser.add_argument(
+        "--ebook-directory",
+        type=Path,
+        help="Only meaningful with --source ebook-markdown: a directory already "
+        "processed by the standalone pdf-to-markdown-rag pipeline, read at "
+        "<directory>/md/<book-id>/book.md per book (MF-124).",
+    )
+    parser.add_argument(
+        "--ebook-license",
+        default="Public Domain",
+        help="Only meaningful with --source ebook-markdown: the license string every "
+        "book in --ebook-directory is asserted to carry (MF-124: real ingestion is "
+        "public-domain-only; this is not detected from the pipeline's own per-book "
+        "license.json, which is deliberately not read).",
+    )
+    parser.add_argument(
+        "--ebook-revision",
+        default="n/a",
+        help="Only meaningful with --source ebook-markdown: ebooks have no natural "
+        "per-document revision concept (no repository commit or dataset snapshot); "
+        "defaults to a static placeholder.",
+    )
+    parser.add_argument(
+        "--ebook-language",
+        default="English",
+        help="Only meaningful with --source ebook-markdown: applies uniformly to "
+        "every book in --ebook-directory -- run once per language for a mixed-"
+        "language batch.",
+    )
     parser.add_argument("--tokenizer", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--sequence-length", type=int, required=True)
@@ -103,6 +141,18 @@ def parse_args() -> argparse.Namespace:
         default=256,
         help="Only meaningful with --packing best_fit/bos_crop: how many whole "
         "documents to buffer before packing a batch.",
+    )
+    parser.add_argument(
+        "--export-parquet-dir",
+        type=Path,
+        help="MF-125: optionally also snapshot the admitted, pre-tokenization "
+        "Document rows (raw text plus every provenance field) to this directory, "
+        "as train-00000-of-00001.parquet / validation-00000-of-00001.parquet -- "
+        "the naming Hugging Face's datasets library auto-detects as split files, "
+        "so this directory can be uploaded directly as one config's data_dir in a "
+        "published dataset repo (see scripts/build_dataset_card.py). A "
+        "publish-oriented export, not a training input. Omit for the existing "
+        "shards-only behavior.",
     )
     return parser.parse_args()
 
@@ -160,6 +210,18 @@ def document_stream(args: argparse.Namespace):
             shuffle_seed=args.shuffle_seed,
             shuffle_buffer=args.shuffle_buffer,
         )
+    if args.source == "ebook-markdown":
+        if args.ebook_directory is None:
+            raise ValueError("--source ebook-markdown requires --ebook-directory")
+        return iter_ebook_markdown(
+            args.ebook_directory,
+            license=args.ebook_license,
+            revision=args.ebook_revision,
+            language=args.ebook_language,
+            limit=args.limit,
+            start=args.start,
+            shuffle_seed=args.shuffle_seed,
+        )
     raise ValueError(f"unsupported data source: {args.source}")
 
 
@@ -192,6 +254,16 @@ def main() -> None:
         pack_buffer_documents=args.pack_buffer_documents,
     )
     validation_threshold = int(args.validation_fraction * 10_000)
+    parquet_train_writer = None
+    parquet_validation_writer = None
+    if args.export_parquet_dir is not None:
+        args.export_parquet_dir.mkdir(parents=True, exist_ok=True)
+        parquet_train_writer = ParquetDocumentWriter(
+            args.export_parquet_dir / "train-00000-of-00001.parquet"
+        )
+        parquet_validation_writer = ParquetDocumentWriter(
+            args.export_parquet_dir / "validation-00000-of-00001.parquet"
+        )
     with DiskDeduplicator(
         args.output / "dedup-signatures.sqlite",
         max_hamming_distance=stats.max_hamming_distance,
@@ -205,10 +277,22 @@ def main() -> None:
         )
         for document in admitted:
             bucket = split_bucket(document)
-            writer = validation_writer if bucket < validation_threshold else train_writer
+            is_validation = bucket < validation_threshold
+            writer = validation_writer if is_validation else train_writer
             writer.add(document)
+            if parquet_train_writer is not None:
+                active_parquet_writer = (
+                    parquet_validation_writer if is_validation else parquet_train_writer
+                )
+                active_parquet_writer.add(document)
     train_manifest = train_writer.finalize(drop_remainder=not args.keep_remainder)
     validation_manifest = validation_writer.finalize(drop_remainder=not args.keep_remainder)
+    exported_parquet_train_rows = (
+        parquet_train_writer.finalize() if parquet_train_writer is not None else None
+    )
+    exported_parquet_validation_rows = (
+        parquet_validation_writer.finalize() if parquet_validation_writer is not None else None
+    )
     metadata = {
         "admission": asdict(stats),
         "source": args.source or "manifest",
@@ -221,6 +305,11 @@ def main() -> None:
         "validation_fraction": args.validation_fraction,
         "train": asdict(train_manifest),
         "validation": asdict(validation_manifest),
+        "export_parquet_dir": (
+            str(args.export_parquet_dir) if args.export_parquet_dir is not None else None
+        ),
+        "export_parquet_train_rows": exported_parquet_train_rows,
+        "export_parquet_validation_rows": exported_parquet_validation_rows,
     }
     (args.output / "metadata.json").write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n",
