@@ -32,7 +32,7 @@ def test_frozen_edu_parameter_targets(filename: str, expected: int) -> None:
         ("50m-modern.toml", 96),
         ("150m-edu.toml", 64),
         ("150m-modern.toml", 96),
-        ("350m-modern.toml", 96),
+        ("350m-modern.toml", 64),
         ("500m-modern.toml", 96),
     ],
 )
@@ -41,7 +41,11 @@ def test_all_frozen_presets_validate(filename: str, expected_head_dim: int) -> N
     # default (a real, measured -0.4447% BPB win at 150M scale, see
     # reports/mf108-head-dim-comparison.md) -- Edu stays at its own derived
     # head_dim=64, unaffected, matching every other MF-081-class item's
-    # Edu/Modern split.
+    # Edu/Modern split. MF-070 (2026-09-14): 350M reverts to its own derived
+    # head_dim=64 specifically -- real-tested at 350M's actual declared
+    # max_seq_len=2048 and found to collapse (~70 tok/s, real VRAM paging),
+    # unlike 150M where head_dim=96 measured a genuine win. Not yet
+    # independently re-tested at 500M; see MF-070's own backlog entry.
     config = ModelConfig.from_toml(ROOT / "configs" / filename)
     assert config.head_dim == expected_head_dim
 

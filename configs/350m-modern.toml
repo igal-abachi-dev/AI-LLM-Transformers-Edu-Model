@@ -17,5 +17,10 @@ tie_embeddings = true
 attention_impl = "auto"
 layer_norm_scaling = true
 gated_attention = true
-head_dim_override = 96
+# MF-070 (2026-09-14): head_dim_override=96 (MF-108's 150M-validated default)
+# real-tested at 350M's actual declared max_seq_len=2048 and rejected -- a
+# real, confirmed VRAM-paging collapse (~70 tok/s, ~7.9GB/8GB, same signature
+# as head_dim=128's own 150M collapse), not merely disclosed cost this time.
+# head_dim derives to 64 (d_model/n_heads = 1024/16) without this override.
+# See tasks/backlog.md's MF-070 entry for the real numbers.
 

@@ -620,14 +620,50 @@ independently re-checked against the actual source before any action.
   the VRAM-pressure mechanism is real and directionally correct, but evidently not a simple linear
   threshold; not independently diagnosed further. `head_dim=128`'s own quality was never
   measured, on purpose, since its cost alone was disqualifying.
-- **Caveat, real and not yet resolved**: only the 150M preset was actually measured. All four
-  frozen presets derived the identical `head_dim=64` before this override, so applying the same
-  96 value to 50M/350M/500M is a consistent architectural generalization, not independent
-  per-scale verification -- 350M in particular (the real target of the eventual MF-070 scale
-  check) has less VRAM headroom to begin with than 150M does, and its own real VRAM/throughput
-  behavior at `head_dim=96` is untested. Worth a real, cheap check before MF-070's real run locks
-  in on this config.
+- **Caveat, real, resolved 2026-09-14 (see the dated entry below) for 350M; still open for 50M/500M**: only
+  the 150M preset was actually measured at adoption time. All four frozen presets derived the
+  identical `head_dim=64` before this override, so applying the same 96 value to 50M/350M/500M was
+  a consistent architectural generalization, not independent per-scale verification. 350M has since
+  been real-tested and reverted (below); 50M/500M remain unmeasured at their own scale.
 - **Open, in-progress research (2026-09-13, user-directed)**: close some of the real ~23%
   throughput gap on this specific hardware before treating the current number as final -- see
   MF-108's own backlog entry for the real diagnostic investigation (attention-kernel selection,
   gradient-accumulation amortization) this prompted.
+
+## 2026-09-14 — MF-070: `head_dim=96` reverted for 350M; real activation-checkpointing requirement found for 150M at full context
+
+- **The 350M caveat above is now resolved, real, and negative.** `configs/350m-modern.toml` real-tested at
+  its own actual declared `max_seq_len=2048` (a fresh shard pool built at that real sequence length,
+  after an initial attempt mistakenly reused a 1024-length pool and was caught and corrected):
+  `head_dim=96` measured `peak_reserved_vram_bytes=12.37GB` against this card's real `total_vram_bytes=8.59GB`
+  physical total -- 44% over capacity, genuine confirmed paging, throughput collapsing to ~70 tok/s.
+  **Reverting to `head_dim=64` did not fix it**: same real test, same config otherwise, `peak_reserved_vram_bytes`
+  still ~7.9GB-range and throughput still only ~92 tok/s, stable across four real progress checkpoints --
+  confirming 350M's own footprint at its full declared context is too large for this reference card
+  regardless of head_dim. `--loss-chunk-size` added on top: no improvement (~93-94 tok/s) --
+  the `[B,S,vocab_size]` logits tensor this removes is a small fraction of an already-near-8GB total.
+  `--activation-checkpointing` added on top: a real, meaningful ~1.7x recovery (~155.6 tok/s, ran to
+  real completion) but still far below healthy -- at that rate a real 3B-token run would take ~223 days,
+  not viable locally at any real token budget. **Decision: `configs/350m-modern.toml` reverts to its own
+  derived `head_dim=64`** (150M/50M/500M unaffected); the real 350M/3B-token release run is deferred to
+  rented hardware with real VRAM headroom (see MF-117's own pre-rental-hardware-revalidation plan), not
+  attempted on this local 8GB card at any local configuration found.
+- **A second, more consequential real gap found the same way, for 150M specifically -- since 150M-Modern
+  is a required V1 release artifact, not an optional scale-check target.** The user asked directly whether
+  "150M at seq_len=2048" (as opposed to the 1024-length shards every prior measurement used) had actually
+  been tested -- it had not. Real test: the same 150M/`head_dim=96` config that measured a genuinely healthy
+  `peak_reserved_vram_bytes=6.37GB`/`8.59GB` physical at `seq_len=1024` (the original MF-108 adoption
+  measurement, re-checked directly from its own real `run.json` and confirmed correct) measures
+  `peak_reserved_vram_bytes=12.37GB` at the real declared `seq_len=2048` -- 44% over physical capacity,
+  throughput collapsing ~11-13x to ~239 tok/s. **Unlike 350M, this is fully and cleanly fixed by
+  `--activation-checkpointing` alone**: `peak_reserved_vram_bytes` drops to `5.59GB` (65% of physical,
+  comfortably safe), throughput recovers to ~1,966 tok/s (a real ~33-38% cost relative to the healthy
+  1024-context number, not a collapse). **`head_dim=96` stays adopted for 150M -- it does not need to be
+  reverted -- but any real 150M-Modern training run at anything near the full declared 2048 context now has
+  a real, newly-discovered, necessary requirement: pass `--activation-checkpointing` to `train/pretrain.py`,
+  or risk this same real paging collapse.** This was never known or documented before, because no VRAM
+  measurement behind the original `head_dim=96` adoption (or any other bounded-ablation measurement this
+  project has made) was taken past `sequence_length=1024`, half of the frozen `max_seq_len=2048`.
+- Full detail, all real numbers, and the diagnostic sequence that found both results are in
+  `tasks/backlog.md`'s MF-070 entry (where this was actually investigated) and MF-108's own entry
+  (cross-referenced addendum).

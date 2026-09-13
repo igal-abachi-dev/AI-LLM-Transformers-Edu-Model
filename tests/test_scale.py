@@ -29,9 +29,11 @@ def test_scale_estimates_label_lower_bounds_and_bounded_cache_savings() -> None:
     estimates = estimate_scale(config, batch_size=1)
     # 332,460,544 before MF-081/MF-082's gated_attention=true default was added to
     # this preset (2026-09-09) -- gate_proj adds 16*(1024+1)=16,400 params/layer.
-    # 332,919,744 before MF-108's head_dim_override=96 default (2026-09-13) --
-    # widening Q/K/V/out_proj from 16*64=1,024 to 16*96=1,536 adds the rest.
-    assert estimates.parameter_count == 369_621_696
+    # Briefly 369,621,696 under MF-108's head_dim_override=96 (2026-09-13);
+    # reverted back to 332,919,744 by MF-070 (2026-09-14) once head_dim=96 was
+    # real-tested at 350M's actual declared max_seq_len=2048 and found to
+    # collapse into VRAM paging (~70 tok/s) -- head_dim derives to 64 again.
+    assert estimates.parameter_count == 332_919_744
     assert estimates.training_lower_bound_bytes == estimates.parameter_count * 12
     assert estimates.bounded_local_kv_bytes < estimates.full_history_kv_bytes
     assert any("lower bounds" in value for value in estimates.assumptions)
