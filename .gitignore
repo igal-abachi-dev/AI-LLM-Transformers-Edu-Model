@@ -240,3 +240,9 @@ ai-LLM*.zip
 # Third-party research material (tech reports, screenshots) dropped in for review --
 # no redistribution decision made, per docs/RESEARCH_SOURCE_REVIEW.md's existing policy.
 /ds4/
+
+# Real trained checkpoints (.safetensors/.pt) from an overnight comparison run, left
+# under reports/ by mistake instead of artifacts/ (11GB+) -- never commit checkpoints,
+# per AGENTS.md's own data-hygiene rule. The real summarized results already live in
+# the small, tracked reports/*.md and reports/*.json files alongside this directory.
+/reports/mf-overnight-eval/
