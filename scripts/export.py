@@ -28,6 +28,7 @@ from pathlib import Path
 
 from minifrontier.checkpoint import export_release, load_training_checkpoint
 from minifrontier.config import ModelConfig
+from minifrontier.ema import EMAWeights
 from minifrontier.model import MiniFrontier
 from minifrontier.mtp import MTPHeads
 from minifrontier.release import verify_release
@@ -40,6 +41,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tokenizer", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--model-card", type=Path)
+    parser.add_argument(
+        "--weights",
+        choices=("live", "ema"),
+        default="live",
+        help="'ema' exports the checkpoint's EMA shadow weights (MF-086 part 4) instead "
+        "of the live trained weights -- requires the checkpoint to have been trained "
+        "with ema_decay set; a checkpoint without ema.safetensors raises a clear error.",
+    )
     parser.add_argument(
         "--keep-source",
         action="store_true",
@@ -74,13 +83,19 @@ def main() -> None:
         )
     # Training checkpoints are explicitly local/trusted here; published releases contain only
     # safetensors and text metadata and never carry the pickle-backed optimizer state.
+    ema = EMAWeights(model, decay=0.999) if args.weights == "ema" else None
     load_training_checkpoint(
         args.checkpoint,
         model,
         restore_rng=False,
         trusted_local_state=True,
         mtp_heads=mtp_heads,
+        ema=ema,
     )
+    if ema is not None:
+        # Overwrite the just-loaded live weights with the EMA shadow in place --
+        # export_release below then publishes the EMA model, not the live one.
+        ema.copy_to(model)
     tokenizer = MiniFrontierTokenizer.from_directory(args.tokenizer)
     model_card = args.model_card.read_text(encoding="utf-8") if args.model_card else None
     export_release(args.output, model, tokenizer, model_card=model_card, mtp_heads=mtp_heads)

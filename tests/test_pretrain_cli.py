@@ -96,6 +96,7 @@ def _args(
         no_decay_embeddings=False,
         gradient_clip=1.0,
         checkpoint_interval=1,
+        progress_interval=1,
         no_checkpoint=False,
         activation_checkpointing=False,
         compile=False,
@@ -136,6 +137,27 @@ def test_no_checkpoint_flag_skips_all_checkpoint_writes(tmp_path, mini_tokenizer
     assert not (bare_output / "final").exists()
     assert not list(bare_output.glob("checkpoint-*"))
     assert list(bare_output.iterdir()) == [bare_output / "run.json"]
+
+
+def test_progress_interval_prints_during_training_including_under_no_checkpoint(
+    tmp_path, mini_tokenizer, capsys
+) -> None:
+    """Real regression coverage for a real gap found while running MF-070's
+    350M scale check: a run gave zero signal until it finished or was killed,
+    indistinguishable from a hang. Also covers the specific bug the fix
+    introduced a risk of reintroducing -- progress printing must fire even
+    under --no-checkpoint, which is exactly the throwaway-benchmark case that
+    needs it most, not something the checkpoint-interval gate should suppress."""
+
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    output = tmp_path / "out"
+    pretrain.run(
+        _args(config_path, shards_path, output, updates=2, progress_interval=1, no_checkpoint=True)
+    )
+    captured = capsys.readouterr().out
+    assert "1/2 updates" in captured
+    assert "2/2 updates" in captured
 
 
 def test_loss_chunk_size_and_z_loss_weight_flags_reach_real_training(

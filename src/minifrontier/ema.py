@@ -7,9 +7,21 @@ that keeps jittering update to update. An EMA keeps a second, "shadow" copy of
 every weight that only ever moves a small fraction of the way toward the live
 weights on each update -- so it tracks the same overall trajectory but averages
 out the jitter. Swapping the shadow weights in at evaluation/release time is a
-well-known, nearly-free way to get a slightly better (and less noisy) model
-than the raw trained weights, at the cost of one extra copy of the parameters
-in memory.
+well-known way to get a slightly better (and less noisy) model than the raw
+trained weights -- ``eval_checkpoint.py``/``export.py``'s ``--weights ema``
+does exactly that swap (via ``copy_to`` below) before evaluating or exporting.
+
+Computationally cheap, but **not memory-free** -- a real, disclosed cost, not
+a "nearly-free" one: ``self._shadow`` below is a full extra FP32 copy of every
+(deduplicated) parameter, on the same device as the live model. At this
+project's real, measured parameter counts that is real VRAM, not a rounding
+error -- roughly 0.58 GiB at 150M/head_dim=96, 1.38 GiB at 350M/head_dim=96
+(param_count * 4 bytes). Given `head_dim=96` (MF-108) already measures ~7.7 GB
+peak on this project's reference 8GB RTX 2070 Super, enabling EMA there is
+real headroom this project does not currently have to spare -- plausibly
+enough to reach the same silent-paging cliff `head_dim=128` hit on its own.
+Treat `TrainingConfig.ema_decay` as experimental and memory-expensive on this
+hardware, not as a free quality lever to turn on by default.
 
 This lives outside ``MiniFrontier`` itself (like ``mtp.py``'s heads) so the
 frozen architecture and checkpoint format are untouched: EMA is purely a

@@ -117,6 +117,64 @@ def test_interrupted_checkpoint_save_never_corrupts_target(tmp_path, monkeypatch
     assert not any(path.name.startswith(".checkpoint") for path in tmp_path.iterdir())
 
 
+def test_interrupted_publish_between_the_two_renames_self_heals(tmp_path, monkeypatch) -> None:
+    """A crash between the old-checkpoint-aside rename and the new-checkpoint
+    publish rename must lose nothing -- real regression coverage for the real
+    crash window a naive `rmtree(target); staging.replace(target)` has (fixed
+    here with a target<->`.old` swap): the two renames below are the only
+    place `target` is ever momentarily missing, and a crash exactly there must
+    leave the old checkpoint recoverable, not gone."""
+
+    import minifrontier.checkpoint as checkpoint_module
+
+    config = ModelConfig.tiny_edu()
+    model = MiniFrontier(config)
+    checkpoint = tmp_path / "checkpoint"
+    old = tmp_path / ".checkpoint.old"
+    staging = tmp_path / ".checkpoint.tmp"
+
+    save_training_checkpoint(checkpoint, model, trainer_state={"step": 1})
+
+    real_replace = checkpoint_module.Path.replace
+    call_count = 0
+
+    def replace_that_crashes_on_the_publish_rename(self, target):
+        nonlocal call_count
+        call_count += 1
+        # First call renames the old checkpoint aside (checkpoint -> .old) --
+        # let it through. Second call is `staging.replace(target)`, the real
+        # publish -- simulate a kill exactly there, before it happens.
+        if call_count == 2:
+            raise RuntimeError("simulated kill between the two renames")
+        return real_replace(self, target)
+
+    monkeypatch.setattr(
+        checkpoint_module.Path, "replace", replace_that_crashes_on_the_publish_rename
+    )
+    with pytest.raises(RuntimeError, match="simulated kill between the two renames"):
+        save_training_checkpoint(checkpoint, model, trainer_state={"step": 2})
+
+    # The exact real state a crash there leaves behind: nothing at the real
+    # path, but both the old (real, complete) and new (real, complete)
+    # checkpoints intact under their own names -- nothing was ever lost.
+    assert not checkpoint.exists()
+    assert old.exists()
+    assert json.loads((old / "trainer_state.json").read_text(encoding="utf-8")) == {"step": 1}
+    assert staging.exists()
+    assert json.loads((staging / "trainer_state.json").read_text(encoding="utf-8")) == {"step": 2}
+
+    # The next real save (a real resumed run retrying) self-heals: it must
+    # not silently skip past the missing checkpoint or crash confused by the
+    # leftover `.old`/`.tmp` directories -- it recovers the old checkpoint
+    # first, then publishes the new one normally.
+    monkeypatch.setattr(checkpoint_module.Path, "replace", real_replace)
+    save_training_checkpoint(checkpoint, model, trainer_state={"step": 3})
+    trainer_state = json.loads((checkpoint / "trainer_state.json").read_text(encoding="utf-8"))
+    assert trainer_state == {"step": 3}
+    assert not old.exists()
+    assert not staging.exists()
+
+
 def test_mtp_heads_round_trip_through_checkpoint_save_and_load(tmp_path) -> None:
     torch.manual_seed(21)
     config = ModelConfig.tiny_edu()

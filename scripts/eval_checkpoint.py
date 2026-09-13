@@ -20,6 +20,7 @@ from typing import Any
 
 from minifrontier.checkpoint import load_training_checkpoint
 from minifrontier.config import ModelConfig
+from minifrontier.ema import EMAWeights
 from minifrontier.evaluation.language import MiniFrontierEvalLM, harness_settings
 from minifrontier.evaluation.validation import batches_from_packed_shards, evaluate_token_batches
 from minifrontier.model import MiniFrontier
@@ -39,6 +40,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=VALIDATION_BATCH_SIZE)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--weights",
+        choices=("live", "ema"),
+        default="live",
+        help="'ema' loads the checkpoint's ema.safetensors shadow (MF-086 part 4) and "
+        "evaluates it in place of the live weights -- requires the checkpoint to have "
+        "been trained with ema_decay set; a checkpoint without ema.safetensors raises "
+        "a clear error rather than silently falling back to live weights.",
+    )
     parser.add_argument(
         "--run-harness",
         action="store_true",
@@ -77,10 +87,18 @@ def evaluate_checkpoint(
     include_gsm8k: bool = False,
     include_extended: bool = False,
     harness_limit: int = 10,
+    weights: str = "live",
 ) -> dict[str, object]:
+    if weights not in ("live", "ema"):
+        raise ValueError(f"unknown weights selection: {weights!r}")
     config = ModelConfig(**json.loads((checkpoint / "config.json").read_text(encoding="utf-8")))
     model = MiniFrontier(config).to(device)
-    load_training_checkpoint(checkpoint, model, trusted_local_state=True)
+    ema = EMAWeights(model, decay=0.999) if weights == "ema" else None
+    load_training_checkpoint(checkpoint, model, trusted_local_state=True, ema=ema)
+    if ema is not None:
+        # Overwrite the just-loaded live weights with the EMA shadow in place --
+        # everything below (eval, harness) then sees the EMA model, not live.
+        ema.copy_to(model)
     tokenizer = MiniFrontierTokenizer.from_directory(tokenizer_dir)
     dataset = PackedShardDataset(validation_shards)
     metrics = evaluate_token_batches(
@@ -88,7 +106,11 @@ def evaluate_checkpoint(
         batches_from_packed_shards(dataset, tokenizer, batch_size=batch_size, device=device),
         pad_id=tokenizer.pad_id,
     )
-    result: dict[str, object] = {"checkpoint": str(checkpoint), **asdict(metrics)}
+    result: dict[str, object] = {
+        "checkpoint": str(checkpoint),
+        "weights": weights,
+        **asdict(metrics),
+    }
     if run_harness:
         from lm_eval import simple_evaluate
 
@@ -127,6 +149,7 @@ def main() -> None:
         include_gsm8k=args.include_gsm8k,
         include_extended=args.include_extended,
         harness_limit=args.limit,
+        weights=args.weights,
     )
     text = json.dumps(result, indent=2, sort_keys=True, default=_json_default) + "\n"
     print(text)

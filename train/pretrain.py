@@ -104,6 +104,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gradient-clip", type=float, default=1.0)
     parser.add_argument("--checkpoint-interval", type=int, default=100)
     parser.add_argument(
+        "--progress-interval",
+        type=int,
+        default=100,
+        help="Print a real progress line (update count, loss, tokens/s so far) every "
+        "this many updates, in addition to the final summary. Without this, a run "
+        "gives no signal at all until it finishes or is killed -- indistinguishable "
+        "from a hang for anything longer than a few minutes. Set to a value >= "
+        "--updates to disable.",
+    )
+    parser.add_argument(
         "--no-checkpoint",
         action="store_true",
         help=(
@@ -286,6 +296,8 @@ def _build_batch_provider(
 def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
     if not args.no_checkpoint and args.checkpoint_interval <= 0:
         raise ValueError("checkpoint_interval must be positive")
+    if args.progress_interval <= 0:
+        raise ValueError("progress_interval must be positive")
     if args.keep_last_n_checkpoints is not None and args.keep_last_n_checkpoints <= 0:
         raise ValueError("keep_last_n_checkpoints must be positive")
     model_config = ModelConfig.from_toml(args.config)
@@ -359,13 +371,32 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
 
     args.output.mkdir(parents=True, exist_ok=True)
 
-    def checkpoint_callback(
+    def update_progress_and_checkpoints(
         current_model: MiniFrontier,
         current_optimizer: torch.optim.Optimizer,
         current_schedule: LearningRateSchedule,
         current_state: TrainingState,
     ) -> None:
-        if current_state.completed_updates % args.checkpoint_interval:
+        # Real-time progress, deliberately NOT gated on --no-checkpoint: a
+        # throwaway benchmark/throughput run is exactly the case --no-checkpoint
+        # exists for, and exactly the case that most needs this -- without it, a
+        # run gives no signal at all until it finishes or is killed, so a run
+        # that is simply slower than expected becomes indistinguishable from a
+        # genuine hang (a real, previously-hit problem, not a hypothetical one).
+        if current_state.completed_updates % args.progress_interval == 0:
+            elapsed = time.perf_counter() - started
+            tokens_per_second = (
+                (current_state.consumed_target_tokens - tokens_before_this_run) / elapsed
+                if elapsed > 0
+                else 0.0
+            )
+            print(
+                f"{current_state.completed_updates}/{args.updates} updates, "
+                f"loss={current_state.last_loss:.6f}, "
+                f"tokens/s={tokens_per_second:.1f}, elapsed={elapsed:.1f}s",
+                flush=True,
+            )
+        if args.no_checkpoint or current_state.completed_updates % args.checkpoint_interval:
             return
         save_training_checkpoint(
             args.output / f"checkpoint-{current_state.completed_updates:08d}",
@@ -401,7 +432,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         optimizer=optimizer,
         schedule=schedule,
         state=state,
-        update_callback=None if args.no_checkpoint else checkpoint_callback,
+        update_callback=update_progress_and_checkpoints,
         forward_model=execution_model,
         mtp_heads=mtp_heads,
         ema=ema,

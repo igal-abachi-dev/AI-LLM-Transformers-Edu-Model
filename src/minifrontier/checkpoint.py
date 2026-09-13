@@ -123,10 +123,30 @@ def save_training_checkpoint(
     safely on disk. An interrupted save leaves either nothing at ``directory``
     (a fresh checkpoint) or the previous, still-complete one (an overwrite) --
     never a partial one.
+
+    Publishing over an *existing* checkpoint (an overwrite -- MF-129's
+    repeatedly-updated partial checkpoints hit this on every save, not just an
+    edge case) needs two renames, not one: neither filesystem can atomically
+    replace a non-empty directory in a single step. A naive
+    ``rmtree(target); staging.replace(target)`` has a real crash window
+    between those two calls where ``target`` has already been deleted but the
+    new checkpoint has not yet been published -- an interruption there loses
+    the checkpoint entirely, contradicting this function's own guarantee.
+    Instead the old checkpoint is renamed sideways (``.<name>.old``, itself an
+    atomic rename) before the new one is published, and only deleted
+    afterward. The one real window this leaves -- a crash after the sideways
+    rename but before the new checkpoint's own atomic rename -- is benign: the
+    old checkpoint is intact under its backup name and the new one is intact
+    under staging, so nothing is lost, and the ``target.exists()`` check below
+    self-heals it (restores the old checkpoint) the next time this function
+    runs against the same directory, before that call does anything else.
     """
 
     target = Path(directory)
     staging = target.with_name(f".{target.name}.tmp")
+    old = target.with_name(f".{target.name}.old")
+    if not target.exists() and old.exists():
+        old.replace(target)
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
@@ -159,8 +179,12 @@ def save_training_checkpoint(
     }
     torch.save(local_state, staging / "training_state.pt")
     if target.exists():
-        shutil.rmtree(target)
+        if old.exists():
+            shutil.rmtree(old)
+        target.replace(old)
     staging.replace(target)
+    if old.exists():
+        shutil.rmtree(old)
 
 
 _PERIODIC_CHECKPOINT_NAME = re.compile(r"checkpoint-(\d+)")
