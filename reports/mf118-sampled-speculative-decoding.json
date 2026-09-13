@@ -1,0 +1,20 @@
+{
+  "checkpoint": "artifacts\\mf118-mtp-retrain-headdim64\\seed-42-mtp",
+  "device": "cuda",
+  "max_new_tokens": 200,
+  "output_lengths_equal": true,
+  "plain": {
+    "seconds": 13.025773099972866,
+    "tokens_per_second": 15.354175024008104
+  },
+  "prompt_length": 32,
+  "speculative": {
+    "acceptance_rate": 0.3793103448275862,
+    "accepted": 55,
+    "proposed": 145,
+    "seconds": 13.85093680000864,
+    "tokens_per_second": 14.439456542742672
+  },
+  "speedup": 0.9404254230634235,
+  "temperature": 0.8
+}
