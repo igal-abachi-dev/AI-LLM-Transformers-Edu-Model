@@ -1,3 +1,9 @@
 ﻿
 === MF-070 150M-Modern release run started 2026-09-14 03:28:41 ===
 [2026-09-14 03:28:42] START prep-cosmopedia-v2
+[2026-09-14 03:42:33] SUCCESS prep-cosmopedia-v2 (log: logs\mf070-release\prep-cosmopedia-v2.log)
+[2026-09-14 03:42:33] START prep-finemath
+[2026-09-14 06:16:40] SUCCESS prep-finemath (log: logs\mf070-release\prep-finemath.log)
+[2026-09-14 06:16:40] START prep-fineweb-edu
+[2026-09-14 09:03:12] SUCCESS prep-fineweb-edu (log: logs\mf070-release\prep-fineweb-edu.log)
+[2026-09-14 09:03:12] START prep-dclm-edu
