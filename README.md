@@ -702,7 +702,7 @@ family, not different tooling.
 
 ## Data storage format: streaming plus packed shards, not a persisted raw JSONL/Parquet cache
 
-None of the five mixture sources (DCLM-Edu, FineWeb-Edu, GitHub-code, FineMath, Cosmopedia-v2) are
+Four of the five mixture sources (DCLM-Edu, FineWeb-Edu, FineMath, Cosmopedia-v2) are not
 bulk-downloaded or cached locally in any raw form. Every `iter_*` source function in
 `src/minifrontier/data.py` calls `datasets.load_dataset(..., streaming=True)` against a pinned
 `revision` hash, filters/dedups/license-gates on the fly, and hands admitted rows straight to
@@ -712,8 +712,33 @@ per-step tokenization cost) plus a `metadata.json` recording per-shard SHA-256 a
 `source_start`/`source_limit`/`shuffle_seed` used. This is deliberate, not incidental — it is the
 only choice consistent with this project's own rule to stream large public datasets and never
 commit corpora, checkpoints, or caches, and it avoids persisting the *raw*, mostly-discarded form of
-sources that get filtered down hard (GitHub-code alone rejects everything outside a curated,
-license-gated repo allowlist).
+sources that get filtered down hard.
+
+**GitHub-code (the fifth source) is the one real exception, and it does cache locally — a real,
+deliberate design, not an inconsistency.** `--source github-code --github-repo-allowlist FILE`
+(MF-134, 2026-09-15) fetches each allowlisted repo directly and currently from GitHub rather than
+from `codeparrot/github-code` (verified for real to be a static, one-time BigQuery snapshot from
+2022-03-16, no refresh mechanism — a source function pinned to *that* revision cannot ever return
+current code, whatever the pin). A direct fetch has nothing to stream against a fixed revision hash,
+so it needs its own real caching to avoid re-cloning 161 repos from scratch on every run:
+- **A persistent per-repo bare git mirror**, one folder per repo under `data/github-code-cache/`
+  (`git clone --mirror` once, `git fetch --prune` on later calls once past
+  `max_staleness_seconds`, default 60 days) — real, standard git-mirroring practice (the same
+  "clone once, fetch deltas" shape a real CI-caching vendor's own docs describe), bounding how
+  often this pipeline contacts GitHub at all, not just how long one run takes. `--github-force-refresh`
+  bypasses it unconditionally. Bootstrapping a mirror clones into a `.tmp` staging sibling first,
+  publishing via an atomic rename only once the clone genuinely completes, so a hard kill mid-clone
+  leaves an orphaned `.tmp` directory a later run cleans up and retries — never a corrupt mirror a
+  later run would silently trust.
+- **A Parquet document cache** (`data/github-code-cache/documents.parquet`, zstd-compressed) of
+  every already-extracted, already-filtered document (post-clone, pre-tokenization) — a later run
+  replays it directly with no git and no network at all, and the same cache serves a rebuild with a
+  *different* `--github-languages`/`--limit`/`--sequence-length` without re-extracting. Deliberately
+  Parquet, not JSONL: verified against real precedent (the HuggingFace `datasets` library's own local
+  cache is Arrow/Parquet-family, for the same reason — fast, columnar, memory-mappable reuse reads).
+  JSONL(`.zst`) is the right choice for a different real job: a *published, static* raw-corpus dump
+  (Pile/RedPajama/Dolma-style), not a project-local reuse cache — this project already publishes that
+  way too, via the Parquet export described below, just not as JSONL.
 
 **Why the upstream sources themselves are Parquet, and why that doesn't change the above:**
 [`HuggingFaceTB/dclm-edu`](https://huggingface.co/datasets/HuggingFaceTB/dclm-edu),

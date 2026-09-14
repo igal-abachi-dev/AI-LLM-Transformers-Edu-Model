@@ -445,11 +445,14 @@ class ParquetDocumentWriter:
     ``split``, ...) happens to be all-``None`` in one batch and not another.
     """
 
-    def __init__(self, path: str | Path, *, batch_size: int = 1000) -> None:
+    def __init__(
+        self, path: str | Path, *, batch_size: int = 1000, compression: str = "zstd"
+    ) -> None:
         if batch_size <= 0:
             raise ValueError("batch_size must be positive")
         self.path = Path(path)
         self.batch_size = batch_size
+        self.compression = compression
         self._temporary_path = self.path.with_name(f".{self.path.name}.tmp")
         self._buffer: list[dict[str, Any]] = []
         self._writer: pq.ParquetWriter | None = None
@@ -465,7 +468,9 @@ class ParquetDocumentWriter:
             return
         table = pa.Table.from_pylist(self._buffer, schema=_DOCUMENT_PARQUET_SCHEMA)
         if self._writer is None:
-            self._writer = pq.ParquetWriter(self._temporary_path, _DOCUMENT_PARQUET_SCHEMA)
+            self._writer = pq.ParquetWriter(
+                self._temporary_path, _DOCUMENT_PARQUET_SCHEMA, compression=self.compression
+            )
         self._writer.write_table(table)
         self._row_count += len(self._buffer)
         self._buffer.clear()
@@ -477,7 +482,9 @@ class ParquetDocumentWriter:
         if self._writer is None:
             # No rows were ever added -- still produce a real, valid, empty-schema
             # Parquet file rather than silently leaving no file at all.
-            pq.ParquetWriter(self._temporary_path, _DOCUMENT_PARQUET_SCHEMA).close()
+            pq.ParquetWriter(
+                self._temporary_path, _DOCUMENT_PARQUET_SCHEMA, compression=self.compression
+            ).close()
         else:
             self._writer.close()
         os.replace(self._temporary_path, self.path)

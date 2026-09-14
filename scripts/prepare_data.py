@@ -29,6 +29,7 @@ from minifrontier.data import (
     iter_finemath,
     iter_fineweb_edu,
     iter_github_code,
+    iter_github_code_from_repos,
     iter_jsonl_documents,
     split_bucket,
 )
@@ -87,7 +88,17 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Only meaningful with --source github-code: a text file, one 'owner/repo' "
         "per line, restricting the stream to exactly this curated set of repositories "
-        "instead of an unfiltered crawl of the whole dataset.",
+        "instead of an unfiltered crawl of the whole dataset. When given, each repo is "
+        "fetched directly and currently (MF-134: a real, persistent, incrementally-"
+        "updated bare-mirror cache under data/github-code-cache/, not the static "
+        "codeparrot/github-code dataset snapshot).",
+    )
+    parser.add_argument(
+        "--github-force-refresh",
+        action="store_true",
+        help="Only meaningful with --source github-code --github-repo-allowlist: "
+        "bypass the mirror cache's staleness check and re-clone every allowlisted "
+        "repo from scratch, regardless of how recently it was last fetched.",
     )
     parser.add_argument(
         "--ebook-directory",
@@ -195,16 +206,28 @@ def document_stream(args: argparse.Namespace):
             shuffle_buffer=args.shuffle_buffer,
         )
     if args.source == "github-code":
-        repo_names = None
         if args.github_repo_allowlist is not None:
             repo_names = [
                 line.strip()
                 for line in args.github_repo_allowlist.read_text(encoding="utf-8").splitlines()
                 if line.strip() and not line.strip().startswith("#")
             ]
+            # MF-070 (2026-09-15): a real allowlist means a real, specific
+            # target list -- fetch each repo directly and currently (real
+            # `git clone --depth 1`) instead of scanning
+            # codeparrot/github-code, a static 2022-03-16 snapshot, for
+            # them. See iter_github_code_from_repos's own docstring.
+            return iter_github_code_from_repos(
+                repo_names,
+                languages=args.github_languages,
+                limit=args.limit,
+                start=args.start,
+                shuffle_seed=args.shuffle_seed,
+                force_refresh=args.github_force_refresh,
+            )
         return iter_github_code(
             languages=args.github_languages,
-            repo_names=repo_names,
+            repo_names=None,
             limit=args.limit,
             start=args.start,
             shuffle_seed=args.shuffle_seed,

@@ -34,6 +34,8 @@ import hashlib
 import json
 import random
 import re
+import sys
+import tempfile
 from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -42,6 +44,7 @@ from typing import Any, Final
 import torch
 from torch.utils.data import IterableDataset, get_worker_info
 
+from minifrontier import git_utils
 from minifrontier.tokenizer import MiniFrontierTokenizer
 
 PERMISSIVE_CODE_LICENSES = frozenset(
@@ -292,6 +295,25 @@ def iter_jsonl_documents(path: str | Path) -> Iterator[Document]:
                 yield Document.from_mapping(json.loads(line))
             except (TypeError, ValueError, json.JSONDecodeError) as error:
                 raise ValueError(f"invalid document at {path}:{line_number}: {error}") from error
+
+
+def iter_parquet_documents(path: str | Path) -> Iterator[Document]:
+    """Read real `Document` rows back from a Parquet file written by
+    `shards.ParquetDocumentWriter` (MF-125) -- the read-side counterpart,
+    used by `iter_github_code_from_repos`'s own document cache (MF-134;
+    see `docs/IMPLEMENTATION_DECISIONS.md`'s "Data storage formats" note for
+    why Parquet, not JSONL, is the right format for this local-reuse cache).
+    Also the real, local half of what MF-132 scoped as a future parquet
+    re-import loader for a *published* HF dataset repo -- this covers the
+    local-file case directly; a remote `datasets.load_dataset(repo_id, ...)`
+    path remains MF-132's own separate, not-yet-built scope.
+    """
+
+    import pyarrow.parquet as pq
+
+    table = pq.read_table(path)
+    for row in table.to_pylist():
+        yield Document.from_mapping(row)
 
 
 def iter_fineweb_edu(
@@ -673,6 +695,420 @@ def iter_github_code(
             path=str(row["path"]),
             source_type="code",
         )
+        admitted_index += 1
+        emitted += 1
+
+
+# MF-070 (2026-09-15): `codeparrot/github-code`'s own HF dataset card was
+# fetched directly and confirmed to be a one-time static BigQuery snapshot
+# (v1.1 queried 2022-03-16, no stated refresh mechanism) -- a wrong source
+# for a curated repo allowlist, not merely a slow one: even a successful
+# `iter_github_code` scan returns multi-year-old code, and finding 161
+# specific repos inside its full ~115M-file crawl is what made it real-
+# measured 10-30x slower than every other MF-070 mixture source. This block
+# replaces that path for the allowlist case with a direct, real, current
+# `git clone --depth 1` per repo -- no GitHub API, no credentials, no rate
+# limit: cloning is a different subsystem from `api.github.com`'s 60/hr
+# unauthenticated REST cap, and per-repo license detection reads the real
+# `LICENSE`-family file already sitting in the clone instead of calling the
+# API at all (the same real method this file's own `_MANUALLY_VERIFIED_
+# REPO_LICENSES` entries were each individually verified by -- automated
+# here for all 161 repos rather than kept as a 13-repo manual list).
+_GITHUB_EXTENSION_LANGUAGES: Final[dict[str, str]] = {
+    ".py": "Python",
+    ".js": "JavaScript",
+    ".jsx": "JavaScript",
+    ".mjs": "JavaScript",
+    ".cjs": "JavaScript",
+    ".ts": "TypeScript",
+    ".tsx": "TypeScript",
+    ".go": "Go",
+    ".cs": "C#",
+    ".cpp": "C++",
+    ".cc": "C++",
+    ".cxx": "C++",
+    ".hpp": "C++",
+    ".hxx": "C++",
+    ".rs": "Rust",
+    ".java": "Java",
+    ".kt": "Kotlin",
+    ".kts": "Kotlin",
+    ".ex": "Elixir",
+    ".exs": "Elixir",
+    ".html": "HTML",
+    ".htm": "HTML",
+    ".css": "CSS",
+}
+# Real, curated per this project's own 12-language allowlist (`configs/
+# code-repo-allowlist.txt`) -- no generic catch-all extension list, since an
+# unrecognized extension is meant to be skipped, not mislabeled.
+_GITHUB_CLONE_SKIP_DIRS: Final = frozenset(
+    {
+        ".git",
+        "node_modules",
+        "vendor",
+        "dist",
+        "build",
+        "target",
+        "bin",
+        "obj",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".mypy_cache",
+        ".pytest_cache",
+        "coverage",
+    }
+)
+_GITHUB_MAX_FILE_BYTES: Final = 1_000_000
+# Defensive cap against generated/minified/vendored data files a shallow
+# clone can still contain despite the directory skip-list above.
+_GITHUB_MAX_LINE_CHARS: Final = 1000
+# Mirrors codeparrot/github-code's own real, disclosed filtering convention
+# (its dataset card states it drops files with lines over 1000 characters),
+# kept here for parity now that this project builds its own equivalent.
+_GITHUB_LICENSE_FILENAME_PREFIXES: Final = ("license", "licence", "copying")
+# Case-insensitive prefix match, not an exact enumerated filename list --
+# real variance already found in this project's own manual-verification
+# research (`_MANUALLY_VERIFIED_REPO_LICENSES`'s comments): `LICENSE`,
+# `LICENSE.md`, `LICENSE.txt`, `Licence.txt` (British spelling), `COPYING`.
+
+_LICENSE_TEXT_SIGNATURES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
+    # Checked in order; the first match wins. More specific/distinctive
+    # signatures are listed before more generic ones that could otherwise
+    # false-positive on a shared opening clause (BSD-3 before BSD-2, in
+    # particular, since BSD-2's text is a strict prefix of BSD-3's).
+    ("Apache-2.0", ("apache license", "version 2.0")),
+    (
+        "BSD-3-Clause",
+        (
+            "redistribution and use in source and binary forms",
+            "neither the name of",
+        ),
+    ),
+    (
+        "BSD-2-Clause",
+        ("redistribution and use in source and binary forms",),
+    ),
+    ("Unlicense", ("this is free and unencumbered software released into the public domain",)),
+    ("CC0-1.0", ("cc0 1.0 universal",)),
+    (
+        "ISC",
+        (
+            "permission to use, copy, modify, and/or distribute this software",
+            "with or without fee is hereby granted",
+        ),
+    ),
+    (
+        "MIT",
+        ("permission is hereby granted, free of charge, to any person obtaining a copy",),
+    ),
+)
+
+
+def _detect_license_from_text(text: str) -> str | None:
+    """Classify real license file text via its own canonical, distinctive wording.
+
+    Conservative by design: returns `None` (never a guess) when no real
+    signature phrase is found, exactly like `iter_github_code`'s own
+    dataset-field gate above -- a repo whose license can't be confidently
+    classified this way is skipped, not silently admitted.
+    """
+
+    lowered = " ".join(text.lower().split())
+    for license_name, signatures in _LICENSE_TEXT_SIGNATURES:
+        if all(signature in lowered for signature in signatures):
+            return license_name
+    return None
+
+
+_NON_PERMISSIVE_LICENSE_SIGNATURES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
+    ("GPL-3.0", ("gnu general public license", "version 3")),
+    ("GPL-2.0", ("gnu general public license", "version 2")),
+    ("AGPL-3.0", ("gnu affero general public license",)),
+    ("LGPL", ("gnu lesser general public license",)),
+    ("MPL-2.0", ("mozilla public license", "version 2.0")),
+)
+
+
+def _resolve_repo_license(repo_name: str, repo_root: Path) -> str | None:
+    """Real per-repo license, trusting `configs/code-repo-allowlist.txt`'s own
+    curation rather than re-litigating it per repo.
+
+    `configs/code-repo-allowlist.txt` was already compiled with a real
+    permissive-license check per repo (see its own header comment) -- this
+    is not a second, independent gate on top of that. The manual-override
+    table (human-verified for 13 repos where automated detection failed) is
+    checked first; otherwise a best-effort real read of the cloned repo's
+    own LICENSE-family file fills in the specific label when its wording is
+    clean and canonical (true for the large majority of these well-known
+    projects). When that text can't be confidently classified as one of
+    `PERMISSIVE_CODE_LICENSES` either way, the repo is still admitted here
+    (trusting the allowlist, quietly) -- the one thing actively checked and
+    loudly logged is real drift since curation: current LICENSE text that
+    now reads as a copyleft license. Never a network call.
+    """
+
+    manual = _MANUALLY_VERIFIED_REPO_LICENSES.get(repo_name)
+    if manual is not None:
+        return manual
+    try:
+        entries = list(repo_root.iterdir())
+    except OSError:
+        entries = []
+    license_text = None
+    for entry in entries:
+        if entry.is_file() and entry.name.lower().startswith(_GITHUB_LICENSE_FILENAME_PREFIXES):
+            try:
+                license_text = entry.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            break
+    if license_text is not None:
+        detected = _detect_license_from_text(license_text)
+        if detected is not None:
+            return detected
+        lowered = " ".join(license_text.lower().split())
+        for bad_license, signatures in _NON_PERMISSIVE_LICENSE_SIGNATURES:
+            if all(signature in lowered for signature in signatures):
+                print(
+                    f"WARNING: {repo_name}'s real LICENSE file now reads as {bad_license}, "
+                    "not permissive -- it was allowlisted as permissive; excluding it from "
+                    "this run. It may have relicensed since configs/code-repo-allowlist.txt "
+                    "was curated and is worth a real, manual re-check.",
+                    file=sys.stderr,
+                )
+                return None
+    # Curated allowlist entry, but the real LICENSE text (if any was found)
+    # doesn't match this project's own canonical-wording patterns either
+    # way -- the same real false-negative pattern _MANUALLY_VERIFIED_REPO_
+    # LICENSES' 13 entries already document (non-canonical phrasing,
+    # unusual file location). Deliberately NOT defaulted to a guessed
+    # specific label (would put a possibly-wrong SPDX id into permanent
+    # provenance/a published dataset card -- worse than omitting this repo):
+    # skipped this run, same as a clone failure, not fabricated. A repo that
+    # lands here repeatedly is a real, cheap candidate for a one-line
+    # addition to `_MANUALLY_VERIFIED_REPO_LICENSES` (read its real LICENSE
+    # file once, by hand, exactly like the existing 13).
+    return None
+
+
+def _extract_repo_documents(names: list[str], *, clone_repo, resolve_license) -> Iterator[Document]:
+    """Real per-repo extraction, unfiltered by `languages`/`start`/`limit` --
+    every admitted file from every repo, in `names`' own order. Kept
+    separate from `iter_github_code_from_repos` so its own document cache
+    (MF-134) can wrap this raw stream once and be replayed with a different
+    `languages`/`start`/`limit` later without touching git at all.
+    """
+
+    for repo_name in names:
+        with tempfile.TemporaryDirectory(prefix="minifrontier-github-clone-") as tmp_dir:
+            destination = Path(tmp_dir) / "repo"
+            try:
+                yield from _extract_one_repo_documents(
+                    repo_name, destination, clone_repo=clone_repo, resolve_license=resolve_license
+                )
+            except Exception as error:
+                # The whole per-repo body (clone, license resolution, and
+                # file walking) is covered by one outer catch, not just the
+                # clone step -- a real, previously-unprotected gap: an
+                # unexpected exception anywhere past the clone (a
+                # `resolve_license` edge case, a file-walking surprise) used
+                # to propagate all the way up and crash this whole
+                # generator, aborting every remaining repo in a real,
+                # multi-hour, 161-repo run over one bad one. `--quiet` on
+                # the real git commands only suppresses progress/status
+                # noise -- real errors always reach stderr regardless, and
+                # `capture_output=True` does capture them; this is the real
+                # place that was silently discarding them. `stderr` is only
+                # present on `subprocess.CalledProcessError`-family
+                # exceptions; `getattr` degrades safely for anything else
+                # (e.g. `FileNotFoundError` if git itself isn't installed).
+                stderr = getattr(error, "stderr", None)
+                detail = stderr.decode("utf-8", errors="replace").strip() if stderr else str(error)
+                print(f"WARNING: skipping {repo_name}: {detail}", file=sys.stderr)
+
+
+def _extract_one_repo_documents(
+    repo_name: str, destination: Path, *, clone_repo, resolve_license
+) -> Iterator[Document]:
+    """One repo's real extraction -- clone, resolve its license, walk its
+    admitted files. Split out of `_extract_repo_documents`'s own loop so
+    that function's outer `except Exception` genuinely covers every step
+    for this one repo, not just the clone call.
+    """
+
+    commit_sha = clone_repo(repo_name, destination)
+    license_value = resolve_license(repo_name, destination)
+    if license_value is None:
+        return
+    for file_path in sorted(destination.rglob("*")):
+        if not file_path.is_file():
+            continue
+        relative_path = file_path.relative_to(destination)
+        if any(part in _GITHUB_CLONE_SKIP_DIRS for part in relative_path.parts):
+            continue
+        language = _GITHUB_EXTENSION_LANGUAGES.get(file_path.suffix.lower())
+        if language is None:
+            continue
+        try:
+            if file_path.stat().st_size > _GITHUB_MAX_FILE_BYTES:
+                continue
+            text = file_path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if any(len(line) > _GITHUB_MAX_LINE_CHARS for line in text.splitlines()):
+            continue
+        text = _strip_leading_license_comment(text)
+        if not text.strip():
+            continue
+        yield Document.create(
+            text,
+            source=f"https://github.com/{repo_name}",
+            revision=commit_sha,
+            license=license_value,
+            language=language,
+            record_id=f"{repo_name}:{relative_path.as_posix()}",
+            path=relative_path.as_posix(),
+            source_type="code",
+        )
+
+
+def _tee_to_parquet_document_cache(
+    documents: Iterator[Document], cache_path: Path
+) -> Iterator[Document]:
+    """Write every document to a real Parquet cache file while also yielding
+    it onward, via `shards.ParquetDocumentWriter` (MF-125) -- reusing its
+    own already-atomic publish (`.tmp` path, `os.replace` only in
+    `finalize()`), not a second, separate atomicity mechanism. An
+    interrupted run leaves no partial file a later run could mistake for a
+    real, complete cache. Local import: `shards.py` imports `Document` from
+    this module, so a module-level import here would be circular.
+    """
+
+    from minifrontier.shards import ParquetDocumentWriter
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    writer = ParquetDocumentWriter(cache_path)  # zstd, ParquetDocumentWriter's own default
+    try:
+        for document in documents:
+            writer.add(document)
+            yield document
+        writer.finalize()
+    except BaseException:
+        temporary_path = cache_path.with_name(f".{cache_path.name}.tmp")
+        temporary_path.unlink(missing_ok=True)
+        raise
+
+
+_GITHUB_CACHE_DEFAULT_DOCUMENT_CACHE: Final = Path("data/github-code-cache/documents.parquet")
+
+
+def iter_github_code_from_repos(
+    repo_names: Iterable[str],
+    *,
+    languages: Iterable[str] | None = None,
+    limit: int | None = None,
+    start: int = 0,
+    shuffle_seed: int | None = None,
+    cache_dir: Path | None = git_utils.GITHUB_CACHE_DEFAULT_DIR,
+    document_cache_path: Path | None = _GITHUB_CACHE_DEFAULT_DOCUMENT_CACHE,
+    force_refresh: bool = False,
+    max_staleness_seconds: float = git_utils.GITHUB_CACHE_DEFAULT_MAX_STALENESS_SECONDS,
+    clone_repo=None,
+    resolve_license=_resolve_repo_license,
+) -> Iterator[Document]:
+    """Stream real, current source files by cloning each repo directly.
+
+    Unlike `iter_github_code` (a static 2022-03-16 snapshot, see the module
+    note above), every file yielded here comes from a real, current clone of
+    its own repository, with a real per-repo commit SHA as `revision` -- a
+    precise, individual provenance record, unlike `iter_github_code`'s
+    single shared dataset-repo revision stamped on every file regardless of
+    which real GitHub commit it actually came from.
+
+    Two independent caching layers (MF-134), both real and both on by
+    default:
+    - `cache_dir` (Layer 0): a persistent, per-repo bare mirror clone
+      (`git clone --mirror` once, `git fetch` on later calls once the cache
+      has gone stale past `max_staleness_seconds`) -- bounds how often this
+      pipeline contacts GitHub at all, not just how long one run takes.
+    - `document_cache_path` (Layer 1): a real Parquet dump (zstd-compressed,
+      via `shards.ParquetDocumentWriter`) of every already-extracted
+      document (post-clone, post-filter, pre-tokenization) -- a later call
+      with a real, existing cache file at this path replays it directly (no
+      git, no repo walking, no network at all) rather than re-extracting
+      from the repos again. Parquet, not JSONL, matches real established
+      practice for exactly this kind of local reuse cache (verified: the
+      HuggingFace `datasets` library's own local cache is Arrow/Parquet-
+      family for the same reason -- fast, columnar, memory-mappable reads;
+      JSONL.zst is the right choice for a *published, static* raw-corpus
+      dump, e.g. Pile/RedPajama/Dolma, a different real use case from this
+      one). `languages`/`start`/`limit` are still applied fresh on top of a
+      cache replay, so the same cache serves a differently-filtered rebuild
+      without invalidation. Set to `None` to disable (always re-extract from
+      the real repos).
+
+    `force_refresh=True` bypasses both caches unconditionally: every mirror
+    is re-cloned (Layer 0) and the document cache is rebuilt from that fresh
+    extraction (Layer 1) rather than replayed.
+
+    `repo_names` (required, unlike `iter_github_code`'s optional allowlist --
+    a direct clone has nothing to iterate without a specific target list)
+    are cloned in order, or shuffled first when `shuffle_seed` is given (a
+    cache replay reuses whichever order originally produced the cache,
+    since it was already fixed at write time -- pass `force_refresh=True`
+    for a genuinely different order). `languages`/`start`/`limit` behave
+    exactly like `iter_github_code`'s own (case-insensitive language match;
+    `start`/`limit` count only admitted, post-filter documents).
+    `clone_repo`/`resolve_license` are injectable purely for testing -- real
+    callers never need to pass them.
+    """
+
+    if limit is not None and limit < 0:
+        raise ValueError("limit cannot be negative")
+    if start < 0:
+        raise ValueError("start cannot be negative")
+    names = list(repo_names)
+    if not names:
+        raise ValueError("repo_names must be non-empty")
+    if shuffle_seed is not None:
+        random.Random(shuffle_seed).shuffle(names)
+    language_filter = {name.lower() for name in languages} if languages is not None else None
+    if clone_repo is None:
+
+        def clone_repo(repo_name: str, destination: Path) -> str:
+            return git_utils.clone_via_cached_mirror(
+                repo_name,
+                destination,
+                cache_dir=cache_dir,
+                force_refresh=force_refresh,
+                max_staleness_seconds=max_staleness_seconds,
+            )
+
+    use_cache = (
+        document_cache_path is not None and not force_refresh and document_cache_path.exists()
+    )
+    if use_cache:
+        documents = iter_parquet_documents(document_cache_path)
+    else:
+        documents = _extract_repo_documents(
+            names, clone_repo=clone_repo, resolve_license=resolve_license
+        )
+        if document_cache_path is not None:
+            documents = _tee_to_parquet_document_cache(documents, document_cache_path)
+
+    admitted_index = 0
+    emitted = 0
+    for document in documents:
+        if limit is not None and emitted >= limit:
+            return
+        if language_filter is not None and document.language.lower() not in language_filter:
+            continue
+        if admitted_index < start:
+            admitted_index += 1
+            continue
+        yield document
         admitted_index += 1
         emitted += 1
 

@@ -117,22 +117,36 @@ _GPT4_REGEX_PATTERN: Final[Regex] = Regex(
     r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}"""
     r"""| ?[^\s\p{L}\p{N}]+[\r\n]*|\s+$|\s*[\r\n]|\s+(?!\S)|\s"""
 )
-#(adapted from PCRE possessive quantifiers to standard greedy quantifiers so Hugging Face’s tokenizers engine can parse it properly). ,(words, numbers ≤ 3 digits, punctuation, whitespace)
-#It matches text using 8 branches separated by | (alternation)
-#Matches an apostrophe ' followed by common English contraction endings case insensitive: 's, 'd, 'm, 't, 'll, 've, or 're.
-#Matches 1 or more Unicode letters (across all human languages) with optional leading space
-#Matches any Unicode number character  at least 1 and at most 3 digits.
-#One or more characters that are not whitespace, letters, or numbers (i.e., punctuation, symbols, math operators, emojis) followed by optional newline
-#partition all forms of whitespace cleanly
-#GPT-2 Regex Limitations vs. GPT-4:
-#Uncapped digits (\p{N}+): GPT-2 lets long numbers like "123456789" stay together as a single pre-token, causing BPE to merge arbitrary multi-digit numbers and hurting arithmetic reasoning. GPT-4 fixes this by capping digit runs to \p{N}{1,3}.
-#Case-sensitive contractions: GPT-2 only matches lowercase contractions ('s, 'm, 'll), missing uppercase contractions like 'S or 'LL. GPT-4 uses (?i:...).
-#Leading characters: GPT-2 only allows an ASCII space ? before letters/symbols, whereas GPT-4 uses [^\r\n\p{L}\p{N}]? to prevent newlines from accidentally binding to the start of words.
-
-#The main pathology of legacy tokenizers (like GPT-2) was unbounded digit runs (\p{N}+), which merged arbitrary phone numbers, timestamps, and IDs into monolithic tokens. 
-#Because _GPT4_REGEX_PATTERN already includes \p{N}{1,3}, it isolates numbers into small, predictable chunks at the root stage. A second split stage was redundant at best.
-
-
+# (adapted from PCRE possessive quantifiers to standard greedy quantifiers so
+# Hugging Face's `tokenizers` engine can parse it properly) -- words, numbers
+# capped at 3 digits, punctuation, whitespace. Matches text using 8 branches
+# separated by `|` (alternation):
+# - An apostrophe followed by a common English contraction ending, case
+#   insensitive: 's, 'd, 'm, 't, 'll, 've, or 're.
+# - One or more Unicode letters (any human language) with an optional
+#   leading space.
+# - Any Unicode number character, at least 1 and at most 3 digits.
+# - One or more characters that are not whitespace, letters, or numbers
+#   (punctuation, symbols, math operators, emoji), followed by an optional
+#   newline.
+# - The remaining branches partition every form of whitespace cleanly.
+#
+# GPT-2 regex limitations vs. GPT-4:
+# - Uncapped digits (\p{N}+): GPT-2 lets long numbers like "123456789" stay
+#   together as a single pre-token, causing BPE to merge arbitrary
+#   multi-digit numbers and hurting arithmetic reasoning. GPT-4 fixes this
+#   by capping digit runs to \p{N}{1,3}.
+# - Case-sensitive contractions: GPT-2 only matches lowercase contractions
+#   ('s, 'm, 'll), missing uppercase ones like 'S or 'LL. GPT-4 uses (?i:...).
+# - Leading characters: GPT-2 only allows an ASCII space before
+#   letters/symbols, whereas GPT-4 uses [^\r\n\p{L}\p{N}]? to prevent
+#   newlines from accidentally binding to the start of words.
+#
+# The main pathology of legacy tokenizers (like GPT-2) was unbounded digit
+# runs (\p{N}+), which merged arbitrary phone numbers, timestamps, and IDs
+# into monolithic tokens. Because _GPT4_REGEX_PATTERN already includes
+# \p{N}{1,3}, it isolates numbers into small, predictable chunks at the root
+# stage -- a second split stage would be redundant.
 
 
 # GPT-4o/o200k_base's real pre-tokenization regex (MF-100's wider tokenizer
@@ -151,7 +165,9 @@ _O200K_REGEX_PATTERN: Final[Regex] = Regex(
     r"""|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?"""
     r"""|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+"""
 )
-# this has Vocabulary Fragmentation at Smaller Scales , so gpt4 is better for smaller models, (CamelCase splits, word-attached contractions)
+# o200k has real vocabulary fragmentation at smaller scales, so gpt4-style
+# (cl100k) is the better fit for smaller models here (CamelCase splits,
+# word-attached contractions).
 
 
 PRETOKENIZER_MODE: Final = "gpt2"
@@ -295,13 +311,26 @@ class MiniFrontierTokenizer:
         return self.backend.decode(list(token_ids), skip_special_tokens=skip_special_tokens)
 
     def save(self, directory: str | Path, *, model_max_length: int = 2_048) -> None:
+        """Write `tokenizer.json`/`tokenizer_config.json`, each via its own
+        write-to-`.tmp`-then-rename -- some real callers (`train_tokenizer.py`,
+        the actual production-tokenizer entry point) call this standalone,
+        with no outer staging directory protecting it the way
+        `checkpoint.py`'s callers have; a kill between the two writes used to
+        leave a `tokenizer.json` with no matching `tokenizer_config.json`
+        (or an even-earlier-interrupted, truncated `tokenizer.json`), silently
+        unusable. Per-file atomic rename, not a whole-directory stage, since
+        `directory` may already hold other real files a caller (`export_release`)
+        is writing separately in its own already-atomic staging pass.
+        """
+
         if model_max_length <= 0:
             raise ValueError("model_max_length must be positive")
         target = Path(directory)
         target.mkdir(parents=True, exist_ok=True)
         tokenizer_path = target / "tokenizer.json"
-        self.backend.save(str(tokenizer_path))
-        digest = hashlib.sha256(tokenizer_path.read_bytes()).hexdigest()
+        tokenizer_staging = target / ".tokenizer.json.tmp"
+        self.backend.save(str(tokenizer_staging))
+        digest = hashlib.sha256(tokenizer_staging.read_bytes()).hexdigest()
         config = {
             "tokenizer_version": self.contract.version,
             "requested_vocab_size": self.contract.vocab_size,
@@ -311,10 +340,13 @@ class MiniFrontierTokenizer:
             "special_tokens": self.contract.special_token_ids,
             "tokenizer_sha256": digest,
         }
-        (target / "tokenizer_config.json").write_text(
+        config_staging = target / ".tokenizer_config.json.tmp"
+        config_staging.write_text(
             json.dumps(config, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        tokenizer_staging.replace(tokenizer_path)
+        config_staging.replace(target / "tokenizer_config.json")
 
     @classmethod
     def from_directory(cls, directory: str | Path) -> MiniFrontierTokenizer:
@@ -331,14 +363,14 @@ class MiniFrontierTokenizer:
         return instance
 
 
-#A pre-tokenizer acts as a hard boundary maker:
-#It splits raw text into a sequence of isolated chunks (matches).
-#BPE merges are strictly forbidden from crossing chunk boundaries.
-#This guarantees that:
-#Letters don't merge with numbers.
-#Words don't merge with punctuation or newlines.
-#Contractions (e.g., 's, 'll) are isolated.
-#Numbers are capped at 1–3 digits to facilitate mathematical and digit-level reasoning.
+# A pre-tokenizer acts as a hard boundary maker:
+# It splits raw text into a sequence of isolated chunks (matches).
+# BPE merges are strictly forbidden from crossing chunk boundaries.
+# This guarantees that:
+# Letters don't merge with numbers.
+# Words don't merge with punctuation or newlines.
+# Contractions (e.g., 's, 'll) are isolated.
+# Numbers are capped at 1-3 digits to facilitate mathematical and digit-level reasoning.
 def train_byte_bpe(
     texts: Iterable[str],
     *,

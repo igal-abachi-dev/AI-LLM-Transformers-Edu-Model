@@ -284,29 +284,47 @@ def export_release(
     model_card: str | None = None,
     mtp_heads: MTPHeads | None = None,
 ) -> None:
+    """Write every release file into a staging directory, then publish them
+    all in one atomic rename -- the same real guarantee
+    `save_training_checkpoint` gives training checkpoints, applied here too.
+    A kill mid-export previously left a partial release directory at its
+    real, final path; `load_release`/`verify_release` already caught that
+    case loudly (missing/mismatched `sha256-manifest.json`), and
+    `scripts/export.py`'s own caller only deletes a source checkpoint after
+    an explicit successful `verify_release()` -- but a future caller that
+    skips that check would have loaded a silently-partial release. Staging
+    first removes the failure mode instead of merely detecting it.
+    """
+
     target = Path(directory)
-    target.mkdir(parents=True, exist_ok=True)
-    save_model(model, str(target / "model.safetensors"))
+    staging = target.with_name(f".{target.name}.tmp")
+    old = target.with_name(f".{target.name}.old")
+    if not target.exists() and old.exists():
+        old.replace(target)
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    save_model(model, str(staging / "model.safetensors"))
     if mtp_heads is not None:
         # Optional, additive: an Edu release (or any release never trained with
         # MTP) simply never writes these two files, so load_release's own
         # contract and every existing release stay exactly as they are.
-        save_model(mtp_heads, str(target / "mtp_heads.safetensors"))
-        (target / "mtp_config.json").write_text(
+        save_model(mtp_heads, str(staging / "mtp_heads.safetensors"))
+        (staging / "mtp_config.json").write_text(
             json.dumps({"n_extra_heads": mtp_heads.n_extra_heads}, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-    (target / "config.json").write_text(
+    (staging / "config.json").write_text(
         json.dumps(model.config.to_dict(), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    tokenizer.save(target, model_max_length=model.config.max_seq_len)
+    tokenizer.save(staging, model_max_length=model.config.max_seq_len)
     template = Path(__file__).parents[2] / "templates" / "chat_template.jinja"
     if template.exists():
-        shutil.copyfile(template, target / "chat_template.jinja")
+        shutil.copyfile(template, staging / "chat_template.jinja")
     system_prompt = Path(__file__).parents[2] / "templates" / "system_prompt.md"
     if system_prompt.exists():
-        shutil.copyfile(system_prompt, target / "system_prompt.md")
+        shutil.copyfile(system_prompt, staging / "system_prompt.md")
     card = model_card or (
         "# MiniFrontier model\n\n"
         "Development artifact; not a production service or safety-tuned frontier assistant.\n\n"
@@ -314,8 +332,8 @@ def export_release(
         "before publication. Native MiniFrontier/PyTorch loading is supported; Transformers, "
         "vLLM, and GGUF compatibility require the separate post-V1 adapters.\n"
     )
-    (target / "README.md").write_text(card, encoding="utf-8")
-    (target / "generation_config.json").write_text(
+    (staging / "README.md").write_text(card, encoding="utf-8")
+    (staging / "generation_config.json").write_text(
         json.dumps(
             {
                 "bos_token_id": tokenizer.bos_id,
@@ -332,7 +350,14 @@ def export_release(
         + "\n",
         encoding="utf-8",
     )
-    write_release_manifest(target)
+    write_release_manifest(staging)
+    if target.exists():
+        if old.exists():
+            shutil.rmtree(old)
+        target.replace(old)
+    staging.replace(target)
+    if old.exists():
+        shutil.rmtree(old)
 
 
 def load_release(

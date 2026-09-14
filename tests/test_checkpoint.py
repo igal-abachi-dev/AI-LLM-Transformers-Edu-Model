@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 import torch
@@ -337,6 +338,65 @@ def test_release_manifest_rejects_tampering(tmp_path, mini_tokenizer) -> None:
     (release / "generation_config.json").write_text("{}\n", encoding="utf-8")
     with pytest.raises(ValueError, match="hash mismatch"):
         load_release(release)
+
+
+def test_export_release_re_export_over_an_existing_release_publishes_atomically(
+    tmp_path, mini_tokenizer
+) -> None:
+    config = ModelConfig.tiny_edu(vocab_size=max(512, mini_tokenizer.vocab_size))
+    release = tmp_path / "release"
+    export_release(release, MiniFrontier(config), mini_tokenizer, model_card="first\n")
+    export_release(release, MiniFrontier(config), mini_tokenizer, model_card="second\n")
+    assert (release / "README.md").read_text(encoding="utf-8") == "second\n"
+    assert not (tmp_path / ".release.tmp").exists()
+    assert not (tmp_path / ".release.old").exists()
+    load_release(release)
+
+
+def test_export_release_interrupted_between_the_two_renames_self_heals(
+    tmp_path, mini_tokenizer, monkeypatch
+) -> None:
+    """Same real crash window `save_training_checkpoint` already guards
+    against (see test_interrupted_publish_between_the_two_renames_self_heals
+    above), now closed for `export_release` too.
+
+    `export_release` now calls `tokenizer.save()` internally, which does its
+    own two `Path.replace` calls (MF-134 follow-up fix) -- so the crash
+    trigger below matches on the *target* path of the specific rename this
+    test cares about (`staging.replace(release)`, the real top-level publish
+    rename), not a raw call count, which would otherwise trip on one of
+    `tokenizer.save`'s own internal renames instead.
+    """
+
+    import minifrontier.checkpoint as checkpoint_module
+
+    config = ModelConfig.tiny_edu(vocab_size=max(512, mini_tokenizer.vocab_size))
+    release = tmp_path / "release"
+    export_release(release, MiniFrontier(config), mini_tokenizer, model_card="first\n")
+
+    real_replace = checkpoint_module.Path.replace
+
+    def replace_that_crashes_on_the_publish_rename(self, target):
+        if Path(target) == release:
+            raise RuntimeError("simulated kill between the two renames")
+        return real_replace(self, target)
+
+    monkeypatch.setattr(
+        checkpoint_module.Path, "replace", replace_that_crashes_on_the_publish_rename
+    )
+    with pytest.raises(RuntimeError, match="simulated kill between the two renames"):
+        export_release(release, MiniFrontier(config), mini_tokenizer, model_card="second\n")
+
+    assert not release.exists()
+    assert (tmp_path / ".release.old" / "README.md").read_text(encoding="utf-8") == "first\n"
+    assert (tmp_path / ".release.tmp" / "README.md").read_text(encoding="utf-8") == "second\n"
+
+    monkeypatch.setattr(checkpoint_module.Path, "replace", real_replace)
+    export_release(release, MiniFrontier(config), mini_tokenizer, model_card="third\n")
+    assert (release / "README.md").read_text(encoding="utf-8") == "third\n"
+    assert not (tmp_path / ".release.old").exists()
+    assert not (tmp_path / ".release.tmp").exists()
+    load_release(release)
 
 
 def test_training_checkpoint_rejects_same_shape_semantic_config_change(tmp_path) -> None:

@@ -1,4 +1,5 @@
 import json
+import subprocess
 
 import pytest
 
@@ -18,7 +19,10 @@ from minifrontier.data import (
     Document,
     PackedSequence,
     PackedTokenDataset,
+    _detect_license_from_text,
+    _resolve_repo_license,
     _strip_leading_license_comment,
+    _tee_to_parquet_document_cache,
     content_sha256,
     filter_and_deduplicate,
     iter_cosmopedia_v2,
@@ -27,7 +31,9 @@ from minifrontier.data import (
     iter_finemath,
     iter_fineweb_edu,
     iter_github_code,
+    iter_github_code_from_repos,
     iter_jsonl_documents,
+    iter_parquet_documents,
     pack_documents,
     split_documents,
 )
@@ -444,6 +450,426 @@ def _write_book(tmp_path, book_id: str, text: str) -> None:
     book_dir = tmp_path / "md" / book_id
     book_dir.mkdir(parents=True)
     (book_dir / "book.md").write_text(text, encoding="utf-8")
+
+
+_REAL_MIT_TEXT = (
+    "MIT License\n\nCopyright (c) 2024 Example\n\n"
+    "Permission is hereby granted, free of charge, to any person obtaining a copy "
+    'of this software and associated documentation files (the "Software"), to deal '
+    "in the Software without restriction.\n"
+)
+_REAL_APACHE_TEXT = (
+    "Apache License\nVersion 2.0, January 2004\nhttp://www.apache.org/licenses/\n\n"
+    "TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION\n"
+)
+_REAL_BSD3_TEXT = (
+    "Redistribution and use in source and binary forms, with or without "
+    "modification, are permitted provided that the following conditions are met:\n"
+    "3. Neither the name of the copyright holder nor the names of its contributors "
+    "may be used to endorse or promote products derived from this software.\n"
+)
+_REAL_BSD2_TEXT = (
+    "Redistribution and use in source and binary forms, with or without "
+    "modification, are permitted provided that the following conditions are met:\n"
+    "1. Redistributions of source code must retain the above copyright notice.\n"
+)
+_REAL_UNLICENSE_TEXT = "This is free and unencumbered software released into the public domain.\n"
+_REAL_CC0_TEXT = "Creative Commons Legal Code\n\nCC0 1.0 Universal\n"
+_REAL_ISC_TEXT = (
+    "Permission to use, copy, modify, and/or distribute this software for any "
+    "purpose with or without fee is hereby granted, provided that the above "
+    "copyright notice and this permission notice appear in all copies.\n"
+)
+_REAL_GPL3_TEXT = (
+    "GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007\n\n"
+    "Copyright (C) 2007 Free Software Foundation, Inc.\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (_REAL_MIT_TEXT, "MIT"),
+        (_REAL_APACHE_TEXT, "Apache-2.0"),
+        (_REAL_BSD3_TEXT, "BSD-3-Clause"),
+        (_REAL_BSD2_TEXT, "BSD-2-Clause"),
+        (_REAL_UNLICENSE_TEXT, "Unlicense"),
+        (_REAL_CC0_TEXT, "CC0-1.0"),
+        (_REAL_ISC_TEXT, "ISC"),
+    ],
+)
+def test_detect_license_from_text_recognizes_each_real_permissive_signature(
+    text: str, expected: str
+) -> None:
+    assert _detect_license_from_text(text) == expected
+
+
+def test_detect_license_from_text_returns_none_for_unrecognized_prose() -> None:
+    assert _detect_license_from_text("This module implements a widget factory.\n") is None
+
+
+def test_resolve_repo_license_prefers_manual_override_over_file_contents(tmp_path) -> None:
+    (tmp_path / "LICENSE").write_text(_REAL_GPL3_TEXT, encoding="utf-8")
+    assert _resolve_repo_license("curl/curl", tmp_path) == "MIT"
+
+
+def test_resolve_repo_license_reads_the_real_cloned_license_file(tmp_path) -> None:
+    (tmp_path / "LICENSE.md").write_text(_REAL_APACHE_TEXT, encoding="utf-8")
+    assert _resolve_repo_license("some/repo", tmp_path) == "Apache-2.0"
+
+
+def test_resolve_repo_license_matches_license_filename_case_insensitively(tmp_path) -> None:
+    (tmp_path / "Licence.txt").write_text(_REAL_MIT_TEXT, encoding="utf-8")
+    assert _resolve_repo_license("some/repo", tmp_path) == "MIT"
+
+
+def test_resolve_repo_license_warns_and_excludes_a_real_detected_copyleft_relicense(
+    tmp_path, capsys
+) -> None:
+    (tmp_path / "LICENSE").write_text(_REAL_GPL3_TEXT, encoding="utf-8")
+    assert _resolve_repo_license("some/repo", tmp_path) is None
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.err
+    assert "some/repo" in captured.err
+    assert "GPL-3.0" in captured.err
+
+
+def test_resolve_repo_license_quietly_excludes_undetectable_text_without_fabricating_one(
+    tmp_path, capsys
+) -> None:
+    (tmp_path / "LICENSE").write_text("Some non-canonical licensing statement.\n", encoding="utf-8")
+    assert _resolve_repo_license("some/repo", tmp_path) is None
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def test_resolve_repo_license_quietly_excludes_a_repo_with_no_license_file(tmp_path) -> None:
+    assert _resolve_repo_license("some/repo", tmp_path) is None
+
+
+def _fake_clone(files_by_repo: dict[str, dict[str, str]], shas_by_repo: dict[str, str]):
+    def clone_repo(repo_name: str, destination) -> str:
+        destination.mkdir(parents=True)
+        for relative_path, content in files_by_repo.get(repo_name, {}).items():
+            file_path = destination / relative_path
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text(content, encoding="utf-8")
+        return shas_by_repo[repo_name]
+
+    return clone_repo
+
+
+def test_github_code_from_repos_yields_real_commit_sha_and_license_per_file() -> None:
+    clone_repo = _fake_clone({"x/a": {"main.py": "print('hi')\n"}}, {"x/a": "abc123deadbeef"})
+    result = list(
+        iter_github_code_from_repos(
+            ["x/a"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            document_cache_path=None,
+        )
+    )
+    assert len(result) == 1
+    document = result[0]
+    assert document.text == "print('hi')\n"
+    assert document.revision == "abc123deadbeef"
+    assert document.license == "MIT"
+    assert document.language == "Python"
+    assert document.source == "https://github.com/x/a"
+    assert document.record_id == "x/a:main.py"
+    assert document.path == "main.py"
+    assert document.source_type == "code"
+
+
+def test_github_code_from_repos_skips_a_repo_whose_clone_fails_and_continues(capsys) -> None:
+    def clone_repo(repo_name: str, destination) -> str:
+        if repo_name == "x/broken":
+            raise RuntimeError("clone failed")
+        destination.mkdir(parents=True)
+        (destination / "ok.py").write_text("pass\n", encoding="utf-8")
+        return "sha-ok"
+
+    result = list(
+        iter_github_code_from_repos(
+            ["x/broken", "x/ok"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            document_cache_path=None,
+        )
+    )
+    assert [item.source for item in result] == ["https://github.com/x/ok"]
+    # A real, previously-silent gap: a clone failure must be visible, not
+    # just skipped with zero explanation (--quiet suppresses git's own
+    # progress noise, never its real errors -- this project's own calling
+    # code was the thing discarding them, not git itself).
+    captured = capsys.readouterr()
+    assert "x/broken" in captured.err
+    assert "clone failed" in captured.err
+
+
+def test_github_code_from_repos_surfaces_real_captured_stderr_on_failure(capsys) -> None:
+    """The diagnostic must prefer a real `CalledProcessError`'s own captured
+    stderr (what git itself actually said) over the generic exception text,
+    since that's the part a real failure needs to be debuggable from.
+    """
+
+    def clone_repo(repo_name: str, destination) -> str:
+        raise subprocess.CalledProcessError(
+            128, ["git", "clone"], output=b"", stderr=b"fatal: repository not found"
+        )
+
+    list(
+        iter_github_code_from_repos(
+            ["x/gone"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            document_cache_path=None,
+        )
+    )
+    captured = capsys.readouterr()
+    assert "x/gone" in captured.err
+    assert "fatal: repository not found" in captured.err
+
+
+def test_github_code_from_repos_skips_a_repo_whose_license_is_unresolved() -> None:
+    clone_repo = _fake_clone(
+        {"x/a": {"main.py": "pass\n"}, "x/b": {"main.py": "pass\n"}},
+        {"x/a": "sha-a", "x/b": "sha-b"},
+    )
+    result = list(
+        iter_github_code_from_repos(
+            ["x/a", "x/b"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT" if name == "x/a" else None,
+            document_cache_path=None,
+        )
+    )
+    assert [item.source for item in result] == ["https://github.com/x/a"]
+
+
+def test_github_code_from_repos_an_unexpected_resolve_license_crash_does_not_kill_the_run(
+    capsys,
+) -> None:
+    """A real, previously-unprotected gap: only the clone step was wrapped
+    in a try/except, so an exception raised anywhere past it (here,
+    resolve_license itself, not just a None return) used to propagate all
+    the way up and abort the whole generator -- losing every remaining repo
+    in a real, multi-hour, 161-repo run over one bad one. Now the entire
+    per-repo body is covered.
+    """
+    clone_repo = _fake_clone(
+        {"x/a": {"main.py": "pass\n"}, "x/b": {"main.py": "pass\n"}},
+        {"x/a": "sha-a", "x/b": "sha-b"},
+    )
+
+    def resolve_license(repo_name, root):
+        if repo_name == "x/a":
+            raise RuntimeError("unexpected license-resolution crash")
+        return "MIT"
+
+    result = list(
+        iter_github_code_from_repos(
+            ["x/a", "x/b"],
+            clone_repo=clone_repo,
+            resolve_license=resolve_license,
+            document_cache_path=None,
+        )
+    )
+    assert [item.source for item in result] == ["https://github.com/x/b"]
+    captured = capsys.readouterr()
+    assert "x/a" in captured.err
+    assert "unexpected license-resolution crash" in captured.err
+
+
+def test_github_code_from_repos_filters_by_language_extension() -> None:
+    clone_repo = _fake_clone(
+        {"x/a": {"main.py": "pass\n", "app.js": "console.log(1)\n"}}, {"x/a": "sha-a"}
+    )
+    result = list(
+        iter_github_code_from_repos(
+            ["x/a"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            languages=["python"],
+            document_cache_path=None,
+        )
+    )
+    assert [item.path for item in result] == ["main.py"]
+
+
+def test_github_code_from_repos_skips_configured_noise_directories() -> None:
+    clone_repo = _fake_clone(
+        {
+            "x/a": {
+                "main.py": "pass\n",
+                "node_modules/dep/index.js": "module.exports = 1;\n",
+            }
+        },
+        {"x/a": "sha-a"},
+    )
+    result = list(
+        iter_github_code_from_repos(
+            ["x/a"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            document_cache_path=None,
+        )
+    )
+    assert [item.path for item in result] == ["main.py"]
+
+
+def test_github_code_from_repos_strips_license_headers_from_admitted_files() -> None:
+    header = "# Copyright 2024 Example Corp.\n# Licensed under the MIT License.\n\nimport os\n"
+    clone_repo = _fake_clone({"x/a": {"main.py": header}}, {"x/a": "sha-a"})
+    result = list(
+        iter_github_code_from_repos(
+            ["x/a"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            document_cache_path=None,
+        )
+    )
+    assert result[0].text == "import os\n"
+
+
+def test_github_code_from_repos_respects_start_and_limit_over_admitted_files() -> None:
+    clone_repo = _fake_clone(
+        {
+            "x/a": {"a.py": "pass\n"},
+            "x/b": {"b.py": "pass\n"},
+            "x/c": {"c.py": "pass\n"},
+        },
+        {"x/a": "sha-a", "x/b": "sha-b", "x/c": "sha-c"},
+    )
+    result = list(
+        iter_github_code_from_repos(
+            ["x/a", "x/b", "x/c"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            start=1,
+            limit=1,
+            document_cache_path=None,
+        )
+    )
+    assert [item.path for item in result] == ["b.py"]
+
+
+def test_github_code_from_repos_rejects_empty_repo_names() -> None:
+    with pytest.raises(ValueError, match="repo_names must be non-empty"):
+        list(iter_github_code_from_repos([]))
+
+
+def test_github_code_from_repos_rejects_negative_limit_or_start() -> None:
+    with pytest.raises(ValueError, match="limit cannot be negative"):
+        list(iter_github_code_from_repos(["x/a"], limit=-1))
+    with pytest.raises(ValueError, match="start cannot be negative"):
+        list(iter_github_code_from_repos(["x/a"], start=-1))
+
+
+def test_iter_parquet_documents_round_trips_a_real_document(tmp_path) -> None:
+    from minifrontier.shards import ParquetDocumentWriter
+
+    cache_path = tmp_path / "cache.parquet"
+    original = document("print('hi')", record_id="x/a:main.py", source_type="code", license="MIT")
+    writer = ParquetDocumentWriter(cache_path)
+    writer.add(original)
+    writer.finalize()
+    result = list(iter_parquet_documents(cache_path))
+    assert result == [original]
+
+
+def test_tee_to_parquet_document_cache_writes_a_real_cache_and_still_yields(tmp_path) -> None:
+    cache_path = tmp_path / "sub" / "cache.parquet"
+    documents = [
+        document("a", record_id="x/a:a.py", source_type="code", license="MIT"),
+        document("b", record_id="x/a:b.py", source_type="code", license="MIT"),
+    ]
+    result = list(_tee_to_parquet_document_cache(iter(documents), cache_path))
+    assert result == documents
+    assert cache_path.exists()
+    assert list(iter_parquet_documents(cache_path)) == documents
+
+
+def test_iter_github_code_from_repos_creates_then_replays_the_document_cache(tmp_path) -> None:
+    cache_path = tmp_path / "cache.parquet"
+    clone_repo = _fake_clone({"x/a": {"main.py": "pass\n"}}, {"x/a": "sha-a"})
+    first = list(
+        iter_github_code_from_repos(
+            ["x/a"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            document_cache_path=cache_path,
+        )
+    )
+    assert len(first) == 1
+    assert cache_path.exists()
+
+    def clone_repo_should_not_be_called(repo_name, destination):
+        raise AssertionError("clone_repo must not be called on a cache replay")
+
+    second = list(
+        iter_github_code_from_repos(
+            ["x/a"],
+            clone_repo=clone_repo_should_not_be_called,
+            resolve_license=lambda name, root: (_ for _ in ()).throw(
+                AssertionError("resolve_license must not be called on a cache replay")
+            ),
+            document_cache_path=cache_path,
+        )
+    )
+    assert [item.text for item in second] == [item.text for item in first]
+
+
+def test_iter_github_code_from_repos_force_refresh_bypasses_the_document_cache(tmp_path) -> None:
+    cache_path = tmp_path / "cache.parquet"
+    from minifrontier.shards import ParquetDocumentWriter
+
+    stale_writer = ParquetDocumentWriter(cache_path)
+    stale_writer.add(document("stale", record_id="x/old:old.py", source_type="code", license="MIT"))
+    stale_writer.finalize()
+
+    clone_repo = _fake_clone({"x/a": {"main.py": "fresh\n"}}, {"x/a": "sha-a"})
+    result = list(
+        iter_github_code_from_repos(
+            ["x/a"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            document_cache_path=cache_path,
+            force_refresh=True,
+        )
+    )
+    assert [item.text for item in result] == ["fresh\n"]
+
+
+def test_iter_github_code_from_repos_document_cache_reused_across_different_language_filters(
+    tmp_path,
+) -> None:
+    cache_path = tmp_path / "cache.parquet"
+    clone_repo = _fake_clone(
+        {"x/a": {"main.py": "pass\n", "app.js": "console.log(1)\n"}}, {"x/a": "sha-a"}
+    )
+    list(
+        iter_github_code_from_repos(
+            ["x/a"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            document_cache_path=cache_path,
+        )
+    )
+
+    def clone_repo_should_not_be_called(repo_name, destination):
+        raise AssertionError("clone_repo must not be called on a cache replay")
+
+    js_only = list(
+        iter_github_code_from_repos(
+            ["x/a"],
+            clone_repo=clone_repo_should_not_be_called,
+            resolve_license=lambda name, root: None,
+            document_cache_path=cache_path,
+            languages=["javascript"],
+        )
+    )
+    assert [item.path for item in js_only] == ["app.js"]
 
 
 def test_iter_ebook_markdown_reads_book_md_and_ignores_other_pipeline_outputs(tmp_path) -> None:

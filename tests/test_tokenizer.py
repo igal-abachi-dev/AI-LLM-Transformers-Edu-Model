@@ -116,6 +116,56 @@ def test_save_rejects_invalid_model_max_length(tmp_path, mini_tokenizer) -> None
         mini_tokenizer.save(tmp_path, model_max_length=0)
 
 
+def test_save_leaves_no_tmp_staging_files_behind(tmp_path, mini_tokenizer) -> None:
+    mini_tokenizer.save(tmp_path)
+    assert not (tmp_path / ".tokenizer.json.tmp").exists()
+    assert not (tmp_path / ".tokenizer_config.json.tmp").exists()
+    assert {path.name for path in tmp_path.iterdir()} == {
+        "tokenizer.json",
+        "tokenizer_config.json",
+    }
+    MiniFrontierTokenizer.from_directory(tmp_path)
+
+
+def test_save_survives_a_kill_between_its_two_file_renames(
+    tmp_path, mini_tokenizer, monkeypatch
+) -> None:
+    """A kill exactly between the two per-file renames leaves the previous
+    (or, on a first save, no) tokenizer.json paired with a stale/missing
+    config -- a real, narrow, acceptable degradation, not the much wider
+    truncated-mid-write risk this fix closes for the common case."""
+
+    import minifrontier.tokenizer as tokenizer_module
+
+    mini_tokenizer.save(tmp_path)
+    original_tokenizer_bytes = (tmp_path / "tokenizer.json").read_bytes()
+
+    real_replace = tokenizer_module.Path.replace
+    call_count = 0
+
+    def replace_that_crashes_on_the_second_rename(self, target):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise RuntimeError("simulated kill between the two renames")
+        return real_replace(self, target)
+
+    monkeypatch.setattr(tokenizer_module.Path, "replace", replace_that_crashes_on_the_second_rename)
+    with pytest.raises(RuntimeError, match="simulated kill between the two renames"):
+        mini_tokenizer.save(tmp_path, model_max_length=4096)
+
+    # The first rename (tokenizer.json) went through -- the real file on disk
+    # is a genuine, complete tokenizer.json (identical bytes here, since
+    # only model_max_length changed and that lives in tokenizer_config.json,
+    # not tokenizer.json -- the point is it is NOT truncated or missing, the
+    # failure mode this fix targets). The second rename
+    # (tokenizer_config.json) did not happen, so its .tmp staging file
+    # survives rather than the real config silently vanishing.
+    assert (tmp_path / "tokenizer.json").exists()
+    assert (tmp_path / "tokenizer.json").read_bytes() == original_tokenizer_bytes
+    assert (tmp_path / ".tokenizer_config.json.tmp").exists()
+
+
 def test_bpe_compresses_repetitive_text(mini_tokenizer) -> None:
     text = "attention transformer attention transformer " * 20
     assert len(mini_tokenizer.encode(text)) < len(text.encode("utf-8"))
