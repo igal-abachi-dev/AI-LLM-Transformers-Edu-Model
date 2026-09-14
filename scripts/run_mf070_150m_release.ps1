@@ -81,7 +81,21 @@ function Invoke-Step {
     $logFile = Join-Path $LogDir "$Name.log"
     $startTs = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     Write-Log "[$startTs] START $Name"
+    # Real bug found and fixed here (2026-09-15): with the script-level
+    # $ErrorActionPreference = "Stop" active, Windows PowerShell 5.1
+    # promotes *any* stderr line from a native command redirected via `*>`
+    # into a terminating error -- even a normal, recoverable warning
+    # prepare_data.py itself prints and handles correctly (e.g. skipping one
+    # repo whose real Windows path exceeded MAX_PATH). This killed the
+    # whole pipeline on the first such warning, even though the underlying
+    # python.exe process was working correctly. Scoped down to "Continue"
+    # for just this one native call so stderr flows through into the log
+    # file normally; $LASTEXITCODE below (already the real, authoritative
+    # pass/fail signal) is unaffected either way.
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     & $Python @ArgumentList *> $logFile
+    $ErrorActionPreference = $previousErrorActionPreference
     if ($LASTEXITCODE -eq 0) {
         $Status[$Name] = "SUCCESS"
         Write-Log "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] SUCCESS $Name (log: $logFile)"

@@ -1,7 +1,7 @@
 ﻿
-=== MF-070 150M-Modern release run started 2026-09-15 01:57:48 ===
-[2026-09-15 01:57:48] ALREADY DONE prep-cosmopedia-v2 (found data/shards/mf070-150m-3b-cosmopedia-v2/metadata.json) -- skipping re-run
-[2026-09-15 01:57:48] ALREADY DONE prep-finemath (found data/shards/mf070-150m-3b-finemath/metadata.json) -- skipping re-run
-[2026-09-15 01:57:48] ALREADY DONE prep-fineweb-edu (found data/shards/mf070-150m-3b-fineweb-edu/metadata.json) -- skipping re-run
-[2026-09-15 01:57:48] ALREADY DONE prep-dclm-edu (found data/shards/mf070-150m-3b-dclm-edu/metadata.json) -- skipping re-run
-[2026-09-15 01:57:48] START prep-github-code
+=== MF-070 150M-Modern release run started 2026-09-15 02:30:13 ===
+[2026-09-15 02:30:13] ALREADY DONE prep-cosmopedia-v2 (found data/shards/mf070-150m-3b-cosmopedia-v2/metadata.json) -- skipping re-run
+[2026-09-15 02:30:13] ALREADY DONE prep-finemath (found data/shards/mf070-150m-3b-finemath/metadata.json) -- skipping re-run
+[2026-09-15 02:30:13] ALREADY DONE prep-fineweb-edu (found data/shards/mf070-150m-3b-fineweb-edu/metadata.json) -- skipping re-run
+[2026-09-15 02:30:13] ALREADY DONE prep-dclm-edu (found data/shards/mf070-150m-3b-dclm-edu/metadata.json) -- skipping re-run
+[2026-09-15 02:30:13] START prep-github-code

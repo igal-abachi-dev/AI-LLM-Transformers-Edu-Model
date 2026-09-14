@@ -697,6 +697,90 @@ def test_github_code_from_repos_filters_by_language_extension() -> None:
     assert [item.path for item in result] == ["main.py"]
 
 
+def test_github_code_from_repos_extraction_is_idempotent_across_repeated_runs() -> None:
+    """Real, directly-verified answer to a real question before committing
+    to a multi-hour production run: does re-running extraction against the
+    same cached repo content produce identical results every time? Each
+    call gets its own fresh fake clone (mirroring how a real cached mirror
+    checkout creates a fresh temp directory per run), proving the pipeline
+    itself is deterministic, not just that a single shared directory was
+    reused. Multiple real files/languages/licenses, not a single trivial case.
+    """
+    files_by_repo = {
+        "x/a": {"main.py": "pass\n", "app.js": "console.log(1);\n", "lib.c": "int f(){}\n"},
+        "x/b": {"README.md": "# Title\n"},
+    }
+    shas_by_repo = {"x/a": "sha-a", "x/b": "sha-b"}
+
+    def run_once():
+        clone_repo = _fake_clone(files_by_repo, shas_by_repo)
+        return list(
+            iter_github_code_from_repos(
+                ["x/a", "x/b"],
+                clone_repo=clone_repo,
+                resolve_license=lambda name, root: "MIT",
+                document_cache_path=None,
+            )
+        )
+
+    first = run_once()
+    second = run_once()
+    assert first == second
+    assert [item.content_hash for item in first] == [item.content_hash for item in second]
+
+
+def test_github_code_from_repos_recognizes_every_mf121_allowlist_category() -> None:
+    """A real gap found by direct inspection (2026-09-15): MF-121 added nine
+    real language categories to configs/code-repo-allowlist.txt (C, SQL,
+    Markdown, Dockerfile, CMake, PowerShell, Shell, Batchfile, TeX), but the
+    extension dictionary was never updated to match -- those real repos
+    would have cloned successfully and yielded zero documents each, every
+    file silently unmatched. This is the regression test for the fix.
+    """
+    clone_repo = _fake_clone(
+        {
+            "x/a": {
+                "main.c": "int main() { return 0; }\n",
+                "types.h": "#define FOO 1\n",
+                "query.sql": "SELECT 1;\n",
+                "README.md": "# Title\n",
+                "Dockerfile": "FROM scratch\n",
+                "Dockerfile.dev": "FROM scratch\n",
+                "config.cmake": "set(X 1)\n",
+                "CMakeLists.txt": "project(x)\n",
+                "script.ps1": "Write-Host 'hi'\n",
+                "install.sh": "#!/bin/sh\necho hi\n",
+                "run.bat": "echo hi\n",
+                "doc.tex": "\\documentclass{article}\n",
+            }
+        },
+        {"x/a": "sha-a"},
+    )
+    result = list(
+        iter_github_code_from_repos(
+            ["x/a"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            document_cache_path=None,
+        )
+    )
+    by_path = {item.path: item.language for item in result}
+    assert by_path == {
+        "main.c": "C",
+        "types.h": "C",
+        "query.sql": "SQL",
+        "README.md": "Markdown",
+        "Dockerfile": "Dockerfile",
+        "Dockerfile.dev": "Dockerfile",
+        "config.cmake": "CMake",
+        "CMakeLists.txt": "CMake",
+        "script.ps1": "PowerShell",
+        "install.sh": "Shell",
+        "run.bat": "Batchfile",
+        "doc.tex": "TeX",
+    }
+
+
 def test_github_code_from_repos_skips_configured_noise_directories() -> None:
     clone_repo = _fake_clone(
         {

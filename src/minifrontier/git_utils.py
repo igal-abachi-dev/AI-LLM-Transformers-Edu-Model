@@ -77,8 +77,12 @@ def clone_repo_ephemeral(repo_name: str, destination: Path) -> str:
     """
 
     subprocess.run(
+        # -c core.longpaths=true: same real Windows MAX_PATH fix as
+        # clone_via_cached_mirror's own local checkout, per-invocation only.
         [
             "git",
+            "-c",
+            "core.longpaths=true",
             "clone",
             "--depth",
             "1",
@@ -282,7 +286,26 @@ def clone_via_cached_mirror(
         clone_url=clone_url,
     )
     subprocess.run(
-        ["git", "clone", "--quiet", str(mirror_path), str(destination)],
+        # -c core.longpaths=true (real Windows fix, per-invocation only --
+        # never touches the user's persistent global git config, same
+        # principle already applied to the earlier uploadpack.allowfilter
+        # question): Windows' own default ~260-character MAX_PATH limit is
+        # real and was hit for real (dotnet/reactive, 2026-09-15 -- a
+        # genuinely deep real path under its UWP test-app packaging tree).
+        # The bare mirror bootstrap above never needs this (git's own
+        # internal object storage uses fixed-length, content-addressed
+        # paths regardless of the repo's real directory structure) -- only
+        # this actual working-tree checkout, which recreates the repo's
+        # real (arbitrarily long) paths on disk, can hit the limit.
+        [
+            "git",
+            "-c",
+            "core.longpaths=true",
+            "clone",
+            "--quiet",
+            str(mirror_path),
+            str(destination),
+        ],
         check=True,
         capture_output=True,
         timeout=300,

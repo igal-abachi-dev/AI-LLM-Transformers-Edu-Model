@@ -738,8 +738,46 @@ _GITHUB_EXTENSION_LANGUAGES: Final[dict[str, str]] = {
     ".html": "HTML",
     ".htm": "HTML",
     ".css": "CSS",
+    # MF-121's real allowlist additions (2026-09-12: C, SQL, Markdown,
+    # Dockerfile, CMake, PowerShell, Shell, Batchfile, TeX) were missing
+    # here entirely until this real, found-by-inspection gap (2026-09-15,
+    # a direct question -- "do we miss any extension" -- prompted actually
+    # re-checking the allowlist file rather than trusting the original
+    # 12-language framing). Without these, libuv/cJSON/openssl (C),
+    # supabase/sqlfluff (SQL), the two Markdown/CMake/PowerShell/Shell/
+    # Batchfile/TeX repos would each clone successfully but yield zero
+    # documents -- every one of their real files silently unmatched.
+    ".c": "C",
+    # A real, inherent ambiguity, not fully resolvable from the extension
+    # alone: plain `.h` headers are used by both C and C++ in practice.
+    # Mapped to C here since the allowlist's own C++ entries mostly use
+    # `.hpp`/`.hh`/`.hxx` for headers specifically (already covered above),
+    # while the three real C repos (libuv, cJSON, openssl) use plain `.h`
+    # as their primary header convention -- a defensible, disclosed choice,
+    # not a claim of perfect accuracy.
+    ".h": "C",
+    ".sql": "SQL",
+    ".md": "Markdown",
+    ".markdown": "Markdown",
+    ".cmake": "CMake",
+    ".ps1": "PowerShell",
+    ".psm1": "PowerShell",
+    ".psd1": "PowerShell",
+    ".sh": "Shell",
+    ".bash": "Shell",
+    ".zsh": "Shell",
+    ".bat": "Batchfile",
+    ".cmd": "Batchfile",
+    ".tex": "TeX",
 }
-# Real, curated per this project's own 12-language allowlist (`configs/
+# Filename-based matches, for the two real MF-121 categories with no
+# distinctive extension of their own: a literal `Dockerfile` (or a real,
+# common variant like `Dockerfile.dev`/`Dockerfile.alpine`) and
+# `CMakeLists.txt`, CMake's own standard, exact build-file name. Checked
+# against `file_path.name`, not `.suffix`, after the extension dict misses.
+_GITHUB_DOCKERFILE_NAME_PREFIX: Final = "dockerfile"
+_GITHUB_CMAKELISTS_NAME: Final = "cmakelists.txt"
+# Real, curated per this project's own real allowlist (`configs/
 # code-repo-allowlist.txt`) -- no generic catch-all extension list, since an
 # unrecognized extension is meant to be skipped, not mislabeled.
 _GITHUB_CLONE_SKIP_DIRS: Final = frozenset(
@@ -950,28 +988,68 @@ def _extract_one_repo_documents(
             continue
         language = _GITHUB_EXTENSION_LANGUAGES.get(file_path.suffix.lower())
         if language is None:
+            lowered_name = file_path.name.lower()
+            if lowered_name.startswith(_GITHUB_DOCKERFILE_NAME_PREFIX):
+                language = "Dockerfile"
+            elif lowered_name == _GITHUB_CMAKELISTS_NAME:
+                language = "CMake"
+        if language is None:
             continue
+        # One bad file must not lose the rest of an otherwise-good repo,
+        # the same real principle already applied one level up (one bad
+        # repo must not lose the rest of a 161-repo run). The narrower
+        # (UnicodeDecodeError, OSError) catch below already covered the
+        # read step specifically; this wider one covers everything after
+        # it too (line-length scan, license-header stripping, `Document.
+        # create`'s own validation) -- silent on failure, matching this
+        # same per-file loop's own already-established quiet-skip
+        # convention (unlike the louder, repo-level diagnostic, a single
+        # bad file among possibly thousands is not worth a warning print).
         try:
-            if file_path.stat().st_size > _GITHUB_MAX_FILE_BYTES:
-                continue
-            text = file_path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
+            document = _document_for_file(
+                file_path,
+                relative_path,
+                repo_name=repo_name,
+                commit_sha=commit_sha,
+                license_value=license_value,
+                language=language,
+            )
+        except Exception:
             continue
-        if any(len(line) > _GITHUB_MAX_LINE_CHARS for line in text.splitlines()):
-            continue
-        text = _strip_leading_license_comment(text)
-        if not text.strip():
-            continue
-        yield Document.create(
-            text,
-            source=f"https://github.com/{repo_name}",
-            revision=commit_sha,
-            license=license_value,
-            language=language,
-            record_id=f"{repo_name}:{relative_path.as_posix()}",
-            path=relative_path.as_posix(),
-            source_type="code",
-        )
+        if document is not None:
+            yield document
+
+
+def _document_for_file(
+    file_path: Path,
+    relative_path: Path,
+    *,
+    repo_name: str,
+    commit_sha: str,
+    license_value: str,
+    language: str,
+) -> Document | None:
+    try:
+        if file_path.stat().st_size > _GITHUB_MAX_FILE_BYTES:
+            return None
+        text = file_path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return None
+    if any(len(line) > _GITHUB_MAX_LINE_CHARS for line in text.splitlines()):
+        return None
+    text = _strip_leading_license_comment(text)
+    if not text.strip():
+        return None
+    return Document.create(
+        text,
+        source=f"https://github.com/{repo_name}",
+        revision=commit_sha,
+        license=license_value,
+        language=language,
+        record_id=f"{repo_name}:{relative_path.as_posix()}",
+        path=relative_path.as_posix(),
+        source_type="code",
+    )
 
 
 def _tee_to_parquet_document_cache(
