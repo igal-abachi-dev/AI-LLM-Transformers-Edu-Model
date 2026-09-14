@@ -111,20 +111,38 @@ if (-not (Test-Path "configs\code-repo-allowlist.txt")) {
 # --- Step 1: real data prep, 5 sources at the MF-095-adopted mixture shares,
 # packed at seq_len=2048 (the config's real declared max_seq_len -- MF-070's
 # own finding this session is that measuring/prepping at half that length
-# was a real, corrected mistake). Target: 3B tokens total.
-#   dclm-edu       35% -> 1,050,000,000 tokens
-#   fineweb-edu    25% ->   750,000,000 tokens
-#   github-code    20% ->   600,000,000 tokens
-#   finemath       15% ->   450,000,000 tokens
-#   cosmopedia-v2   5% ->   150,000,000 tokens
+# was a real, corrected mistake). Target: 3B tokens total. Ordered smallest
+# --limit first: no real measured docs/sec exists yet for this pipeline at
+# this scale (only reasoned estimates, see header caveat 1), so running the
+# smallest source first surfaces a real per-source wall-clock number (this
+# step's own log start/end timestamps) within minutes rather than after
+# waiting through the largest source first.
+#   cosmopedia-v2   5% ->   150,000,000 tokens (110,000 docs)
+#   finemath       15% ->   450,000,000 tokens (620,000 docs)
+#   fineweb-edu    25% ->   750,000,000 tokens (800,000 docs)
+#   dclm-edu       35% -> 1,050,000,000 tokens (1,150,000 docs)
+#   github-code    20% ->   600,000,000 tokens (1,380,000 docs; curated
+#                                                allowlist, least real
+#                                                precedent for yield -- run
+#                                                last, after 4 other real
+#                                                successes already confirm
+#                                                the pipeline itself works)
 
-Invoke-Step "prep-dclm-edu" @(
-    "scripts/prepare_data.py", "--source", "dclm-edu", "--dclm-min-score", "3",
-    "--limit", "1150000", "--shuffle-seed", "42", "--tokenizer", "data/tokenizer",
-    "--output", "data/shards/mf070-150m-3b-dclm-edu", "--sequence-length", "2048",
+Invoke-Step "prep-cosmopedia-v2" @(
+    "scripts/prepare_data.py", "--source", "cosmopedia-v2",
+    "--limit", "110000", "--shuffle-seed", "42", "--tokenizer", "data/tokenizer",
+    "--output", "data/shards/mf070-150m-3b-cosmopedia-v2", "--sequence-length", "2048",
     "--validation-fraction", "0.01",
-    "--export-parquet-dir", "data/parquet/mf070-150m-3b-dclm-edu"
-) -AlreadyDoneMarker "data/shards/mf070-150m-3b-dclm-edu/metadata.json"
+    "--export-parquet-dir", "data/parquet/mf070-150m-3b-cosmopedia-v2"
+) -AlreadyDoneMarker "data/shards/mf070-150m-3b-cosmopedia-v2/metadata.json"
+
+Invoke-Step "prep-finemath" @(
+    "scripts/prepare_data.py", "--source", "finemath", "--finemath-config", "finemath-4plus",
+    "--limit", "620000", "--shuffle-seed", "42", "--tokenizer", "data/tokenizer",
+    "--output", "data/shards/mf070-150m-3b-finemath", "--sequence-length", "2048",
+    "--validation-fraction", "0.01",
+    "--export-parquet-dir", "data/parquet/mf070-150m-3b-finemath"
+) -AlreadyDoneMarker "data/shards/mf070-150m-3b-finemath/metadata.json"
 
 Invoke-Step "prep-fineweb-edu" @(
     "scripts/prepare_data.py", "--source", "fineweb-edu",
@@ -133,6 +151,14 @@ Invoke-Step "prep-fineweb-edu" @(
     "--validation-fraction", "0.01",
     "--export-parquet-dir", "data/parquet/mf070-150m-3b-fineweb-edu"
 ) -AlreadyDoneMarker "data/shards/mf070-150m-3b-fineweb-edu/metadata.json"
+
+Invoke-Step "prep-dclm-edu" @(
+    "scripts/prepare_data.py", "--source", "dclm-edu", "--dclm-min-score", "3",
+    "--limit", "1150000", "--shuffle-seed", "42", "--tokenizer", "data/tokenizer",
+    "--output", "data/shards/mf070-150m-3b-dclm-edu", "--sequence-length", "2048",
+    "--validation-fraction", "0.01",
+    "--export-parquet-dir", "data/parquet/mf070-150m-3b-dclm-edu"
+) -AlreadyDoneMarker "data/shards/mf070-150m-3b-dclm-edu/metadata.json"
 
 Invoke-Step "prep-github-code" @(
     "scripts/prepare_data.py", "--source", "github-code",
@@ -143,27 +169,11 @@ Invoke-Step "prep-github-code" @(
     "--export-parquet-dir", "data/parquet/mf070-150m-3b-github-code"
 ) -AlreadyDoneMarker "data/shards/mf070-150m-3b-github-code/metadata.json"
 
-Invoke-Step "prep-finemath" @(
-    "scripts/prepare_data.py", "--source", "finemath", "--finemath-config", "finemath-4plus",
-    "--limit", "620000", "--shuffle-seed", "42", "--tokenizer", "data/tokenizer",
-    "--output", "data/shards/mf070-150m-3b-finemath", "--sequence-length", "2048",
-    "--validation-fraction", "0.01",
-    "--export-parquet-dir", "data/parquet/mf070-150m-3b-finemath"
-) -AlreadyDoneMarker "data/shards/mf070-150m-3b-finemath/metadata.json"
-
-Invoke-Step "prep-cosmopedia-v2" @(
-    "scripts/prepare_data.py", "--source", "cosmopedia-v2",
-    "--limit", "110000", "--shuffle-seed", "42", "--tokenizer", "data/tokenizer",
-    "--output", "data/shards/mf070-150m-3b-cosmopedia-v2", "--sequence-length", "2048",
-    "--validation-fraction", "0.01",
-    "--export-parquet-dir", "data/parquet/mf070-150m-3b-cosmopedia-v2"
-) -AlreadyDoneMarker "data/shards/mf070-150m-3b-cosmopedia-v2/metadata.json"
-
-$allPrepsOk = ($Status["prep-dclm-edu"] -eq "SUCCESS") -and
-              ($Status["prep-fineweb-edu"] -eq "SUCCESS") -and
-              ($Status["prep-github-code"] -eq "SUCCESS") -and
+$allPrepsOk = ($Status["prep-cosmopedia-v2"] -eq "SUCCESS") -and
               ($Status["prep-finemath"] -eq "SUCCESS") -and
-              ($Status["prep-cosmopedia-v2"] -eq "SUCCESS")
+              ($Status["prep-fineweb-edu"] -eq "SUCCESS") -and
+              ($Status["prep-dclm-edu"] -eq "SUCCESS") -and
+              ($Status["prep-github-code"] -eq "SUCCESS")
 
 if (-not $allPrepsOk) {
     Write-Log ""
@@ -172,7 +182,7 @@ if (-not $allPrepsOk) {
     Write-Log ""
     Write-Log "Step                Status"
     Write-Log "-------------------- -------"
-    foreach ($name in @("prep-dclm-edu", "prep-fineweb-edu", "prep-github-code", "prep-finemath", "prep-cosmopedia-v2")) {
+    foreach ($name in @("prep-cosmopedia-v2", "prep-finemath", "prep-fineweb-edu", "prep-dclm-edu", "prep-github-code")) {
         $value = "NOT RUN"
         if ($Status.ContainsKey($name)) { $value = $Status[$name] }
         Write-Log ("{0,-20} {1}" -f $name, $value)
@@ -276,7 +286,7 @@ Write-Log "=== Pipeline finished $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ==="
 Write-Log ""
 Write-Log "Step                  Status"
 Write-Log "--------------------- -------"
-foreach ($name in @("prep-dclm-edu", "prep-fineweb-edu", "prep-github-code", "prep-finemath", "prep-cosmopedia-v2", "train-150m-release")) {
+foreach ($name in @("prep-cosmopedia-v2", "prep-finemath", "prep-fineweb-edu", "prep-dclm-edu", "prep-github-code", "train-150m-release")) {
     $value = "NOT RUN"
     if ($Status.ContainsKey($name)) { $value = $Status[$name] }
     Write-Log ("{0,-21} {1}" -f $name, $value)
