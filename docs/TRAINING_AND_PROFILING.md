@@ -2,6 +2,13 @@
 
 `train/pretrain.py` is the canonical single-process trainer. It consumes immutable shard
 directories produced by `scripts/prepare_data.py`; it never consumes a live network iterator.
+
+Preprocessing does not resume within a source. If an interruption leaves partial `--output`
+or `--export-parquet-dir` directories, rerun the same command with `--restart-incomplete`.
+That explicit flag removes both partial publications only when the output's atomically written
+`metadata.json` completion marker is absent; completed output is never deleted. The MF-070
+release runner passes this flag automatically, so after a restart it skips completed sources
+and rebuilds only the interrupted source without manual `Remove-Item` commands.
 The preparation CLI accepts either a provenance-complete `--manifest` or the pinned
 `--source fineweb-edu` stream directly. It writes separate hashed `.npy` token/count arrays so each
 worker can memory-map and cache its current shard instead of reopening an NPZ container per sample.

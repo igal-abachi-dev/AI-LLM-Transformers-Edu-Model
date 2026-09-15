@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 from dataclasses import asdict
 from pathlib import Path
 
@@ -131,6 +133,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--tokenizer", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--restart-incomplete",
+        action="store_true",
+        help=(
+            "If a previous interrupted invocation left --output or "
+            "--export-parquet-dir populated without a completed metadata.json, "
+            "delete both partial outputs and restart preprocessing from the "
+            "beginning. Completed output is never deleted."
+        ),
+    )
     parser.add_argument("--sequence-length", type=int, required=True)
     parser.add_argument("--validation-fraction", type=float, default=0.01)
     parser.add_argument("--sequences-per-shard", type=int, default=1024)
@@ -166,6 +178,52 @@ def parse_args() -> argparse.Namespace:
         "shards-only behavior.",
     )
     return parser.parse_args()
+
+
+def prepare_output_directories(
+    output: Path,
+    export_parquet_dir: Path | None,
+    *,
+    restart_incomplete: bool,
+) -> None:
+    """Reject existing publication output, or explicitly clear an incomplete run.
+
+    Preprocessing has no document-level resume. ``metadata.json`` is atomically
+    published only after both shard and optional Parquet finalization, so its
+    absence is the fail-closed signal that every existing output is disposable.
+    """
+
+    paths = [output]
+    if export_parquet_dir is not None:
+        paths.append(export_parquet_dir)
+
+    populated: list[Path] = []
+    for path in paths:
+        if not path.exists():
+            continue
+        if not path.is_dir():
+            raise FileExistsError(f"publication path exists but is not a directory: {path}")
+        if any(path.iterdir()):
+            populated.append(path)
+
+    if not populated:
+        return
+    if not restart_incomplete:
+        joined = ", ".join(str(path) for path in populated)
+        raise FileExistsError(
+            "publication output must be absent or empty; remove incomplete output "
+            f"or pass --restart-incomplete: {joined}"
+        )
+
+    completion_marker = output / "metadata.json"
+    if completion_marker.exists():
+        raise FileExistsError(
+            f"refusing to delete completed preprocessing output: {completion_marker} exists"
+        )
+
+    for path in populated:
+        print(f"Removing incomplete preprocessing output before restart: {path}")
+        shutil.rmtree(path)
 
 
 def document_stream(args: argparse.Namespace):
@@ -252,8 +310,11 @@ def main() -> None:
     args = parse_args()
     if not 0.0 < args.validation_fraction < 1.0:
         raise ValueError("validation_fraction must be in (0, 1)")
-    if args.output.exists() and any(args.output.iterdir()):
-        raise FileExistsError("output directory must be absent or empty for immutable publication")
+    prepare_output_directories(
+        args.output,
+        args.export_parquet_dir,
+        restart_incomplete=args.restart_incomplete,
+    )
     tokenizer = MiniFrontierTokenizer.from_directory(args.tokenizer)
     args.output.mkdir(parents=True, exist_ok=True)
     signatures = {"exact": [], "simhash": []}
@@ -334,10 +395,13 @@ def main() -> None:
         "export_parquet_train_rows": exported_parquet_train_rows,
         "export_parquet_validation_rows": exported_parquet_validation_rows,
     }
-    (args.output / "metadata.json").write_text(
+    metadata_path = args.output / "metadata.json"
+    temporary_metadata_path = args.output / ".metadata.tmp"
+    temporary_metadata_path.write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    os.replace(temporary_metadata_path, metadata_path)
     print(json.dumps(metadata, sort_keys=True))
 
 

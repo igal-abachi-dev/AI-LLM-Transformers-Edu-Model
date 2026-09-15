@@ -38,6 +38,66 @@ def test_prepare_data_selects_direct_bounded_fineweb_stream(monkeypatch) -> None
     }
 
 
+def test_prepare_output_directories_rejects_and_preserves_partial_output(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "shards"
+    parquet_dir = tmp_path / "parquet"
+    output_dir.mkdir()
+    parquet_dir.mkdir()
+    (output_dir / "partial.npy").write_bytes(b"shard")
+    (parquet_dir / ".train.parquet.tmp").write_bytes(b"parquet")
+
+    with pytest.raises(FileExistsError, match="--restart-incomplete"):
+        prepare_data.prepare_output_directories(
+            output_dir,
+            parquet_dir,
+            restart_incomplete=False,
+        )
+
+    assert (output_dir / "partial.npy").read_bytes() == b"shard"
+    assert (parquet_dir / ".train.parquet.tmp").read_bytes() == b"parquet"
+
+
+def test_prepare_output_directories_restarts_both_partial_publications(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "shards"
+    parquet_dir = tmp_path / "parquet"
+    output_dir.mkdir()
+    parquet_dir.mkdir()
+    (output_dir / "partial.npy").write_bytes(b"shard")
+    (parquet_dir / ".train.parquet.tmp").write_bytes(b"parquet")
+
+    prepare_data.prepare_output_directories(
+        output_dir,
+        parquet_dir,
+        restart_incomplete=True,
+    )
+
+    assert not output_dir.exists()
+    assert not parquet_dir.exists()
+
+
+def test_prepare_output_directories_never_deletes_completed_output(tmp_path: Path) -> None:
+    output_dir = tmp_path / "shards"
+    parquet_dir = tmp_path / "parquet"
+    output_dir.mkdir()
+    parquet_dir.mkdir()
+    (output_dir / "metadata.json").write_text("{}", encoding="utf-8")
+    (parquet_dir / "train.parquet").write_bytes(b"published")
+
+    with pytest.raises(FileExistsError, match="refusing to delete completed"):
+        prepare_data.prepare_output_directories(
+            output_dir,
+            parquet_dir,
+            restart_incomplete=True,
+        )
+
+    assert (output_dir / "metadata.json").exists()
+    assert (parquet_dir / "train.parquet").read_bytes() == b"published"
+
+
 def test_manifest_source_rejects_fineweb_cursor_options(tmp_path: Path) -> None:
     args = source_args(
         manifest=tmp_path / "documents.jsonl",
@@ -120,6 +180,7 @@ def test_prepare_data_end_to_end_ebook_source_with_parquet_export(
     prepare_data.main()
 
     metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
+    assert not (output_dir / ".metadata.tmp").exists()
     assert metadata["source"] == "ebook-markdown"
     assert metadata["export_parquet_dir"] == str(parquet_dir)
     assert metadata["export_parquet_train_rows"] == 1

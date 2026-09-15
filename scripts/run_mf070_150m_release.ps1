@@ -12,7 +12,10 @@
 #
 # Safe to walk away from and re-run: each data-prep step is skipped if its
 # real metadata.json already exists (AlreadyDoneMarker, same convention as
-# run_overnight_mf083_mf095_mf097.ps1). The training step is skipped entirely
+# run_overnight_mf083_mf095_mf097.ps1). If Windows restarts before that atomic
+# completion marker exists, --restart-incomplete removes both partial shard and
+# Parquet outputs and restarts that source from the beginning; preprocessing has
+# no document-level resume. The training step is skipped entirely
 # if artifacts\mf070-150m-release\final\model.safetensors already exists, and
 # auto-resumes from the latest checkpoint-* directory if training was
 # interrupted partway (this run is real multi-day: ~17-18 days of continuous
@@ -144,6 +147,7 @@ if (-not (Test-Path "configs\code-repo-allowlist.txt")) {
 
 Invoke-Step "prep-cosmopedia-v2" @(
     "scripts/prepare_data.py", "--source", "cosmopedia-v2",
+    "--restart-incomplete",
     "--limit", "110000", "--shuffle-seed", "42", "--tokenizer", "data/tokenizer",
     "--output", "data/shards/mf070-150m-3b-cosmopedia-v2", "--sequence-length", "2048",
     "--validation-fraction", "0.01",
@@ -152,6 +156,7 @@ Invoke-Step "prep-cosmopedia-v2" @(
 
 Invoke-Step "prep-finemath" @(
     "scripts/prepare_data.py", "--source", "finemath", "--finemath-config", "finemath-4plus",
+    "--restart-incomplete",
     "--limit", "620000", "--shuffle-seed", "42", "--tokenizer", "data/tokenizer",
     "--output", "data/shards/mf070-150m-3b-finemath", "--sequence-length", "2048",
     "--validation-fraction", "0.01",
@@ -160,6 +165,7 @@ Invoke-Step "prep-finemath" @(
 
 Invoke-Step "prep-fineweb-edu" @(
     "scripts/prepare_data.py", "--source", "fineweb-edu",
+    "--restart-incomplete",
     "--limit", "800000", "--shuffle-seed", "42", "--tokenizer", "data/tokenizer",
     "--output", "data/shards/mf070-150m-3b-fineweb-edu", "--sequence-length", "2048",
     "--validation-fraction", "0.01",
@@ -168,6 +174,7 @@ Invoke-Step "prep-fineweb-edu" @(
 
 Invoke-Step "prep-dclm-edu" @(
     "scripts/prepare_data.py", "--source", "dclm-edu", "--dclm-min-score", "3",
+    "--restart-incomplete",
     "--limit", "1150000", "--shuffle-seed", "42", "--tokenizer", "data/tokenizer",
     "--output", "data/shards/mf070-150m-3b-dclm-edu", "--sequence-length", "2048",
     "--validation-fraction", "0.01",
@@ -176,6 +183,7 @@ Invoke-Step "prep-dclm-edu" @(
 
 Invoke-Step "prep-github-code" @(
     "scripts/prepare_data.py", "--source", "github-code",
+    "--restart-incomplete",
     "--github-repo-allowlist", "configs/code-repo-allowlist.txt",
     "--limit", "1380000", "--shuffle-seed", "42", "--tokenizer", "data/tokenizer",
     "--output", "data/shards/mf070-150m-3b-github-code", "--sequence-length", "2048",
