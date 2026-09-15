@@ -34,6 +34,7 @@ import hashlib
 import json
 import random
 import re
+import shutil
 import sys
 import tempfile
 from collections.abc import Iterable, Iterator
@@ -780,6 +781,25 @@ _GITHUB_CMAKELISTS_NAME: Final = "cmakelists.txt"
 # Real, curated per this project's own real allowlist (`configs/
 # code-repo-allowlist.txt`) -- no generic catch-all extension list, since an
 # unrecognized extension is meant to be skipped, not mislabeled.
+# Extended 2026-09-15 (MF-070) from a real `git ls-tree -r -l HEAD` byte-size
+# scan across all 166 then-cached mirrors, not guessed: `docs`/`doc`/
+# `documentation` (1.1GB+170MB+75MB across 95/25/13 repos, prose, not code),
+# `testdata`/`test-data`/`fixtures`/`testfixtures`/`__snapshots__`/
+# `snapshots` (real binary/data fixtures -- confirmed concretely by the two
+# LFS incidents found the same day, `qdrant/qdrant`'s
+# `tests/e2e_tests/test_data/storage.tar.xz` and `microsoft/vscode`'s
+# `extensions/copilot/test/simulation/cache`), and `assets`/`images`/`img`/
+# `media` (binary, not text/code). `test`/`tests`/`__tests__` themselves
+# deliberately NOT added, after reconsidering: real source files inside them
+# (assertions, real API usage) are genuine, in-scope training signal, same
+# reasoning already applied to `examples`/`samples` (177MB/119MB, 59/20
+# repos, also not added) -- there is no reliable general way to separate
+# "real usage" test code from "dummy" test scaffolding by directory/file
+# structure alone (would need per-language semantic analysis: different
+# mocking-library conventions per language, fragile and unexplainable), so
+# the fallback is to keep all real source files under `test`/`tests` and
+# only strip the non-source content in and around them (fixtures, binary
+# data, docs, images) covered by the other names in this set.
 _GITHUB_CLONE_SKIP_DIRS: Final = frozenset(
     {
         ".git",
@@ -796,6 +816,19 @@ _GITHUB_CLONE_SKIP_DIRS: Final = frozenset(
         ".mypy_cache",
         ".pytest_cache",
         "coverage",
+        "testdata",
+        "test-data",
+        "fixtures",
+        "testfixtures",
+        "__snapshots__",
+        "snapshots",
+        "docs",
+        "doc",
+        "documentation",
+        "assets",
+        "images",
+        "img",
+        "media",
     }
 )
 _GITHUB_MAX_FILE_BYTES: Final = 1_000_000
@@ -984,7 +1017,12 @@ def _extract_one_repo_documents(
         if not file_path.is_file():
             continue
         relative_path = file_path.relative_to(destination)
-        if any(part in _GITHUB_CLONE_SKIP_DIRS for part in relative_path.parts):
+        # Case-insensitive: real, confirmed case variants exist across these
+        # 166 repos for these exact names (e.g. `Tests` in 14 repos, `Assets`
+        # in 13, `TestData` in 9 -- a 2026-09-15 real scan, not assumed), so a
+        # case-sensitive match against the all-lowercase skip set above would
+        # silently miss them.
+        if any(part.lower() in _GITHUB_CLONE_SKIP_DIRS for part in relative_path.parts):
             continue
         language = _GITHUB_EXTENSION_LANGUAGES.get(file_path.suffix.lower())
         if language is None:
@@ -1052,31 +1090,129 @@ def _document_for_file(
     )
 
 
-def _tee_to_parquet_document_cache(
-    documents: Iterator[Document], cache_path: Path
+def _document_cache_parts_dir(document_cache_path: Path) -> Path:
+    return document_cache_path.with_name(f"{document_cache_path.stem}.parts")
+
+
+def _sanitize_repo_name_for_parquet_part(repo_name: str) -> str:
+    return repo_name.replace("/", "__") + ".parquet"
+
+
+def _extract_repo_documents_resumable(
+    names: list[str],
+    document_cache_path: Path,
+    *,
+    clone_repo,
+    resolve_license,
+    force_refresh: bool,
 ) -> Iterator[Document]:
-    """Write every document to a real Parquet cache file while also yielding
-    it onward, via `shards.ParquetDocumentWriter` (MF-125) -- reusing its
-    own already-atomic publish (`.tmp` path, `os.replace` only in
-    `finalize()`), not a second, separate atomicity mechanism. An
-    interrupted run leaves no partial file a later run could mistake for a
-    real, complete cache. Local import: `shards.py` imports `Document` from
-    this module, so a module-level import here would be circular.
+    """Real, per-repo-checkpointed replacement for
+    `_extract_repo_documents` + `_tee_to_parquet_document_cache`'s combined,
+    whole-run-spanning write (2026-09-15, MF-134 follow-up, user-requested
+    after a real, second multi-hour interruption lost all progress: the
+    document cache's own staging `.tmp` file is written by one
+    `ParquetDocumentWriter` spanning the *entire* run and only gets a valid
+    footer once `finalize()` runs at the very end -- a hard process kill
+    (not a clean Python exception; verified directly, real: confirmed via
+    `pyarrow.parquet.ParquetFile` raising `ArrowInvalid: Parquet magic
+    bytes not found in footer` on a genuine `exit -1` kill's leftover
+    `.tmp`) leaves that file permanently unreadable and unresumable,
+    regardless of how much real work it represents).
+
+    One real, independently-finalized Parquet file per repo under
+    `document_cache_path`'s own sibling `<stem>.parts/` directory, named
+    deterministically from the repo name -- the *existence* of a repo's own
+    part file, under its own final (non-`.tmp`) name, is itself the
+    "already done" signal; no separate manifest file is needed or kept, so
+    there is nothing that could drift out of sync with the real files on
+    disk. Each part is written via `ParquetDocumentWriter`'s own existing
+    atomic staging+rename (`finalize()`), the same mechanism already used
+    for the final combined cache -- a hard kill mid-write of any *one*
+    repo's part leaves only that repo's own orphaned `.tmp` (cleaned up by
+    a later attempt at that same repo, the same self-healing principle
+    already used for the git-mirror cache's own staging path) and never
+    touches any other, already-completed repo's part. Worst case lost work
+    on a crash: one repo's extraction, not the whole run.
+
+    A repo that fails entirely (clone error, unresolved license) still
+    gets a real, valid, empty-schema part file written for it (
+    `ParquetDocumentWriter.finalize()`'s own existing empty-case handling)
+    -- matching this project's already-established "a failed repo is
+    skipped for good, not retried forever" contract (the existing
+    non-resumable design already had this property implicitly, since a
+    fully-replayed cache never re-attempts a repo that yielded zero
+    documents the first time either; this preserves it exactly, not a new
+    behavior).
+
+    `force_refresh=True` discards any existing `parts_dir` outright and
+    starts every repo over, matching `iter_github_code_from_repos`'s own
+    existing "bypasses both caches unconditionally" contract.
+
+    The final, single combined `document_cache_path` file (the one
+    `iter_github_code_from_repos`'s fast-path replay actually checks for)
+    is only ever built once every repo in `names` has a real part on this
+    call -- via `_finalize_document_cache_from_parts` below -- preserving
+    the existing, already-established contract that the shared cache only
+    reflects a *fully* completed run, never a partial one (an early stop
+    via `limit`, or a hard kill mid-run, both correctly leave no complete
+    `document_cache_path` behind, exactly as today).
     """
 
     from minifrontier.shards import ParquetDocumentWriter
 
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    writer = ParquetDocumentWriter(cache_path)  # zstd, ParquetDocumentWriter's own default
-    try:
-        for document in documents:
+    parts_dir = _document_cache_parts_dir(document_cache_path)
+    if force_refresh and parts_dir.exists():
+        shutil.rmtree(parts_dir)
+    parts_dir.mkdir(parents=True, exist_ok=True)
+
+    for repo_name in names:
+        part_path = parts_dir / _sanitize_repo_name_for_parquet_part(repo_name)
+        if part_path.exists() and not force_refresh:
+            yield from iter_parquet_documents(part_path)
+            continue
+        # Self-heal a leftover `.tmp` from an interrupted part-write for
+        # this exact repo (a real, if narrow, race -- the same principle
+        # already applied to the git-mirror cache's own staging path).
+        part_path.with_name(f".{part_path.name}.tmp").unlink(missing_ok=True)
+        repo_documents = list(
+            _extract_repo_documents(
+                [repo_name], clone_repo=clone_repo, resolve_license=resolve_license
+            )
+        )
+        part_writer = ParquetDocumentWriter(part_path)
+        for document in repo_documents:
+            part_writer.add(document)
+        part_writer.finalize()
+        yield from repo_documents
+
+    _finalize_document_cache_from_parts(document_cache_path, parts_dir, names)
+
+
+def _finalize_document_cache_from_parts(
+    document_cache_path: Path, parts_dir: Path, names: list[str]
+) -> None:
+    """Concatenate every real, already-finalized per-repo part into the
+    single final cache file, one part's documents at a time (not every
+    part loaded into memory simultaneously) -- reusing
+    `ParquetDocumentWriter`'s own existing atomic staging+rename, so an
+    interruption during this final merge itself leaves no partial
+    `document_cache_path` behind either, exactly like every other atomic
+    publish in this project. `parts_dir` cleanup afterward is best-effort
+    and deliberately non-load-bearing: `document_cache_path`'s own
+    existence is the sole authority `iter_github_code_from_repos` already
+    checks for "complete," so a failed cleanup here (a locked file,
+    whatever) cannot make a genuinely complete cache look incomplete.
+    """
+
+    from minifrontier.shards import ParquetDocumentWriter
+
+    writer = ParquetDocumentWriter(document_cache_path)
+    for repo_name in names:
+        part_path = parts_dir / _sanitize_repo_name_for_parquet_part(repo_name)
+        for document in iter_parquet_documents(part_path):
             writer.add(document)
-            yield document
-        writer.finalize()
-    except BaseException:
-        temporary_path = cache_path.with_name(f".{cache_path.name}.tmp")
-        temporary_path.unlink(missing_ok=True)
-        raise
+    writer.finalize()
+    shutil.rmtree(parts_dir, ignore_errors=True)
 
 
 _GITHUB_CACHE_DEFAULT_DOCUMENT_CACHE: Final = Path("data/github-code-cache/documents.parquet")
@@ -1169,12 +1305,18 @@ def iter_github_code_from_repos(
     )
     if use_cache:
         documents = iter_parquet_documents(document_cache_path)
+    elif document_cache_path is not None:
+        documents = _extract_repo_documents_resumable(
+            names,
+            document_cache_path,
+            clone_repo=clone_repo,
+            resolve_license=resolve_license,
+            force_refresh=force_refresh,
+        )
     else:
         documents = _extract_repo_documents(
             names, clone_repo=clone_repo, resolve_license=resolve_license
         )
-        if document_cache_path is not None:
-            documents = _tee_to_parquet_document_cache(documents, document_cache_path)
 
     admitted_index = 0
     emitted = 0

@@ -2,8 +2,11 @@ import subprocess
 import time
 from pathlib import Path
 
+import pytest
+
 from minifrontier.git_utils import (
     GITHUB_CACHE_STALENESS_MARKER,
+    _no_lfs_env,
     clone_via_cached_mirror,
     ensure_repo_mirror,
     rmtree_readonly_safe,
@@ -308,10 +311,16 @@ def test_ensure_repo_mirror_follows_a_real_default_branch_rename_on_refresh(tmp_
     assert resolved_sha == new_sha
 
 
-def test_ensure_repo_mirror_prunes_a_real_deleted_tag_on_refresh(tmp_path) -> None:
-    """--prune-tags (2026-09-15 addition): plain --prune alone does not
-    remove deleted tags by default -- verified against real git-mirroring
-    guidance, tested here directly rather than trusted from a doc summary.
+def test_ensure_repo_mirror_never_fetches_tags(tmp_path) -> None:
+    """2026-09-15 design change (MF-134): the cache entry's stored refspec is
+    narrowed to `+refs/heads/*:refs/heads/*` (not a true `--mirror`), and
+    bootstrap passes `--no-tags` -- both real, deliberate cost savings over
+    the earlier `--mirror` design (tags/PR-refs are never read by this
+    project's own extraction, and a real cross-check found several cached
+    repos 1.5-2.6x larger on disk than GitHub's own reported size, traced to
+    exactly this kind of extra-ref bloat). Tags should never appear at all,
+    neither at bootstrap nor after a refresh -- there is nothing left to
+    prune, unlike the earlier `--mirror`-based design this replaces.
     """
     origin = tmp_path / "origin"
     origin.mkdir()
@@ -321,22 +330,22 @@ def test_ensure_repo_mirror_prunes_a_real_deleted_tag_on_refresh(tmp_path) -> No
     mirror_path = ensure_repo_mirror(
         "x/a", cache_root, max_staleness_seconds=3600, force_refresh=False, clone_url=str(origin)
     )
-    tags_before = subprocess.run(
+    tags_after_bootstrap = subprocess.run(
         ["git", "-C", str(mirror_path), "tag"], check=True, capture_output=True, text=True
     ).stdout.split()
-    assert "v1.0" in tags_before
+    assert tags_after_bootstrap == []
 
-    subprocess.run(["git", "-C", str(origin), "tag", "-d", "v1.0"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(origin), "tag", "v2.0"], check=True, capture_output=True)
     (mirror_path / GITHUB_CACHE_STALENESS_MARKER).write_text(
         str(time.time() - 1_000_000), encoding="utf-8"
     )
     mirror_path = ensure_repo_mirror(
         "x/a", cache_root, max_staleness_seconds=3600, force_refresh=False, clone_url=str(origin)
     )
-    tags_after = subprocess.run(
+    tags_after_refresh = subprocess.run(
         ["git", "-C", str(mirror_path), "tag"], check=True, capture_output=True, text=True
     ).stdout.split()
-    assert "v1.0" not in tags_after
+    assert tags_after_refresh == []
 
 
 def test_clone_via_cached_mirror_falls_back_to_ephemeral_clone_when_cache_dir_is_none(
@@ -358,3 +367,115 @@ def test_clone_via_cached_mirror_falls_back_to_ephemeral_clone_when_cache_dir_is
     )
     assert result == "fake-sha"
     assert calls == [("x/a", Path("unused"))]
+
+
+def test_no_lfs_env_sets_skip_smudge_without_dropping_the_real_environment() -> None:
+    """Real, previously-unset gap (2026-09-15): a live run hit real 'smudge
+    filter lfs failed' / 'remote missing object' errors on several real
+    repos, and one (saadeghi/daisyui) ballooned to a real 12GB over 600
+    real seconds attempting an LFS transfer that never completed -- none of
+    that binary content is wanted anyway. GIT_LFS_SKIP_SMUDGE=1 is git-lfs's
+    own documented variable for skipping it entirely."""
+
+    env = _no_lfs_env()
+    assert env["GIT_LFS_SKIP_SMUDGE"] == "1"
+    # A copy of the real environment, not a replacement -- PATH must
+    # survive, or git itself (and every other tool) would stop resolving.
+    assert "PATH" in env or "Path" in env
+
+
+def test_ensure_repo_mirror_and_clone_via_cached_mirror_skip_lfs_smudge(monkeypatch) -> None:
+    """Verifies the wiring, not just that the helper exists: every real git
+    subprocess call that clones or checks out files must actually receive
+    the no-LFS environment, not just have it available unused."""
+
+    import minifrontier.git_utils as git_utils_module
+
+    seen_envs = []
+    real_run = subprocess.run
+
+    def spy_run(args, **kwargs):
+        seen_envs.append(kwargs.get("env"))
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(git_utils_module.subprocess, "run", spy_run)
+
+    origin = None
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        origin = Path(tmp) / "origin"
+        origin.mkdir()
+        subprocess.run(["git", "init", "--quiet", str(origin)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(origin), "config", "user.email", "test@example.com"],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(origin), "config", "user.name", "Test"],
+            check=True,
+            capture_output=True,
+        )
+        (origin / "a.py").write_text("pass\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(origin), "add", "-A"], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(origin), "commit", "--quiet", "-m", "c"],
+            check=True,
+            capture_output=True,
+        )
+
+        cache_root = Path(tmp) / "cache"
+        destination = Path(tmp) / "checkout"
+        clone_via_cached_mirror(
+            "x/a",
+            destination,
+            cache_dir=cache_root,
+            force_refresh=False,
+            max_staleness_seconds=3600,
+            clone_url=str(origin),
+        )
+
+    real_git_calls = [env for env in seen_envs if env is not None]
+    assert real_git_calls, "expected at least one real subprocess.run(..., env=...) call"
+    assert all(env.get("GIT_LFS_SKIP_SMUDGE") == "1" for env in real_git_calls)
+
+
+def test_ensure_repo_mirror_cleans_up_staging_on_a_timeout(tmp_path, monkeypatch) -> None:
+    """Real gap fixed (2026-09-15), found from a real timeout in production,
+    not anticipated: `subprocess.run(..., timeout=...)` kills the child
+    process but never deletes what it already wrote. `saadeghi/daisyui`
+    left a real, orphaned, multi-gigabyte staging directory behind after
+    timing out -- this proves a timeout now cleans it up instead of leaving
+    it for some future bootstrap attempt to stumble over."""
+
+    import minifrontier.git_utils as git_utils_module
+
+    cache_root = tmp_path / "cache"
+
+    def fake_run_that_times_out_after_partial_writes(args, **kwargs):
+        # Simulate real partial progress before the real timeout: the
+        # staging directory exists with some real (if incomplete) content,
+        # matching what a genuinely-interrupted clone leaves behind.
+        staging_path = Path(args[-1])
+        staging_path.mkdir(parents=True, exist_ok=True)
+        (staging_path / "partial-object").write_bytes(b"x" * 1024)
+        raise subprocess.TimeoutExpired(cmd=args, timeout=600)
+
+    monkeypatch.setattr(
+        git_utils_module.subprocess, "run", fake_run_that_times_out_after_partial_writes
+    )
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        ensure_repo_mirror(
+            "x/a",
+            cache_root,
+            max_staleness_seconds=3600,
+            force_refresh=False,
+            clone_url="https://example.invalid/x/a.git",
+        )
+
+    staging_path = cache_root / "x__a.git.tmp"
+    assert not staging_path.exists(), (
+        "a timed-out clone must not leave an orphaned staging directory"
+    )

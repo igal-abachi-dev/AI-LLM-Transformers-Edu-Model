@@ -20,9 +20,10 @@ from minifrontier.data import (
     PackedSequence,
     PackedTokenDataset,
     _detect_license_from_text,
+    _document_cache_parts_dir,
     _resolve_repo_license,
+    _sanitize_repo_name_for_parquet_part,
     _strip_leading_license_comment,
-    _tee_to_parquet_document_cache,
     content_sha256,
     filter_and_deduplicate,
     iter_cosmopedia_v2,
@@ -787,6 +788,74 @@ def test_github_code_from_repos_skips_configured_noise_directories() -> None:
             "x/a": {
                 "main.py": "pass\n",
                 "node_modules/dep/index.js": "module.exports = 1;\n",
+                "docs/guide.md": "# Guide\n",
+                "testdata/fixture.json": "{}\n",
+                "fixtures/sample.json": "{}\n",
+                "assets/logo.svg": "<svg></svg>\n",
+                "images/logo.png": "not-real-png-bytes\n",
+            }
+        },
+        {"x/a": "sha-a"},
+    )
+    result = list(
+        iter_github_code_from_repos(
+            ["x/a"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            document_cache_path=None,
+        )
+    )
+    assert [item.path for item in result] == ["main.py"]
+
+
+def test_github_code_from_repos_keeps_real_source_files_under_test_directories() -> None:
+    """`test`/`tests` themselves are deliberately not in the skip list --
+    real source code in them (assertions, real API usage) is genuine
+    training signal, only their non-source contents (fixtures, binary data)
+    are excluded, matching the same treatment `examples`/`samples` already
+    get.
+    """
+
+    clone_repo = _fake_clone(
+        {
+            "x/a": {
+                "main.py": "pass\n",
+                "tests/test_main.py": "assert True\n",
+                "test/test_other.py": "assert True\n",
+                "tests/fixtures/sample.json": "{}\n",
+                "tests/testdata/blob.bin": "binary\n",
+            }
+        },
+        {"x/a": "sha-a"},
+    )
+    result = list(
+        iter_github_code_from_repos(
+            ["x/a"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            document_cache_path=None,
+        )
+    )
+    assert {item.path for item in result} == {
+        "main.py",
+        "tests/test_main.py",
+        "test/test_other.py",
+    }
+
+
+def test_github_code_from_repos_skips_noise_directories_regardless_of_case() -> None:
+    """Real, confirmed case variants exist across the actual cached repos for
+    these exact names (`Assets` in 13 repos, `TestData` in 9,
+    2026-09-15 scan) -- a case-sensitive match would silently miss them.
+    """
+
+    clone_repo = _fake_clone(
+        {
+            "x/a": {
+                "main.py": "pass\n",
+                "Docs/guide.md": "# Guide\n",
+                "TestData/fixture.json": "{}\n",
+                "Assets/logo.svg": "<svg></svg>\n",
             }
         },
         {"x/a": "sha-a"},
@@ -862,18 +931,6 @@ def test_iter_parquet_documents_round_trips_a_real_document(tmp_path) -> None:
     assert result == [original]
 
 
-def test_tee_to_parquet_document_cache_writes_a_real_cache_and_still_yields(tmp_path) -> None:
-    cache_path = tmp_path / "sub" / "cache.parquet"
-    documents = [
-        document("a", record_id="x/a:a.py", source_type="code", license="MIT"),
-        document("b", record_id="x/a:b.py", source_type="code", license="MIT"),
-    ]
-    result = list(_tee_to_parquet_document_cache(iter(documents), cache_path))
-    assert result == documents
-    assert cache_path.exists()
-    assert list(iter_parquet_documents(cache_path)) == documents
-
-
 def test_iter_github_code_from_repos_creates_then_replays_the_document_cache(tmp_path) -> None:
     cache_path = tmp_path / "cache.parquet"
     clone_repo = _fake_clone({"x/a": {"main.py": "pass\n"}}, {"x/a": "sha-a"})
@@ -923,6 +980,177 @@ def test_iter_github_code_from_repos_force_refresh_bypasses_the_document_cache(t
         )
     )
     assert [item.text for item in result] == ["fresh\n"]
+
+
+def test_iter_github_code_from_repos_resumes_without_reextracting_already_completed_repos(
+    tmp_path,
+) -> None:
+    """A real interruption: `x/a` already has a finalized per-repo part
+    (simulating a crash *after* it completed but *before* the whole run
+    finished), `x/b` does not. A resumed call must replay `x/a` from its
+    part -- not call `clone_repo`/`resolve_license` for it again -- while
+    still extracting `x/b` fresh, then produce one complete, correct final
+    cache covering both.
+    """
+    cache_path = tmp_path / "cache.parquet"
+    from minifrontier.shards import ParquetDocumentWriter
+
+    parts_dir = _document_cache_parts_dir(cache_path)
+    parts_dir.mkdir(parents=True)
+    already_done = document("done", record_id="x/a:main.py", source_type="code", license="MIT")
+    part_writer = ParquetDocumentWriter(parts_dir / _sanitize_repo_name_for_parquet_part("x/a"))
+    part_writer.add(already_done)
+    part_writer.finalize()
+
+    def clone_repo(repo_name, destination):
+        if repo_name == "x/a":
+            raise AssertionError("x/a already has a completed part -- must not be re-cloned")
+        destination.mkdir(parents=True)
+        (destination / "main.py").write_text("fresh\n", encoding="utf-8")
+        return "sha-b"
+
+    result = list(
+        iter_github_code_from_repos(
+            ["x/a", "x/b"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            document_cache_path=cache_path,
+        )
+    )
+    assert {item.text for item in result} == {"done", "fresh\n"}
+    assert cache_path.exists()
+    # The resumed run must have cleaned up the now-superseded parts dir once
+    # the full cache was successfully finalized.
+    assert not parts_dir.exists()
+    assert {item.text for item in iter_parquet_documents(cache_path)} == {"done", "fresh\n"}
+
+
+def test_iter_github_code_from_repos_leaves_a_resumable_partial_state_on_early_stop(
+    tmp_path,
+) -> None:
+    """Simulates a real interruption mid-run (the caller stops consuming
+    before every repo is processed, standing in for a hard kill): the final
+    `cache_path` must not exist (never falsely marked complete), but the
+    already-completed repo's own real part file must survive on disk for a
+    later resumed call to reuse.
+    """
+    cache_path = tmp_path / "cache.parquet"
+    clone_repo = _fake_clone(
+        {"x/a": {"main.py": "a\n"}, "x/b": {"main.py": "b\n"}}, {"x/a": "sha-a", "x/b": "sha-b"}
+    )
+    generator = iter_github_code_from_repos(
+        ["x/a", "x/b"],
+        clone_repo=clone_repo,
+        resolve_license=lambda name, root: "MIT",
+        document_cache_path=cache_path,
+    )
+    first_document = next(generator)
+    assert first_document.text == "a\n"
+    generator.close()
+
+    assert not cache_path.exists()
+    parts_dir = _document_cache_parts_dir(cache_path)
+    completed_part = parts_dir / _sanitize_repo_name_for_parquet_part("x/a")
+    assert completed_part.exists()
+    assert [item.text for item in iter_parquet_documents(completed_part)] == ["a\n"]
+    not_yet_done_part = parts_dir / _sanitize_repo_name_for_parquet_part("x/b")
+    assert not not_yet_done_part.exists()
+
+
+def test_iter_github_code_from_repos_resumable_cache_does_not_retry_a_permanently_failed_repo(
+    tmp_path, capsys
+) -> None:
+    """A repo that fails entirely (clone error) still gets a real, valid,
+    empty part written for it -- matching the existing, already-established
+    "a failed repo is skipped for good, not retried forever" contract a
+    fully-replayed cache already had, preserved exactly for the resumable
+    path too.
+    """
+    cache_path = tmp_path / "cache.parquet"
+
+    def clone_repo(repo_name, destination):
+        if repo_name == "x/broken":
+            raise RuntimeError("clone failed")
+        destination.mkdir(parents=True)
+        (destination / "main.py").write_text("ok\n", encoding="utf-8")
+        return "sha-ok"
+
+    first = list(
+        iter_github_code_from_repos(
+            ["x/broken", "x/ok"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            document_cache_path=cache_path,
+        )
+    )
+    assert [item.text for item in first] == ["ok\n"]
+    assert cache_path.exists()
+
+    def clone_repo_should_not_be_called_again(repo_name, destination):
+        raise AssertionError("a real, force-free replay must never call clone_repo again")
+
+    second = list(
+        iter_github_code_from_repos(
+            ["x/broken", "x/ok"],
+            clone_repo=clone_repo_should_not_be_called_again,
+            resolve_license=lambda name, root: (_ for _ in ()).throw(
+                AssertionError("must not be called on a cache replay")
+            ),
+            document_cache_path=cache_path,
+        )
+    )
+    assert [item.text for item in second] == ["ok\n"]
+
+
+def test_iter_github_code_from_repos_force_refresh_discards_existing_parts(tmp_path) -> None:
+    cache_path = tmp_path / "cache.parquet"
+    from minifrontier.shards import ParquetDocumentWriter
+
+    parts_dir = _document_cache_parts_dir(cache_path)
+    parts_dir.mkdir(parents=True)
+    stale_writer = ParquetDocumentWriter(parts_dir / _sanitize_repo_name_for_parquet_part("x/a"))
+    stale_writer.add(document("stale", record_id="x/a:old.py", source_type="code", license="MIT"))
+    stale_writer.finalize()
+
+    clone_repo = _fake_clone({"x/a": {"main.py": "fresh\n"}}, {"x/a": "sha-a"})
+    result = list(
+        iter_github_code_from_repos(
+            ["x/a"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            document_cache_path=cache_path,
+            force_refresh=True,
+        )
+    )
+    assert [item.text for item in result] == ["fresh\n"]
+
+
+def test_iter_github_code_from_repos_resumable_cleans_up_a_leftover_part_tmp_file(
+    tmp_path,
+) -> None:
+    """A leftover `.tmp` from an interrupted part-write for one specific
+    repo (a real, if narrow, race -- the same self-healing principle
+    already applied to the git-mirror cache's own staging path) must not
+    block that repo from being extracted fresh on the next attempt.
+    """
+    cache_path = tmp_path / "cache.parquet"
+    parts_dir = _document_cache_parts_dir(cache_path)
+    parts_dir.mkdir(parents=True)
+    part_path = parts_dir / _sanitize_repo_name_for_parquet_part("x/a")
+    leftover_tmp = part_path.with_name(f".{part_path.name}.tmp")
+    leftover_tmp.write_bytes(b"not a real parquet file")
+
+    clone_repo = _fake_clone({"x/a": {"main.py": "fresh\n"}}, {"x/a": "sha-a"})
+    result = list(
+        iter_github_code_from_repos(
+            ["x/a"],
+            clone_repo=clone_repo,
+            resolve_license=lambda name, root: "MIT",
+            document_cache_path=cache_path,
+        )
+    )
+    assert [item.text for item in result] == ["fresh\n"]
+    assert not leftover_tmp.exists()
 
 
 def test_iter_github_code_from_repos_document_cache_reused_across_different_language_filters(

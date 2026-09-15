@@ -301,7 +301,6 @@ jgthms/bulma
 picocss/pico
 tachyons-css/tachyons
 twbs/bootstrap
-saadeghi/daisyui
 unocss/unocss
 
 # --- MF-121 additions (2026-09-12) ---
