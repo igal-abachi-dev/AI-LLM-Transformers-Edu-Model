@@ -5,3 +5,17 @@
 [2026-09-15 10:54:40] ALREADY DONE prep-fineweb-edu (found data/shards/mf070-150m-3b-fineweb-edu/metadata.json) -- skipping re-run
 [2026-09-15 10:54:40] ALREADY DONE prep-dclm-edu (found data/shards/mf070-150m-3b-dclm-edu/metadata.json) -- skipping re-run
 [2026-09-15 10:54:40] START prep-github-code
+[2026-09-15 16:23:38] SUCCESS prep-github-code (log: logs\mf070-release\prep-github-code.log)
+
+=== Real per-source token yield vs. target (from each source's own metadata.json) ===
+prep-fineweb-edu     real=    891,908,096  target=    750,000,000  (118.9%)
+prep-dclm-edu        real=  1,634,541,568  target=  1,050,000,000  (155.7%)
+prep-cosmopedia-v2   real=     81,149,952  target=    150,000,000  (54.1%)
+  WARNING: prep-cosmopedia-v2 yielded only 54.1% of its target token share -- the --limit estimate for this source may be too low.
+prep-github-code     real=  1,379,614,720  target=    600,000,000  (229.9%)
+prep-finemath        real=    924,231,680  target=    450,000,000  (205.4%)
+
+Real shortfall found above. Proceeding in 30 seconds anyway (unattended run) -- Ctrl+C now to stop and fix --limit/--mixture first.
+
+=== Starting the real 150M-Modern 3B-token training run (this takes real days, not hours) ===
+[2026-09-15 16:24:08] START train-150m-release

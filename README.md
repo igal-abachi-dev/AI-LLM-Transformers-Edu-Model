@@ -121,6 +121,50 @@ Current limitations
 
 Start with `introduction.md`, then the tiny models and labs — that’s clearly the intended path.
 
+## Published dataset: 150M-Modern 3B-token training mixture
+
+The exact training-data mixture used for the canonical 150M-Modern 3B-token release run (MF-070) is published on the Hugging Face Hub:
+
+**[igalk474/MiniFrontier-150M-Modern-3B-token-mixture](https://huggingface.co/datasets/igalk474/MiniFrontier-150M-Modern-3B-token-mixture)**
+
+Five sources, each filtered, deduplicated, and published as its own Hub **config** — the Dataset Viewer gets a per-source dropdown, and `load_dataset(repo_id, "<source>")` loads just that one:
+
+| Source | Mixture weight | Tokens (train + validation) | Admitted documents |
+| --- | ---: | ---: | ---: |
+| dclm-edu | 35% | 1,651,369,984 | 1,133,153 |
+| fineweb-edu | 25% | 901,208,064 | 795,940 |
+| github-code | 20% | 1,393,422,336 | 772,092 |
+| finemath | 15% | 933,122,048 | 596,854 |
+| cosmopedia-v2 | 5% | 81,995,776 | 102,967 |
+| **Total** | **100%** | **4,961,118,208** | |
+
+Each row is one admitted document (post-filter, post-dedup, pre-tokenization), with full provenance: `text`, `source`, `revision`, `license`, `language`, `record_id`, `content_hash`, `path`, `source_type`, `split`, `parent_content_hash`, `transform`.
+
+**License is per-example, not one blanket license for the dataset.** The github-code component alone spans several real permissive licenses (Apache-2.0, BSD-2-Clause, BSD-3-Clause, CC0-1.0, ISC, MIT, Unlicense) depending on which upstream repository each row came from — check a row's own `license`/`source` columns before reusing it, and preserve attribution the way that repository's own license requires.
+
+**Get it:**
+
+```python
+from datasets import load_dataset
+
+ds = load_dataset("igalk474/MiniFrontier-150M-Modern-3B-token-mixture", "github-code")
+print(ds["train"][0]["text"][:200])
+```
+
+```bash
+huggingface-cli download igalk474/MiniFrontier-150M-Modern-3B-token-mixture \
+  --repo-type dataset --local-dir ./mixture
+```
+
+**Use it to train:**
+
+This is raw, untokenized text plus provenance columns — published *before* tokenization so it stays reusable with any tokenizer or training stack, not just this one.
+
+- **With another tokenizer/pipeline**: read each config's `text` column directly, filtering/weighting by the `license`/`source` columns as needed.
+- **To reproduce MiniFrontier's own exact packed shards** (this project's 16,384-token byte-level BPE tokenizer, `sequence_length=2048`, ribbon packing): re-run `scripts/prepare_data.py` against the original upstream sources with the `--limit`/`--mixture` weights recorded in `tasks/backlog.md` (MF-070). Feeding this Parquet export back into `prepare_data.py` as an input isn't wired up yet — regenerate from the upstream sources rather than from this published export.
+
+The trained 150M-Modern model checkpoint will be published separately on the Hub; a link will be added here once it's up.
+
 ## Frozen V1 targets
 
 | Preset size | Layers | Width | Q heads | Modern KV heads | SwiGLU width | Context | Role |
