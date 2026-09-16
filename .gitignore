@@ -237,6 +237,10 @@ ai-LLM*.zip
 # Downloaded eval datasets (e.g. lm-eval GPQA cache) -- never commit corpora, per AGENTS.md.
 /gpqa-diamond/
 
+# Local third-party reference archives (transformers/trl/peft/LoRA/unsloth/llama.cpp/ggml source
+# zips, kept for research only) -- large, third-party, never bundled into this project's own repo.
+/reference/
+
 # Third-party research material (tech reports, screenshots) dropped in for review --
 # no redistribution decision made, per docs/RESEARCH_SOURCE_REVIEW.md's existing policy.
 /ds4/
