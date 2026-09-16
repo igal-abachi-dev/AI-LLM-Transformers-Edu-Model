@@ -113,6 +113,11 @@ def _args(
         optimizer="adamw",
         cautious_xi=1.0,
         decay_mixture=None,
+        validation_interval=0,
+        validation_shards=None,
+        validation_batch_size=pretrain.VALIDATION_BATCH_SIZE,
+        validation_max_batches=pretrain.VALIDATION_MAX_BATCHES,
+        tokenizer=Path("data/tokenizer"),
     )
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -182,6 +187,154 @@ def test_loss_chunk_size_and_z_loss_weight_flags_reach_real_training(
     )
     assert state.completed_updates == 2
     assert state.last_loss is not None and state.last_loss == state.last_loss  # not NaN
+
+
+def test_z_loss_and_mtp_loss_are_printed_in_progress_lines_only_when_configured(
+    tmp_path, mini_tokenizer, capsys
+) -> None:
+    """z-loss and the MTP auxiliary loss were already computed every update
+    (training.py) but never surfaced anywhere -- not on TrainingState, not in
+    the progress log. Confirms both now print when configured, and that a
+    plain run's progress line is unaffected (no stray 'z_loss='/'mtp_loss='
+    text) when neither is."""
+
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+
+    plain_output = tmp_path / "plain"
+    pretrain.run(
+        _args(config_path, shards_path, plain_output, no_checkpoint=True, progress_interval=1)
+    )
+    plain_captured = capsys.readouterr().out
+    assert "loss=" in plain_captured
+    assert "z_loss=" not in plain_captured
+    assert "mtp_loss=" not in plain_captured
+
+    configured_output = tmp_path / "configured"
+    pretrain.run(
+        _args(
+            config_path,
+            shards_path,
+            configured_output,
+            no_checkpoint=True,
+            progress_interval=1,
+            loss_chunk_size=2,
+            z_loss_weight=1e-4,
+            mtp_extra_heads=1,
+            mtp_loss_weight=0.5,
+        )
+    )
+    configured_captured = capsys.readouterr().out
+    assert "z_loss=" in configured_captured
+    assert "mtp_loss=" in configured_captured
+
+
+def test_validation_interval_and_validation_shards_require_each_other(
+    tmp_path, mini_tokenizer
+) -> None:
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+
+    with pytest.raises(ValueError, match="--validation-interval and --validation-shards"):
+        pretrain.run(
+            _args(
+                config_path, shards_path, tmp_path / "a", no_checkpoint=True, validation_interval=1
+            )
+        )
+    with pytest.raises(ValueError, match="--validation-interval and --validation-shards"):
+        pretrain.run(
+            _args(
+                config_path,
+                shards_path,
+                tmp_path / "b",
+                no_checkpoint=True,
+                validation_shards=["val;" + str(shards_path)],
+            )
+        )
+
+
+def test_validation_interval_runs_real_periodic_validation_and_prints_metrics(
+    tmp_path, mini_tokenizer, tokenizer_dir, capsys
+) -> None:
+    """Real gap found while reviewing the live MF-070 release run: TrainingConfig/
+    train_updates already supported a validation_fn callback, but pretrain.py --
+    the only entry point any real run has ever used -- never constructed one or
+    exposed a flag for it. Every real run's validation was therefore always a
+    separate, after-the-fact step; this confirms it can now run in-loop too."""
+
+    train_shards_path = _build_shards(tmp_path / "train-src", mini_tokenizer)
+    validation_shards_path = _build_shards(tmp_path / "val-src", mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    output = tmp_path / "out"
+
+    state, _ = pretrain.run(
+        _args(
+            config_path,
+            train_shards_path,
+            output,
+            no_checkpoint=True,
+            updates=2,
+            progress_interval=1,
+            validation_interval=1,
+            validation_shards=[f"held_out;{validation_shards_path}"],
+            tokenizer=tokenizer_dir,
+        )
+    )
+    assert state.completed_updates == 2
+    captured = capsys.readouterr().out
+    assert "[validation @ update 1]" in captured
+    assert "[validation @ update 2]" in captured
+    assert "held_out: ce=" in captured
+    assert "combined: ce=" in captured
+
+
+def test_validation_multi_source_reports_each_source_and_a_combined_figure(
+    tmp_path, mini_tokenizer, tokenizer_dir, capsys
+) -> None:
+    train_shards_path = _build_shards(tmp_path / "train-src", mini_tokenizer)
+    first_validation = _build_shards(tmp_path / "val-a", mini_tokenizer)
+    second_validation = _build_shards(tmp_path / "val-b", mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    output = tmp_path / "out"
+
+    pretrain.run(
+        _args(
+            config_path,
+            train_shards_path,
+            output,
+            no_checkpoint=True,
+            updates=1,
+            progress_interval=1,
+            validation_interval=1,
+            validation_shards=[
+                f"alpha;{first_validation}",
+                f"beta;{second_validation}",
+            ],
+            tokenizer=tokenizer_dir,
+        )
+    )
+    captured = capsys.readouterr().out
+    assert "[validation @ update 1]" in captured
+    assert "alpha: ce=" in captured
+    assert "beta: ce=" in captured
+    assert "combined: ce=" in captured
+
+
+def test_validation_shards_duplicate_names_are_rejected(tmp_path, mini_tokenizer) -> None:
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+
+    with pytest.raises(ValueError, match="unique"):
+        pretrain.run(
+            _args(
+                config_path,
+                shards_path,
+                tmp_path / "out",
+                no_checkpoint=True,
+                validation_interval=1,
+                validation_shards=[f"dup;{shards_path}", f"dup;{shards_path}"],
+            )
+        )
 
 
 def test_mtp_heads_are_saved_in_every_checkpoint_when_enabled(tmp_path, mini_tokenizer) -> None:

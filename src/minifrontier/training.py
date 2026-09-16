@@ -362,6 +362,18 @@ class TrainingState:
     completed_updates: int = 0
     consumed_target_tokens: int = 0
     last_loss: float | None = None
+    # Populated only when config.loss_chunk_size is set (the structural
+    # precondition for z-loss, see TrainingConfig.z_loss_weight); already
+    # weight-baked, matching what chunked_next_token_loss_stats returns. None
+    # otherwise -- distinguishes "z-loss disabled" from "z-loss computed as 0".
+    last_z_loss: float | None = None
+    # Populated only when MTP heads are in use (mtp_heads is not None). Unlike
+    # last_z_loss, this is the RAW summed MTP auxiliary loss -- before
+    # config.mtp_loss_weight is applied -- since that weighting is already
+    # reflected in what it contributed to the backward pass; reporting the raw
+    # value keeps it comparable across runs using different mtp_loss_weight
+    # settings. None when MTP is disabled.
+    last_mtp_loss: float | None = None
     last_gradient_norm: float | None = None
     last_learning_rate: float | None = None
     # Only set under FP16 (see precision.py); None for BF16/FP32 runs, which never
@@ -773,6 +785,8 @@ def train_updates(
         # Gradients accumulate by default in PyTorch, so clear last update's first.
         optimizer.zero_grad(set_to_none=True)
         detached_loss_sum = torch.zeros((), device=torch_device)
+        detached_z_loss_sum = torch.zeros((), device=torch_device)
+        detached_mtp_loss_sum = torch.zeros((), device=torch_device)
         for batch, (labels, _) in zip(cpu_batches, validated, strict=True):
             tokens_device = batch.tokens.to(torch_device)
             labels_device = labels.to(torch_device)
@@ -814,6 +828,7 @@ def train_updates(
                 total_loss_sum = loss_sum
                 if z_loss_sum is not None:
                     total_loss_sum = total_loss_sum + z_loss_sum
+                    detached_z_loss_sum += z_loss_sum.detach().float()
                 if mtp_heads is not None:
                     mtp_loss_sum, _ = mtp_heads.loss_sum_and_count(
                         output.hidden_states,
@@ -821,6 +836,7 @@ def train_updates(
                         loss_mask=mask_device,
                     )
                     total_loss_sum = total_loss_sum + config.mtp_loss_weight * mtp_loss_sum
+                    detached_mtp_loss_sum += mtp_loss_sum.detach().float()
                 # Pre-divided so the gradients from all microbatches sum to exactly
                 # the gradient of the full batch's mean loss.
                 scaled_loss = total_loss_sum / target_count
@@ -873,6 +889,14 @@ def train_updates(
         schedule.completed_updates = state.completed_updates
         state.consumed_target_tokens += target_count
         state.last_loss = (detached_loss_sum / target_count).item()
+        state.last_z_loss = (
+            (detached_z_loss_sum / target_count).item()
+            if config.loss_chunk_size is not None
+            else None
+        )
+        state.last_mtp_loss = (
+            (detached_mtp_loss_sum / target_count).item() if mtp_heads is not None else None
+        )
         state.last_gradient_norm = gradient_norm.item()
         state.last_learning_rate = learning_rate
         if policy.needs_grad_scaler:

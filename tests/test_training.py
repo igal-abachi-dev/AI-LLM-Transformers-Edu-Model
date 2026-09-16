@@ -434,6 +434,67 @@ def test_train_updates_clips_mtp_head_gradients_together_with_model(monkeypatch)
     assert mtp_head_parameter_ids <= seen_parameter_ids
 
 
+def test_train_updates_reports_last_z_loss_and_last_mtp_loss_only_when_configured() -> None:
+    """Real gap found while reviewing the live MF-070 release run: z-loss and the
+    MTP auxiliary loss were already computed every update but silently discarded
+    -- never retained on TrainingState, never printed. Confirms both are now
+    reported when configured, and stay None (not 0.0) when not, so a caller can
+    tell "disabled" apart from "computed as zero"."""
+
+    config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
+    tokens = torch.randint(0, config.vocab_size, (2, 8))
+
+    # Plain run: neither chunked loss nor MTP configured -- both stay None.
+    plain_model = MiniFrontier(config)
+    plain_config = TrainingConfig(max_updates=1, warmup_updates=0, precision="float32")
+    _, _, plain_state, _ = train_updates(
+        plain_model, ListBatchProvider([TrainingBatch(tokens.clone())]), plain_config
+    )
+    assert plain_state.last_z_loss is None
+    assert plain_state.last_mtp_loss is None
+    assert plain_state.last_loss is not None
+
+    # z-loss configured (requires loss_chunk_size) -- a real float, not None.
+    z_loss_model = MiniFrontier(config)
+    z_loss_config = TrainingConfig(
+        max_updates=1,
+        warmup_updates=0,
+        precision="float32",
+        loss_chunk_size=3,
+        z_loss_weight=1e-4,
+    )
+    _, _, z_loss_state, _ = train_updates(
+        z_loss_model, ListBatchProvider([TrainingBatch(tokens.clone())]), z_loss_config
+    )
+    assert z_loss_state.last_z_loss is not None
+    assert math.isfinite(z_loss_state.last_z_loss)
+    assert z_loss_state.last_mtp_loss is None
+
+    # MTP configured -- a real float, not None; unaffected by z-loss being off.
+    mtp_model = MiniFrontier(config)
+    mtp_heads = MTPHeads(d_model=config.d_model, vocab_size=config.vocab_size, n_extra_heads=1)
+    mtp_config = TrainingConfig(
+        max_updates=1,
+        warmup_updates=0,
+        precision="float32",
+        mtp_extra_heads=1,
+        mtp_loss_weight=0.5,
+    )
+    optimizer = torch.optim.AdamW(
+        list(mtp_model.parameters()) + list(mtp_heads.parameters()), lr=1e-3
+    )
+    _, _, mtp_state, _ = train_updates(
+        mtp_model,
+        ListBatchProvider([TrainingBatch(tokens.clone())]),
+        mtp_config,
+        optimizer=optimizer,
+        mtp_heads=mtp_heads,
+    )
+    assert mtp_state.last_mtp_loss is not None
+    assert math.isfinite(mtp_state.last_mtp_loss)
+    assert mtp_state.last_z_loss is None
+
+
 def test_train_updates_skips_step_and_counts_a_nonfinite_gradient_without_a_scaler(
     monkeypatch,
 ) -> None:

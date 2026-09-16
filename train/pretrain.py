@@ -23,6 +23,8 @@
 from __future__ import annotations
 
 import argparse
+import itertools
+import math
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -38,6 +40,7 @@ from minifrontier.checkpoint import (
 from minifrontier.compilation import maybe_compile
 from minifrontier.config import ModelConfig
 from minifrontier.ema import EMAWeights
+from minifrontier.evaluation.validation import batches_from_packed_shards, evaluate_token_batches
 from minifrontier.model import MiniFrontier
 from minifrontier.mtp import MTPHeads
 from minifrontier.reproducibility import seed_everything
@@ -48,6 +51,7 @@ from minifrontier.shards import (
     PackedShardDataset,
     ShardBatchProvider,
 )
+from minifrontier.tokenizer import MiniFrontierTokenizer
 from minifrontier.training import (
     LearningRateSchedule,
     TrainingConfig,
@@ -57,6 +61,22 @@ from minifrontier.training import (
     train_updates,
     wsd_decay_start_update,
 )
+
+# Deliberately smaller than eval_checkpoint.py's own VALIDATION_BATCH_SIZE=8: that
+# script always runs standalone with the whole GPU to itself, while this one runs
+# validation IN-PROCESS, sequentially after a real training step, on whatever VRAM
+# training's own weights/optimizer state/gradients have left over. Not independently
+# measured on real tight-VRAM hardware -- a smaller default is the more conservative
+# starting point, not a verified-safe one; profile with a real throwaway probe
+# before trusting this on a production run already close to its VRAM ceiling.
+VALIDATION_BATCH_SIZE = 4
+# A full pass over a real multi-hundred-million-token validation split is not cheap
+# enough to run every few hundred/thousand updates on a multi-day run -- this caps
+# each periodic check to a small "canary" sample by default, not the full pool. The
+# real, full-precision final validation still belongs to a separate scripts/
+# eval_checkpoint.py pass (unaffected by this default, no batch limit there) -- this
+# flag is about cheap, frequent-ish in-loop signal, not a replacement for that.
+VALIDATION_MAX_BATCHES = 20
 
 
 def parse_args() -> argparse.Namespace:
@@ -218,6 +238,72 @@ def parse_args() -> argparse.Namespace:
         "normalization constant (their default is 1.0).",
     )
     parser.add_argument(
+        "--validation-interval",
+        type=int,
+        default=0,
+        help=(
+            "Run a real held-out validation pass (cross-entropy/perplexity/bits-per-byte, "
+            "see evaluation/validation.py) every this many updates; 0 disables it (the "
+            "default). Requires --validation-shards. Entirely independent of "
+            "--progress-interval (the plain-loss log line) -- there is no reason to set "
+            "these equal, and a real validation pass costs meaningfully more per call than "
+            "a log line does (see --validation-max-batches), so this should normally be a "
+            "much larger number. This was previously wired into TrainingConfig/train_updates "
+            "but never reachable from this CLI -- every real run before this flag existed "
+            "only got training-loss signal, never periodic validation, regardless of intent."
+        ),
+    )
+    parser.add_argument(
+        "--validation-shards",
+        action="append",
+        metavar="NAME;SHARDS_PATH",
+        help=(
+            "repeatable; one held-out validation pool per mixture source, e.g. "
+            "'--validation-shards web;data/shards/web/validation "
+            "--validation-shards code;data/shards/code/validation'. Requires "
+            "--validation-interval > 0. Each source is evaluated separately and reported "
+            "individually, plus one token-weighted combined figure -- matching this "
+            "project's own mixture-training shape rather than assuming a single pool."
+        ),
+    )
+    parser.add_argument(
+        "--validation-batch-size",
+        type=int,
+        default=VALIDATION_BATCH_SIZE,
+        help=(
+            f"Batch size for validation forward passes (inference-only, no gradients -- "
+            f"independent of --batch-size). Controls per-batch parallelism/throughput, NOT "
+            f"how much validation data gets evaluated -- see --validation-max-batches for "
+            f"that. Default ({VALIDATION_BATCH_SIZE}) is smaller than "
+            f"eval_checkpoint.py's own standalone default (8) since this runs in-process, "
+            f"sequentially after a real training step, on whatever VRAM training's own "
+            f"state has left over -- not independently measured on tight-VRAM hardware, so "
+            f"treat this as a conservative starting point, not a verified-safe one."
+        ),
+    )
+    parser.add_argument(
+        "--validation-max-batches",
+        type=int,
+        default=VALIDATION_MAX_BATCHES,
+        help=(
+            f"Cap each source's validation pass to this many batches per check -- this, not "
+            f"--validation-batch-size, is the real total-cost lever (total validation tokens "
+            f"per check ~= --validation-batch-size x this x sequence_length). Default "
+            f"({VALIDATION_MAX_BATCHES}) is a small 'canary' sample, not the full held-out "
+            f"pool -- a full pass over a real multi-hundred-million-token validation split is "
+            f"not cheap enough to run every --validation-interval on a multi-day run. Pass a "
+            f"very large value for a real full-pool pass, or use scripts/eval_checkpoint.py "
+            f"separately for that (unaffected by this default, no cap there)."
+        ),
+    )
+    parser.add_argument(
+        "--tokenizer",
+        type=Path,
+        default=Path("data/tokenizer"),
+        help="Only loaded when --validation-shards is given -- bits-per-byte needs it to "
+        "decode packed tokens back to real UTF-8 bytes (see batches_from_packed_shards).",
+    )
+    parser.add_argument(
         "--decay-mixture",
         action="append",
         metavar="NAME;WEIGHT",
@@ -242,6 +328,16 @@ def _parse_mixture_entry(spec: str) -> tuple[str, Path, float]:
     if not name:
         raise ValueError(f"--mixture name must be non-empty: {spec!r}")
     return name, Path(shards_path), float(weight)
+
+
+def _parse_validation_entry(spec: str) -> tuple[str, Path]:
+    fields = spec.split(";")
+    if len(fields) != 2:
+        raise ValueError(f"--validation-shards must be 'name;shards_path', got {spec!r}")
+    name, shards_path = fields
+    if not name:
+        raise ValueError(f"--validation-shards name must be non-empty: {spec!r}")
+    return name, Path(shards_path)
 
 
 def _parse_decay_mixture_entry(spec: str) -> tuple[str, float]:
@@ -300,6 +396,8 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         raise ValueError("progress_interval must be positive")
     if args.keep_last_n_checkpoints is not None and args.keep_last_n_checkpoints <= 0:
         raise ValueError("keep_last_n_checkpoints must be positive")
+    if bool(args.validation_interval) != bool(args.validation_shards):
+        raise ValueError("--validation-interval and --validation-shards require each other")
     model_config = ModelConfig.from_toml(args.config)
     train_config = TrainingConfig(
         max_updates=args.updates,
@@ -310,6 +408,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         decay_embeddings=not args.no_decay_embeddings,
         gradient_clip=args.gradient_clip,
         gradient_accumulation_steps=args.accumulation_steps,
+        validation_interval=args.validation_interval,
         precision=args.precision,
         activation_checkpointing=args.activation_checkpointing,
         attention_impl=args.attention_impl,
@@ -335,6 +434,49 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
             init_std=model_config.resolved_init_std,
         ).to(device)
     ema = EMAWeights(model, decay=args.ema_decay) if args.ema_decay is not None else None
+    validation_fn = None
+    if args.validation_shards:
+        validation_entries = [_parse_validation_entry(spec) for spec in args.validation_shards]
+        validation_names = [name for name, _ in validation_entries]
+        if len(validation_names) != len(set(validation_names)):
+            raise ValueError(f"--validation-shards names must be unique, got {validation_names}")
+        validation_tokenizer = MiniFrontierTokenizer.from_directory(args.tokenizer)
+
+        def validation_fn(current_model: MiniFrontier, current_state: TrainingState) -> None:
+            parts: list[str] = []
+            total_nll = 0.0
+            total_tokens = 0
+            total_bytes = 0
+            for name, shards_path in validation_entries:
+                dataset = PackedShardDataset(shards_path)
+                batches = batches_from_packed_shards(
+                    dataset,
+                    validation_tokenizer,
+                    batch_size=args.validation_batch_size,
+                    device=device,
+                )
+                if args.validation_max_batches is not None:
+                    batches = itertools.islice(batches, args.validation_max_batches)
+                metrics = evaluate_token_batches(
+                    current_model, batches, pad_id=validation_tokenizer.pad_id
+                )
+                parts.append(
+                    f"{name}: ce={metrics.cross_entropy:.4f} ppl={metrics.perplexity:.2f} "
+                    f"bpb={metrics.bits_per_byte:.4f} ({metrics.predicted_tokens} tok)"
+                )
+                total_nll += metrics.cross_entropy * metrics.predicted_tokens
+                total_tokens += metrics.predicted_tokens
+                total_bytes += metrics.utf8_bytes
+            combined_ce = total_nll / total_tokens
+            combined_bpb = total_nll / (math.log(2.0) * total_bytes)
+            print(
+                f"[validation @ update {current_state.completed_updates}] "
+                + " | ".join(parts)
+                + f" | combined: ce={combined_ce:.4f} ppl={math.exp(combined_ce):.2f} "
+                f"bpb={combined_bpb:.4f}",
+                flush=True,
+            )
+
     provider = _build_batch_provider(args, train_config)
     optimizer = build_optimizer(model, train_config)[0]
     if mtp_heads is not None:
@@ -390,12 +532,17 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
                 if elapsed > 0
                 else 0.0
             )
-            print(
-                f"{current_state.completed_updates}/{args.updates} updates, "
-                f"loss={current_state.last_loss:.6f}, "
-                f"tokens/s={tokens_per_second:.1f}, elapsed={elapsed:.1f}s",
-                flush=True,
-            )
+            line = [
+                f"{current_state.completed_updates}/{args.updates} updates",
+                f"loss={current_state.last_loss:.6f}",
+            ]
+            if current_state.last_z_loss is not None:
+                line.append(f"z_loss={current_state.last_z_loss:.6f}")
+            if current_state.last_mtp_loss is not None:
+                line.append(f"mtp_loss={current_state.last_mtp_loss:.6f}")
+            line.append(f"tokens/s={tokens_per_second:.1f}")
+            line.append(f"elapsed={elapsed:.1f}s")
+            print(", ".join(line), flush=True)
         if args.no_checkpoint or current_state.completed_updates % args.checkpoint_interval:
             return
         save_training_checkpoint(
@@ -432,6 +579,7 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         optimizer=optimizer,
         schedule=schedule,
         state=state,
+        validation_fn=validation_fn,
         update_callback=update_progress_and_checkpoints,
         forward_model=execution_model,
         mtp_heads=mtp_heads,
