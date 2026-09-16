@@ -181,6 +181,12 @@ The required hardware target is one NVIDIA GPU with 24 GB for comfortable 50M/15
 
 8GB will work on 50M-150M , for 500M+ you need 24GB gpu
 
+### A real gotcha on 8GB-class cards: it pages, it doesn't OOM
+
+If you're running this on a similar consumer GPU (measured on an RTX 2070 Super, 8GB, Turing — no native BF16 tensor cores), be aware of a real, non-obvious failure mode: exceeding physical VRAM on Windows does **not** raise a clean CUDA out-of-memory error. It silently falls back to system-memory paging instead — `nvidia-smi` still reports ~100% GPU utilization, the process keeps running, there's no exception or crash — but real throughput collapses 10-13x. Measured directly: the 150M-Modern preset at its own declared `max_seq_len=2048` dropped from ~2,600-3,100 tok/s to ~239 tok/s once paging began. **A run that's silently paging looks identical to a run that's merely slow** — the only way to tell is checking `nvidia-smi`'s reported memory against your card's real physical total while the job is running, not waiting for an error that will never come.
+
+The fix that works on this hardware: `--activation-checkpointing`. It trades some throughput (~33-38%) for enough memory headroom that the same config runs cleanly instead of paging. This project's own real, measured decisions consistently reinvest efficiency savings into something that buys back quality rather than spending them for nothing — activation checkpointing's freed memory is exactly what lets the wider `head_dim=96` (a real, measured quality win) fit at all on 8GB; FP16 (not emulated BF16) is a free throughput win matched to hardware without native BF16 cores; the ring KV cache lets generation actually run on 8GB without paging; and the optional MTP heads pay a small real training cost for both a training-quality win and a separate inference-speedup win later. None of this is free — each is a deliberate trade, verified with a real measured `nvidia-smi` check, not assumed safe from an absence of errors.
+
 Labs should construct tiny_edu(n_layers=4) whenever comparing architectures with tiny_modern so it will be comparable
 
 
