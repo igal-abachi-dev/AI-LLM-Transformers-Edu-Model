@@ -30,6 +30,12 @@ AI is giant mathematical pattern-matching machine that predicts the next piece o
 Each time you send a message, the whole chat history is fed back into it as a long string of tokens, and It start guessing again from scratch.
 What feels like a conversation is really just the model generating one plausible-sounding reply after another.
 
+> A modern Transformer is a stack of residual blocks that repeatedly refine a residual stream
+> of token embeddings, using attention to move information *between* tokens and feed-forward
+> networks to process that information *within* each token — all trained end-to-end to
+> predict the next token extremely well, 
+> then further shaped by instruction data (sft, preference optimization)
+
 ## How the Process Actually Works
 
 1. Your text is broken into **tokens** (small chunks of characters or words).
@@ -453,6 +459,12 @@ Two details worth noticing in the code:
 
 ## 2.3 Step three: the Transformer Block, repeated
 
+A Transformer is a stack of identical **blocks** (also called layers), 
+and every block does exactly two main things:
+
+1. **Attention** — let tokens talk to each other.
+2. **Feed-forward network** — process each token independently.
+
 `TransformerBlock` in `model.py` is 30 lines and it does exactly two things, both in the same
 shape:
 
@@ -508,6 +520,11 @@ score (`Q · Kᵀ`). The scores get turned into percentages with softmax — so 
 up with something like "60% dog, 30% barked, 10% the". Then they collect a **blend of
 everyone's envelopes, weighted by those percentages**, and that blend becomes their sticky
 note.
+
+a **softmax** turns the raw scores into
+probabilities — how much attention to pay to each earlier token — and those probabilities
+are then used to take a **weighted sum of the Values**. 
+
 
  “How does the computer measure if a Query matches a Key?”
 (`Q · Kᵀ`) measures geometric alignment. 
@@ -698,6 +715,14 @@ From `src/minifrontier/training.py`, the grown-up knobs:
   the preference data and the third training stage shape its personality and safety behaviour. 
   This repo stops at SFT (train/sft.py and the loss_mask) because that is enough to understand the architecture. 
   The extra alignment stage does not change any of the boxes
+
+  **distillation**. in addition to training a model purely on raw
+  text, you can have an already-strong "teacher" model generate the training examples — 
+  explanations, corrected answers, code, reasoning traces — and train a smaller "student" 
+  model to copy the teacher's outputs. It's still the same next-token-prediction training 
+  underneath; only *where the text being predicted came from* changes, from "the internet" to
+  "a stronger model's own answers." This is a real, common way small models end up
+  surprisingly capable for their size
 
 
 ## Chunked cross-entropy (CCE) — computing the loss without exploding memory
