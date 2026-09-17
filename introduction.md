@@ -717,10 +717,32 @@ Every position guesses its *neighbour to the right*. So one sentence of 32 token
 loss. Guessed it with 2% confidence → big loss. Average across all positions, then
 backpropagate.
 
+**Two other ways you'll see this same number reported.** Raw cross-entropy (in "nats", the
+natural-log unit it's computed in) isn't the friendliest number to read, so real reports
+usually convert it: **perplexity** is `exp(cross_entropy)` — read it as "the model was about
+as unsure as if it had to guess uniformly among this many tokens." A perplexity of 20 means
+roughly a 1-in-20 blind guess; lower is better. Perplexity is only fair to compare between
+two models that share the exact same tokenizer, though — a bigger vocabulary makes "one
+token" carry more information, so a different vocabulary size alone can shift perplexity
+without the model actually being better or worse. **Bits per byte (BPB)** fixes that: it
+rescales the same cross-entropy number to raw UTF-8 bytes instead of tokens, which *is*
+comparable across different tokenizers — the honest number to use whenever you're comparing
+this project's own models against an outside one. Both are real, computed fields in this
+project's own evaluation code (`evaluate_token_batches` in `evaluation/validation.py`), not
+just textbook definitions.
+
 From `src/minifrontier/training.py`, the grown-up knobs:
 
 - **AdamW** — the optimizer. Not just "nudge in the good direction" but "nudge, with memory
   of recent nudges, and per-weight step sizes".
+
+- **Activation checkpointing — trading compute for memory.** Normally, every layer's
+  intermediate numbers (its "activations") stay in memory for the whole forward pass, so
+  they're ready when backpropagation needs them. `--activation-checkpointing` throws most of
+  them away immediately instead, and *recomputes* them on the fly during the backward pass
+  when they're actually needed. Real, measured tradeoff, not a free win: a slower training
+  step (recomputing costs real time) in exchange for a much smaller memory footprint — often
+  the difference between a large model fitting on a consumer GPU at all, or not.
 - **Warmup then cosine decay** — start with a tiny learning rate for the first 100 updates
   (big steps early on wreck a random model), ramp up, then smoothly slow down to almost
   nothing. `WarmupCosineSchedule`.
@@ -1129,6 +1151,19 @@ In short:
 
 The maths never changes; only the engine that evaluates it does.
 
+**Where does FlashAttention fit into this?** You'll see the name constantly in other
+projects' model cards and papers — it's arguably the single most famous attention kernel in
+the whole field. FlashAttention is the specific technique both SDPA and FlexAttention
+actually lean on under the hood: instead of ever writing the full `[sequence, sequence]`
+score matrix out to GPU memory and reading it back (slow — memory bandwidth, not raw compute,
+is usually the real bottleneck), it processes attention in small tiles that stay in the GPU's
+much faster on-chip memory the whole time, mathematically producing the *exact* same
+result, just without the expensive round trip. PyTorch's own `F.scaled_dot_product_attention`
+(what this project calls "SDPA") automatically picks a FlashAttention-family kernel as one of
+its real backend options whenever the hardware and shapes support it — so this project
+already benefits from the idea, it just never has to say the name "FlashAttention" anywhere
+in `attention.py`, because SDPA's own dispatch logic handles that choice invisibly.
+
 Because local and global layers have differently-shaped masks, they run best on different
 kernels. `attention_impl = "auto"` sorts it out per layer:
 
@@ -1175,6 +1210,40 @@ its faster and lower Memory
 
 both are based on matrix multiplication math (MATMUL)
 
+## Tiles vs. tensors — what a fused kernel is actually doing underneath
+
+Ordinary PyTorch code thinks in **tensors**: `scores = Q @ K.T` computes the *entire* scores
+matrix, all at once, and hands you back one big finished object before the next line even
+starts. That's the "unfused" picture above — each operation is a complete, separate step,
+and the full-size result gets written out to the GPU's main memory (called "global memory")
+in between every single one, then read back in for the next step. Global memory is large but
+comparatively slow; that back-and-forth is most of why the unfused path costs more time and
+memory.
+
+A fused kernel like FlashAttention's own real implementation thinks in **tiles** instead. It
+never builds the whole scores matrix at all — it chops the problem into small square blocks
+(say, 128×128 numbers), pulls just one tile's worth of Q, K, and V into a much faster
+scratchpad memory living right next to the GPU's compute cores (called "shared memory"),
+does the scaling/masking/softmax/×V work for that one tile entirely inside that fast
+scratchpad, keeps a small running "so far" total (an *online softmax* — a real trick for
+computing a correct running average without ever seeing the whole row at once), then moves
+to the next tile and repeats. The math works out to the exact same answer as the tensor
+version — it's provably identical, not an approximation — it just never pays the cost of
+writing the big intermediate result out to slow memory and reading it back in.
+
+**Why does the GPU even work this way?** GPUs use an execution model called **SIMT**
+(Single Instruction, Multiple Threads). A CPU core runs one independent stream of
+instructions; a GPU instead runs threads in fixed-size groups of 32 called a **warp**, and
+every thread in a warp executes the *exact same instruction* at the *exact same moment* —
+just each on its own small piece of data. Thousands of these warps run at once, which is
+where a GPU's real advantage comes from: not doing one thing fast, but doing the *same*
+thing to enormous amounts of data simultaneously — exactly the shape of "multiply these two
+matrices" or "run this same tile of attention math 10,000 times." (The catch: if threads in
+one warp need to take different branches of an `if`, the hardware has to run *both*
+branches for the whole warp one after another, masking off whichever threads don't apply —
+called "warp divergence," a real reason GPU kernels are written to avoid data-dependent
+branching wherever possible.)
+
 
 ## Why not just write custom kernels everywhere?
 
@@ -1187,6 +1256,7 @@ Given that, why doesn't this project write its own fused Triton/CUDA kernels for
 
 The rule of thumb worth remembering: hand-written kernels earn their complexity when profiling shows the *existing* kernel is genuinely the bottleneck (not merely part of the picture), and you're not already leaving a bigger, cheaper win on the table elsewhere. Reach for a custom kernel last, not first — and until then, PyTorch's own SDPA/FlexAttention plus cuBLAS underneath are simply the correct, fast engine.
 
+MiniFrontier never writes CUDA C++, Triton, or Rust GPU code 
 ---
 
 
