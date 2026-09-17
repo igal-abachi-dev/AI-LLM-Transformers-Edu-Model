@@ -671,6 +671,14 @@ From `src/minifrontier/training.py`, the grown-up knobs:
   from destroying hours of training.
 - **Weight decay 0.1** — gently pull weights toward zero unless the data insists otherwise.
   Discourages memorizing.
+- **EMA — a second, calmer copy of the weights** — while the real weights get nudged every
+  single step (including the occasional noisy, weird one), training can *also* keep a second,
+  shadow copy that only ever drifts a tiny bit closer to the real weights each time
+  (`ema.py`). Think of the real weights as a hand-held video and the EMA copy as that same
+  video with motion blur averaged in — any one frame might be shaky, but the blurred average
+  is steadier. At evaluation or export time you can ask for this smoothed copy instead of the
+  raw one (`--weights ema`). It's off by default — a cheap, optional extra, not something the
+  model needs to work at all.
   
   
   Post-training beyond SFT:
@@ -846,7 +854,8 @@ questions. But do you really need 4 separate name tags and 4 separate envelopes?
 mostly no.
 
 **The fix.** Keep 4 Query heads. Use only **2** Key/Value heads. Heads 0 and 1 share KV
-group 0; heads 2 and 3 share KV group 1. In `config.py`, `queries_per_kv = 2`.
+group 0; heads 2 and 3 share KV group 1 — 4 queries sharing 2 note-takers, 2 queries per KV
+head.
 
 ![MHA versus GQA](svg/15-mha-vs-gqa.svg)
 
@@ -859,6 +868,19 @@ self.v_proj = nn.Linear(d_model, n_kv_heads * head_dim, bias=False)  # 32 → 16
 ```
 
 Same trick at 150M scale: 12 Q heads, 4 KV heads → cache drops by 3×.
+
+**One more knob worth knowing about: `head_dim` doesn't have to be the divided-up number.**
+Everywhere above, `head_dim` was just "`d_model` split evenly across the heads" — 32 ÷ 4 = 8
+in the toy example. That's still true for Edu. But real Modern-sized models
+(`configs/150m-modern.toml` and friends) actually use a *wider* head than that plain division
+would give: `head_dim_override` in `config.py` lets you hand each head more room to work with
+than `d_model / n_heads` alone would allow. It costs real, disclosed things in exchange — more
+parameters, and slower training — but a real, measured test found the wider heads produce a
+genuinely better model for the extra cost, so it's the real, adopted default at 50M/150M/500M
+scale (350M's own real test found it didn't fit that size's memory budget, so it stays at the
+plain divided-up number there instead). The lesson: even a "derived" number in this codebase
+is really a *default*, not a law — check the actual config before assuming a formula from the
+toy example still holds at real scale.
 
 One detail worth understanding, because it shows up as a strange-looking function in the
 source. The *teaching* path physically copies the 2 KV heads into 4
@@ -1738,7 +1760,14 @@ This is also the real prerequisite for an idea used by several published small-m
 (MiniCPM, SmolLM2): putting higher-quality, more curated data preferentially in the *last*
 part of training — the "decay" phase of the learning-rate schedule — rather than spreading
 it evenly throughout. Without a way to mix sources by ratio in the first place, that idea
-can't be tried at all.
+can't be tried at all — and this project actually built the extra piece needed to try it
+(`CurriculumMixtureProvider`, the `--decay-mixture` flag) and ran the real test: once the
+schedule enters its decay phase, shift more weight onto the best source and see if the final
+model ends up better. **The real result was no** — reweighting late didn't measurably beat
+just keeping the original mixture fixed for the whole run, so the frozen default here stays
+the simple version, one fixed mixture from start to finish. The fancier machinery is still in
+the codebase, tested and ready, in case a bigger future run finds a real benefit from it —
+same spirit as this project keeping Muon around even though AdamW won.
 
 ---
  

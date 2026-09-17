@@ -283,12 +283,6 @@ class ModelConfig:
         return round(self.head_dim * self.rope_fraction)
 
     @property
-    def queries_per_kv(self) -> int:
-        """How many query heads share one key/value head. 1 means plain MHA."""
-
-        return self.n_heads // self.n_kv_heads
-
-    @property
     def resolved_init_std(self) -> float:
         """Default initial weight spread of 1/sqrt(d_model).
 
