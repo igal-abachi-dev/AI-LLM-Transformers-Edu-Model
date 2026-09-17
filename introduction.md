@@ -409,6 +409,56 @@ numbers. That's the whole design idea of this repo.
 
 ![The whole model, tokens in to logits out](svg/05-model-overview.svg)
 
+## Two ways to make a model bigger: dense vs Mixture-of-Experts (MoE)
+
+Every model in this repo — Edu, Modern, tiny or 150M — is what's called **dense**: every
+single weight takes part in every single forward pass. If the model has 150 million
+parameters, guessing the next token touches all 150 million of them, every time.
+
+There's a different design, popular in many of today's largest real models, called
+**Mixture-of-Experts (MoE)**. Instead of one feed-forward block per layer, an MoE model has
+*several* feed-forward blocks ("experts") side by side, plus a small router that looks at
+each token and picks only a couple of experts to actually run for that token. The model
+might have, say, 50 billion parameters *total*, but any single token only ever activates a
+few billion of them. You get a much bigger pool of "knowledge" to draw from, at close to the
+compute cost of the smaller, active-only slice.
+
+The catch: all those unused experts still have to sit in memory, ready to be picked at any
+moment — an MoE model's *storage/VRAM* footprint tracks its huge total parameter count, even
+though its *compute* cost per token tracks the much smaller active count. That tradeoff
+(cheap compute, expensive memory) only pays off once a model is large enough that a single
+consumer GPU was never going to hold the whole dense version anyway.
+
+MiniFrontier stays dense on purpose (see `AGENTS.md`'s frozen scope) — at 50–500M parameters,
+on one consumer GPU, there's no real memory pressure MoE would be solving, and a router adds
+a genuinely new, harder-to-explain moving part to a project whose whole point is staying easy
+to read end to end.
+
+## Depth vs width — how should the parameter budget be spent?
+
+The table above shows `n_layers` (how many thinking rounds) and `d_model` (how wide each
+token's "meaning card" is) as two separate knobs. For a *fixed* total parameter count, you
+get to choose: more layers and a narrower `d_model`, or fewer layers and a wider one.
+
+Real, shipped small models don't all agree, but there's a real, repeated pattern in recent
+work (Meta's MobileLLM paper is the most-cited source for it): at small scale — under roughly
+half a billion parameters — **going deeper tends to beat going wider**, for the same
+parameter budget. A real comparison worth knowing: Qwen2.5-1.5B ships 28 layers at width
+1536; Llama-3.2-1B ships only 16 layers, but at a wider 2048 — two real, competitive models
+making opposite choices at a similar size, which is part of why this isn't a fully solved
+question.
+
+MiniFrontier's own 150M-Modern preset (`configs/150m-modern.toml`) uses 20 layers at width
+768 — proportionally closer to SmolLM2-360M's own 32-layers/960-width shape than to
+Llama-3.2-1B's shallower, wider one.
+
+The real cost of going deeper isn't training — it's **inference latency**. Every extra layer
+is one more sequential step the model must run through for *every single token it
+generates*, one after another, with no way to skip ahead. A wider model can often push more
+work through the GPU in parallel per layer; a deeper model just has more layers to get
+through, in order, no matter how fast any one of them runs. That's a real, measurable
+tradeoff, not a free upgrade either way.
+
 ## 2.1 Step one: tokens become "meaning cards" (embedding)
 
 ```
@@ -716,6 +766,27 @@ From `src/minifrontier/training.py`, the grown-up knobs:
   This repo stops at SFT (train/sft.py and the loss_mask) because that is enough to understand the architecture. 
   The extra alignment stage does not change any of the boxes
 
+  **A different way to fine-tune: LoRA and QLoRA.** `sft.py` in this repo does *full*
+  fine-tuning — every weight in the model gets nudged a little. That's simple and honest, but
+  it means saving a whole new copy of the model for every fine-tune, and it needs enough VRAM
+  to hold gradients for every single parameter.
+
+  **LoRA (Low-Rank Adaptation)** does something cheaper: freeze the entire original model,
+  and instead train two small new matrices bolted onto each frozen weight — call them A and
+  B. Only A and B ever get updated; the original weight never moves. A clean trick makes this
+  safe from the very first step: B starts at exactly zero, so the "correction" (`B @ A`)
+  starts at zero too — the model behaves identically to the frozen original until training
+  actually teaches it something. **QLoRA** is the same idea, but the frozen base model is
+  also compressed to 4 bits first, so you can fine-tune a genuinely large model on a single
+  consumer GPU. Real numbers from LoRA's own paper: on some benchmarks it trained as little
+  as 0.2–0.6% of the parameters full fine-tuning would touch, and matched or slightly beat it.
+
+  MiniFrontier doesn't use LoRA/QLoRA anywhere — this project always does full fine-tuning,
+  on purpose, to keep the training loop simple and readable end to end. But LoRA is extremely
+  common in the wider ecosystem (it's how most people fine-tune a large open model on their
+  own hardware), so it's worth knowing the name and the idea even though you won't find it in
+  this codebase.
+
   **distillation**. in addition to training a model purely on raw
   text, you can have an already-strong "teacher" model generate the training examples — 
   explanations, corrected answers, code, reasoning traces — and train a smaller "student" 
@@ -943,6 +1014,36 @@ papers do it the other way. Follow the code.
 `labs/03_qk_norm.py` runs two identical Modern models, one with the flag on and one off, so
 you can see the effect directly.
 
+## A cousin fix: logit soft-capping
+
+QK-Norm above is one way to stop attention scores from blowing up. Some real models use a
+different, simpler-looking lever instead (or alongside it): **cap the score itself**, rather
+than reshaping what produced it.
+
+The idea: instead of letting a score be any number, squash it through `tanh` first, scaled so
+the result can never leave a fixed range:
+
+```
+capped_score = cap * tanh(score / cap)
+```
+
+`tanh` naturally flattens out for both very large and very negative inputs, so no matter how
+big the raw score gets, `capped_score` can never exceed `cap` (a real value some models use
+is 30). Same softmax-saturation problem QK-Norm solves, different lever: QK-Norm reshapes the
+*questions and name tags* before they're ever compared; soft-capping reshapes the *comparison
+result* itself, after the fact.
+
+There are two real places this gets applied, and real models don't always agree on which:
+**attention-logit soft-capping** (on every Q·K score, before softmax — the formula above) and
+**final-logit soft-capping** (the same trick applied once, to the model's very last output
+scores, right before turning them into a probability distribution over the vocabulary — a
+cheaper, single-application version). Google's Gemma 3 used both; Gemma 4 dropped the
+per-score version and kept only the final-logit one — a real sign that even among real,
+shipped models this is still an actively-revisited choice, not a settled answer either way.
+
+MiniFrontier doesn't implement soft-capping today — it's a real, tracked idea for a future
+bounded test (see `tasks/backlog.md`'s MF-133), not something wired into `attention.py` yet.
+
 ## 3.3 Hybrid attention — three near-sighted layers, one far-sighted
 
 **The problem.** Full attention layers (like in edu) means every token looks at every earlier token. Double the
@@ -989,11 +1090,6 @@ that's at a short context; the gap widens fast as context grows.
 The cache saving is larger still, because the local layers only need to *remember* 512
 tokens, ever. For the 150M model at 2,048 context, KV cache drops from ~126 MB to ~18 MB —
 roughly **7× less**, combining GQA and hybrid.
-
-
-Here are two beginner-friendly sections written in the same plain-language style as the rest of `introduction.md`. You can paste them in (they expand and clarify the existing material around hybrid attention and NoPE).
-
----
 
 ### Attention kernels — how the model actually does the “looking”
 
@@ -1683,7 +1779,7 @@ Linear weights (and the RMSNorm scales) and the optimizer nudges them to make th
 
 **4\. The Pivot to Small LLMs (SLMs)**While 175B+ parameter models are powerful, they are incredibly expensive to run, slow, and cannot fit on everyday hardware like smartphones or laptops. The industry pivoted to ask: _How small can we make these models while keeping them smart?_Modern SLMs (usually between 1 billion and 8 billion parameters, like Llama 3 8B, Phi-3, or Gemma) achieved high capability through several key innovations:
 
-*   **Higher Quality Data:** The Chinchilla paper (2022) revealed that older large models were actually "under-trained" on too little data. Modern SLMs are trained on vastly more tokens than their predecessors (e.g., Llama 3 8B was trained on 15 trillion tokens). Quality also matters; synthetic data generated by larger models is used to teach smaller models pristine logic and reasoning.
+*   **Higher Quality Data & Compute-Optimal Scaling:** The Chinchilla paper (2022) revealed that older large models were actually "under-trained" on too little data, and gave a real, still widely-used rule of thumb for how much data a model of a given size actually needs: training compute (in floating-point operations) is roughly `6 x parameters x tokens`, and the "compute-optimal" point -- the best quality for a fixed compute budget -- lands at roughly **20 tokens for every 1 parameter**. A 150M-parameter model's own Chinchilla-optimal budget is therefore around 3 billion tokens -- which is exactly the frozen token target this project's own MF-063 protocol uses for its canonical 150M runs, not a coincidence. Real production models now deliberately train *far* past this ratio anyway (Llama 3 8B saw 15 trillion tokens -- roughly 1,900 tokens/parameter): compute-optimal only minimizes *training* cost, but a small model that will be run -- "inferenced" -- millions of times afterward is worth over-training well past that point, since extra training is a one-time cost and the resulting speed/quality pays off forever. Quality also matters, not just quantity; synthetic data generated by larger models is used to teach smaller models pristine logic and reasoning.
     
 *   **Knowledge Distillation:** This is a teacher-student framework. A massive LLM (the teacher) runs through a dataset, and the SLM (the student) is trained not just on the raw text, but to mimic the precise probability distributions and reasoning steps of the larger model.
     
@@ -1825,7 +1921,9 @@ What is different at scale:
  
 * **Scaling-law preflight.** You do *not* start a $50M run and hope. You train a ladder of
   tiny models, fit a curve, and predict what the big one will do. `scale.py` in this repo is
-  the toy version of exactly that.
+  the toy version of exactly that. Part of what that preflight decides is the real token
+  budget — see Part 7's Chinchilla/compute-optimal-scaling explanation for the actual
+  `6 × parameters × tokens` rule of thumb behind it.
 * **Distributed training.** The model does not fit on one GPU, so it gets sliced — across
   layers, across the width of each matrix, across the batch.
 * **Precision.** Weights in bf16 or fp8 rather than fp32. Half the memory, double the speed,
@@ -1894,13 +1992,31 @@ separate value network: it takes a group of attempts at the same prompt and uses
 group's own average score as the baseline. Cheaper and simpler than PPO, which is most of
 why it took over.
  
-**4. Distillation.** A big expensive model teaches a small cheap one. Two flavours:
- 
-* *Off-policy* — generate a pile of the teacher's answers and fine-tune the student on them.
-  This is how the DeepSeek-R1-Distill models were made.
-* *On-policy* — the student generates, and the teacher scores its output token by token.
-  Slower per step, dramatically more sample-efficient, and now the standard final phase in
-  most open-model recipes.
+**4. Distillation.** A big expensive model teaches a small cheap one. Two real, separate
+questions get asked here, easy to conflate: *where does the training text come from*, and
+*what exact signal gets trained on*.
+
+Where the text comes from — two flavours:
+
+* *Off-policy* — generate a pile of the teacher's answers up front, then fine-tune the
+  student on them, same as any other SFT dataset. This is how the DeepSeek-R1-Distill models
+  were made.
+* *On-policy* — the student generates its own attempt, and the teacher grades or corrects it
+  token by token during training. Slower per step, dramatically more sample-efficient, and
+  now the standard final phase in most open-model recipes.
+
+What signal gets trained on — a separate, orthogonal choice:
+
+* *Plain text imitation* — train on the teacher's chosen words the ordinary way (the shifted
+  next-token loss from section 2.7), exactly as if a human had written them.
+* *Logit-KL matching* — instead of just the teacher's one chosen word per position, use the
+  teacher's *entire probability distribution* over the whole vocabulary at that position (how
+  confident it was in every possible next token, not only the one it picked) as the training
+  target, usually with a temperature-scaled KL-divergence loss. This carries far more
+  information per token — the student learns not just what the teacher said, but how sure it
+  was and what its runners-up were — at the real cost of needing the teacher's full logits,
+  not just its text.
+
 In 2026 distillation is also used to **merge** capabilities: train several specialists with
 RLVR — one for maths, one for code, one for agentic tool use — then distil all of them into
 a single model. RLVR builds the specialists; distillation fuses them.
@@ -1927,8 +2043,16 @@ because contamination is hard to rule out and everyone is optimizing for the sam
  
 Training happens once. Serving happens a billion times, so this is where the money goes.
  
-* **Quantization.** 16-bit weights down to 8 or 4 bits. `gguf.py` and `precision.py` cover
-  this — it's how a 30B model fits on a laptop.
+* **Quantization.** 16-bit weights down to 8 or 4 bits — each weight gets stored using fewer
+  bits, at some small cost in accuracy. **GGUF** is the file format `llama.cpp` (the most
+  common local-inference engine) actually stores a quantized model in — one self-contained
+  file holding the weights, the tokenizer, and the architecture metadata a loader needs, all
+  quantized together. You'll see quantization levels named things like **Q4_K_M** or
+  **Q8_0** — roughly, the number is the bits per weight, and the letters describe *how* those
+  bits are packed (some parts of the model get kept at slightly higher precision than others,
+  since not every weight tolerates compression equally well). `gguf.py` and `precision.py`
+  cover the export/precision side of this in this repo; the deeper bit-packing math itself
+  lives in `llama.cpp`'s own code, not here — it's how a 30B model fits on a laptop.
 * **KV cache management.** Section 2.8 showed *why* the cache exists. At production scale it
   is the binding constraint: paged allocation so one long conversation doesn't fragment
   memory for everyone else. GQA and the hybrid local/global pattern from Part 3 exist almost
