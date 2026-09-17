@@ -1036,6 +1036,25 @@ People use custom Triton kernels when they need an operation that:
 
 in this code base its optional inside the muon optimizer lab
 
+
+SDPA & FlexAttention , both built on top cuBLAS:
+![pytorch attention stack](svg/pytorch_attention_stack.svg)
+
+
+Unfused kernel/Attention:
+Executes each step of attention .. scaling, masking, softmax, and × V) 
+as a separate, discrete kernel launch. Executes LayerNorm and Linear as separate operations
+its slower and higher Memory
+
+Fused kernel/Attention:
+Combines all phases of the attention workflow into a single, tightly integrated GPU kernel , 
+Combines LayerNorm and Linear operations into a single GPU kernel
+its faster and lower Memory
+
+
+both are based on matrix multiplication math (MATMUL)
+
+
 ## Why not just write custom kernels everywhere?
 
 Every matrix multiply in this codebase — the attention projections, the SwiGLU layers, the output head — runs through **cuBLAS**, NVIDIA's own matrix-multiply library. It's not part of this project at all; it ships with CUDA itself, and it has been hand-tuned by NVIDIA for every GPU generation for over a decade. SDPA and FlexAttention (above) are built on top of it. So "the engine" underneath almost everything here is really two layers: cuBLAS doing the raw matrix math, and SDPA/Flex arranging *which* numbers get multiplied and skipping the ones the mask says don't matter.
