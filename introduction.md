@@ -1346,7 +1346,9 @@ gave a small, real improvement. That's why both run together, not one instead of
 **Gated attention.** The ring cache from earlier in this part (the whiteboard with limited
 slots) has a real cost: once a local layer's cache wraps around, old information is
 genuinely gone, not just far away. A head that leaned on something now-evicted has no way to
-say "actually, ignore what I just told you." Gated attention gives it one: right before a
+say "actually, ignore what I just told you." This general phenomenon — a head having quietly
+come to depend on information a bounded cache has since thrown away — has a name in the wider
+field: **attention sink**. Gated attention gives the head an escape hatch: right before a
 head's output gets merged back into the residual stream, it passes through a learned sigmoid
 gate — a dial from "pass this through" to "suppress this almost entirely" — computed from
 the same input that built that head's query in the first place. The gate starts almost fully
