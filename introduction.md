@@ -1013,6 +1013,18 @@ People use custom Triton kernels when they need an operation that:
 
 
 in this code base its optional inside the muon optimizer lab
+
+## Why not just write custom kernels everywhere?
+
+Every matrix multiply in this codebase — the attention projections, the SwiGLU layers, the output head — runs through **cuBLAS**, NVIDIA's own matrix-multiply library. It's not part of this project at all; it ships with CUDA itself, and it has been hand-tuned by NVIDIA for every GPU generation for over a decade. SDPA and FlexAttention (above) are built on top of it. So "the engine" underneath almost everything here is really two layers: cuBLAS doing the raw matrix math, and SDPA/Flex arranging *which* numbers get multiplied and skipping the ones the mask says don't matter.
+
+Given that, why doesn't this project write its own fused Triton/CUDA kernels for more of the model, the way some frontier labs do? Two real reasons, both about *where the actual time goes* at this project's own scale:
+
+- **Compute is cheap relative to everything else here.** At 50–350M parameters on an 8GB consumer GPU, a forward-and-backward pass is already fast — data loading, the optimizer step, and logging eat a real share of wall-clock time too. Shaving a few percent off a matmul that's already cuBLAS-tuned doesn't move the needle the way it might for a lab running a 70B-parameter model across hundreds of GPUs, where that same few percent is a genuinely enormous amount of real compute.
+- **The bottlenecks that *do* matter here are elsewhere.** Real, measured evidence across this whole project points to three other levers doing the actual work: how good the training data mixture is, how well-tuned the optimizer/batch-size choices are, and how much VRAM the KV cache eats at longer context. None of those are fixed by a faster matmul.
+
+The rule of thumb worth remembering: hand-written kernels earn their complexity when profiling shows the *existing* kernel is genuinely the bottleneck (not merely part of the picture), and you're not already leaving a bigger, cheaper win on the table elsewhere. Reach for a custom kernel last, not first — and until then, PyTorch's own SDPA/FlexAttention plus cuBLAS underneath are simply the correct, fast engine.
+
 ---
 
 
