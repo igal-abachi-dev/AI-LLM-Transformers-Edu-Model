@@ -51,6 +51,7 @@ from minifrontier.shards import (
     PackedShardDataset,
     ShardBatchProvider,
 )
+from minifrontier.termination import GracefulTerminationRequested, TerminationRequestTracker
 from minifrontier.tokenizer import MiniFrontierTokenizer
 from minifrontier.training import (
     LearningRateSchedule,
@@ -513,6 +514,50 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
 
     args.output.mkdir(parents=True, exist_ok=True)
 
+    def save_checkpoint_and_prune(
+        update_count: int,
+        current_model: MiniFrontier,
+        current_optimizer: torch.optim.Optimizer,
+        current_schedule: LearningRateSchedule,
+        current_state: TrainingState,
+    ) -> Path:
+        checkpoint_path = args.output / f"checkpoint-{update_count:08d}"
+        save_training_checkpoint(
+            checkpoint_path,
+            current_model,
+            optimizer=current_optimizer,
+            scheduler=current_schedule,
+            trainer_state={
+                "training_state": current_state.to_dict(),
+                "training_config": asdict(train_config),
+                "compile_report": asdict(compile_report),
+            },
+            data_cursor=provider.state_dict(),
+            mtp_heads=mtp_heads,
+            ema=ema,
+        )
+        if args.keep_last_n_checkpoints is not None:
+            prune_old_checkpoints(args.output, keep_last_n=args.keep_last_n_checkpoints)
+        return checkpoint_path
+
+    # Catches a *requested*, graceful stop (Ctrl+C in this console, or a real
+    # SIGTERM on POSIX) so an emergency checkpoint can be forced before the
+    # process actually exits -- see termination.py's own docstring for the
+    # real, disclosed limits (it cannot, and no code anywhere can, protect
+    # against a hard force-kill). Real motivation, not hypothetical: an early
+    # 1B-token pre-work run for this project lost ~21,000 updates to an
+    # external kill that landed between two scheduled checkpoints.
+    termination = TerminationRequestTracker()
+    try:
+        termination.install()
+    except ValueError:
+        print(
+            "WARNING: could not install the graceful-termination safety net (not running "
+            "on the main thread) -- continuing without an emergency-checkpoint handler.",
+            flush=True,
+        )
+        termination = None
+
     def update_progress_and_checkpoints(
         current_model: MiniFrontier,
         current_optimizer: torch.optim.Optimizer,
@@ -543,24 +588,40 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
             line.append(f"tokens/s={tokens_per_second:.1f}")
             line.append(f"elapsed={elapsed:.1f}s")
             print(", ".join(line), flush=True)
+        # Checked every update, independent of --progress-interval/--checkpoint-interval:
+        # a caught termination request takes priority over the normal periodic-interval
+        # checkpoint below -- the update that just completed is the safe point to save
+        # *right now*, not wait for the next interval boundary to come around.
+        if termination is not None and termination.requested:
+            if args.no_checkpoint:
+                message = (
+                    f"caught {termination.signal_name} -- stopping now (--no-checkpoint was "
+                    f"set, no emergency checkpoint written) after "
+                    f"{current_state.completed_updates} updates"
+                )
+            else:
+                checkpoint_path = save_checkpoint_and_prune(
+                    current_state.completed_updates,
+                    current_model,
+                    current_optimizer,
+                    current_schedule,
+                    current_state,
+                )
+                message = (
+                    f"caught {termination.signal_name} -- saved an emergency checkpoint to "
+                    f"{checkpoint_path} after {current_state.completed_updates} updates"
+                )
+            print(message, flush=True)
+            raise GracefulTerminationRequested(message)
         if args.no_checkpoint or current_state.completed_updates % args.checkpoint_interval:
             return
-        save_training_checkpoint(
-            args.output / f"checkpoint-{current_state.completed_updates:08d}",
+        save_checkpoint_and_prune(
+            current_state.completed_updates,
             current_model,
-            optimizer=current_optimizer,
-            scheduler=current_schedule,
-            trainer_state={
-                "training_state": current_state.to_dict(),
-                "training_config": asdict(train_config),
-                "compile_report": asdict(compile_report),
-            },
-            data_cursor=provider.state_dict(),
-            mtp_heads=mtp_heads,
-            ema=ema,
+            current_optimizer,
+            current_schedule,
+            current_state,
         )
-        if args.keep_last_n_checkpoints is not None:
-            prune_old_checkpoints(args.output, keep_last_n=args.keep_last_n_checkpoints)
 
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
@@ -571,20 +632,29 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
     # do with this process's actual speed.
     tokens_before_this_run = state.consumed_target_tokens
     started = time.perf_counter()
-    optimizer, schedule, state, policy = train_updates(
-        model,
-        provider,
-        train_config,
-        device=device,
-        optimizer=optimizer,
-        schedule=schedule,
-        state=state,
-        validation_fn=validation_fn,
-        update_callback=update_progress_and_checkpoints,
-        forward_model=execution_model,
-        mtp_heads=mtp_heads,
-        ema=ema,
-    )
+    try:
+        optimizer, schedule, state, policy = train_updates(
+            model,
+            provider,
+            train_config,
+            device=device,
+            optimizer=optimizer,
+            schedule=schedule,
+            state=state,
+            validation_fn=validation_fn,
+            update_callback=update_progress_and_checkpoints,
+            forward_model=execution_model,
+            mtp_heads=mtp_heads,
+            ema=ema,
+        )
+    finally:
+        # Always restore -- whether training completed normally, a
+        # GracefulTerminationRequested propagates out, or a real, unrelated
+        # exception does. A stale handler left registered would otherwise leak
+        # into whatever runs next in this same process (real risk for tests,
+        # which call `run()` repeatedly without restarting the interpreter).
+        if termination is not None:
+            termination.restore()
     elapsed = time.perf_counter() - started
     if not args.no_checkpoint:
         final_path = args.output / "final"
@@ -635,7 +705,11 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
 
 
 def main() -> None:
-    state, metadata = run(parse_args())
+    try:
+        state, metadata = run(parse_args())
+    except GracefulTerminationRequested as termination_error:
+        print(f"training stopped early: {termination_error}", flush=True)
+        raise SystemExit(1) from None
     print(
         f"completed {state.completed_updates} updates, "
         f"loss={state.last_loss:.6f}, tokens/s={metadata.tokens_per_second:.1f}"

@@ -732,3 +732,138 @@ def test_decay_mixture_names_must_be_subset_of_mixture_names(tmp_path, mini_toke
                 no_checkpoint=True,
             )
         )
+
+
+class _FakeTerminationTracker:
+    """Deterministic stand-in for TerminationRequestTracker (MF-146).
+
+    `update_progress_and_checkpoints` reads `.requested` exactly once per real
+    completed update, so becoming "requested" on the Nth *read* -- rather than
+    needing an actual, racy concurrent OS signal delivered mid-test-run -- lets
+    a test trigger the safety net at an exact, reproducible update count.
+    """
+
+    def __init__(self, trigger_after_reads: int) -> None:
+        self._trigger_after_reads = trigger_after_reads
+        self._read_count = 0
+        self.signal_name = "SIGTERM"
+        self.installed = False
+        self.restored = False
+
+    def install(self) -> None:
+        self.installed = True
+
+    def restore(self) -> None:
+        self.restored = True
+
+    @property
+    def requested(self) -> bool:
+        self._read_count += 1
+        return self._read_count > self._trigger_after_reads
+
+
+def test_a_caught_termination_request_saves_an_emergency_checkpoint_and_stops_early(
+    tmp_path, mini_tokenizer, monkeypatch, capsys
+) -> None:
+    """Real functional test of MF-146's SIGTERM/Ctrl+C safety net: a caught
+    termination request, arriving mid-run, must force an emergency checkpoint
+    at the exact update it was caught on -- not wait for the next
+    --checkpoint-interval boundary -- raise GracefulTerminationRequested, and
+    leave the tracker's signal handlers restored."""
+
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    output = tmp_path / "out"
+
+    fake_tracker = _FakeTerminationTracker(trigger_after_reads=3)
+    monkeypatch.setattr(pretrain, "TerminationRequestTracker", lambda: fake_tracker)
+
+    with pytest.raises(pretrain.GracefulTerminationRequested, match="checkpoint-00000004"):
+        pretrain.run(
+            _args(
+                config_path,
+                shards_path,
+                output,
+                updates=10,
+                checkpoint_interval=100,  # far past where the fake tracker fires
+                progress_interval=1,
+            )
+        )
+
+    assert fake_tracker.installed
+    assert fake_tracker.restored
+    assert (output / "checkpoint-00000004" / "model.safetensors").exists()
+    assert not (output / "final").exists()  # a graceful early stop is not a completed run
+    captured = capsys.readouterr().out
+    assert "caught SIGTERM" in captured
+    assert "emergency checkpoint" in captured
+
+
+def test_a_caught_termination_request_under_no_checkpoint_stops_without_saving(
+    tmp_path, mini_tokenizer, monkeypatch, capsys
+) -> None:
+    """--no-checkpoint means no checkpoint, emergency or otherwise -- the run
+    still stops immediately on a caught termination request, it just doesn't
+    write anything a throwaway benchmark run wasn't already going to keep."""
+
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    output = tmp_path / "out"
+
+    fake_tracker = _FakeTerminationTracker(trigger_after_reads=1)
+    monkeypatch.setattr(pretrain, "TerminationRequestTracker", lambda: fake_tracker)
+
+    with pytest.raises(pretrain.GracefulTerminationRequested, match="no-checkpoint"):
+        pretrain.run(
+            _args(
+                config_path,
+                shards_path,
+                output,
+                updates=10,
+                no_checkpoint=True,
+                progress_interval=1,
+            )
+        )
+
+    assert fake_tracker.restored
+    assert not list(output.glob("checkpoint-*"))
+    captured = capsys.readouterr().out
+    assert "caught SIGTERM" in captured
+    assert "no emergency checkpoint written" in captured
+
+
+def test_termination_tracker_is_always_restored_even_on_an_unrelated_crash(
+    tmp_path, mini_tokenizer, monkeypatch
+) -> None:
+    """A real, unrelated exception mid-training (not a termination request)
+    must still leave the signal-handling tracker restored -- otherwise a
+    single crashed run would leak a stale handler into everything that runs
+    afterward in the same process, real risk given tests call pretrain.run()
+    repeatedly without restarting the interpreter."""
+
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    output = tmp_path / "out"
+
+    fake_tracker = _FakeTerminationTracker(trigger_after_reads=10_000)  # never fires
+    monkeypatch.setattr(pretrain, "TerminationRequestTracker", lambda: fake_tracker)
+    monkeypatch.setattr(
+        pretrain,
+        "save_training_checkpoint",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("simulated unrelated crash")),
+    )
+
+    with pytest.raises(RuntimeError, match="simulated unrelated crash"):
+        pretrain.run(
+            _args(
+                config_path,
+                shards_path,
+                output,
+                updates=10,
+                checkpoint_interval=1,
+                progress_interval=1,
+            )
+        )
+
+    assert fake_tracker.installed
+    assert fake_tracker.restored
