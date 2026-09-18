@@ -36,6 +36,22 @@ What feels like a conversation is really just the model generating one plausible
 > predict the next token extremely well, 
 > then further shaped by instruction data (sft, preference optimization)
 
+
+**2 very different levels in ai, and this document is almost entirely about the second one.**
+
+"AI" and "chatbot" are surface-level words — they describe what a product *feels like* to
+use: a text box, a reply, a personality, maybe a name and a logo. They say nothing about how
+any of it actually works, the same way "car" tells you nothing about what's under the hood.
+The guts — what this whole document is actually about — are a stack of repeating
+
+**Transformer blocks**, each one built from **attention** (letting tokens read each other)
+and a feed-forward network (thinking about what was just read), plus all the real variations
+on attention labs and papers argue about: full vs. windowed, how many heads share a cache,
+whether positions get stamped with rotation or not at all. Every chatbot you've ever used,
+however different their surface personalities feel, is built from some real, specific choice
+along each of these same internal axes
+
+
 ## How the Process Actually Works
 
 1. Your text is broken into **tokens** (small chunks of characters or words).
