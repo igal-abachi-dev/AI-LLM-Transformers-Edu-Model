@@ -187,6 +187,16 @@ If you're running this on a similar consumer GPU (measured on an RTX 2070 Super,
 
 The fix that works on this hardware: `--activation-checkpointing`. It trades some throughput (~33-38%) for enough memory headroom that the same config runs cleanly instead of paging. This project's own real, measured decisions consistently reinvest efficiency savings into something that buys back quality rather than spending them for nothing — activation checkpointing's freed memory is exactly what lets the wider `head_dim=96` (a real, measured quality win) fit at all on 8GB; FP16 (not emulated BF16) is a free throughput win matched to hardware without native BF16 cores; the ring KV cache lets generation actually run on 8GB without paging; and the optional MTP heads pay a small real training cost for both a training-quality win and a separate inference-speedup win later. None of this is free — each is a deliberate trade, verified with a real measured `nvidia-smi` check, not assumed safe from an absence of errors.
 
+### What to do if a multi-day training run gets interrupted (power outage, Windows update, anything)
+
+Checkpoints are written atomically (stage-then-rename, `checkpoint.py`) — an interruption mid-write never leaves a corrupted checkpoint behind, only the complete previous one or the complete new one. Combined with a real `--checkpoint-interval`/`--keep-last-n-checkpoints` setting, worst-case lost progress is bounded to one checkpoint interval, not the whole run: a real 3B-token release run measured `--checkpoint-interval 500` losing at most ~17-18 minutes of progress on an unplanned restart, out of a 17+ day run.
+
+**Recovery is just re-running the same launch command.** A launcher script that checks for existing `checkpoint-*` directories and automatically appends `--resume <latest>` (see `scripts/run_mf070_150m_release.ps1` for the real pattern) means there's nothing to manually reconstruct — re-run the exact command you started with, and it resumes from the latest checkpoint with the same optimizer state, schedule position, and data cursor, skipping any already-completed data-prep steps automatically.
+
+Checkpoint disk usage stays bounded too: `--keep-last-n-checkpoints N` actively prunes older ones as new ones land — a real 3B-token run stayed at a steady ~5.6GB (3 checkpoints × ~1.9GB) for its entire multi-day duration, not accumulating one file per interval.
+
+One real, disclosed limit: none of this protects against a true hard force-kill happening *between* checkpoints (a genuine power loss right after the last save) — that's why we keep couple of checkpoints not only 1 last
+
 Labs should construct tiny_edu(n_layers=4) whenever comparing architectures with tiny_modern so it will be comparable
 
 
