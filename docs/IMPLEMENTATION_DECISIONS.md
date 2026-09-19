@@ -495,7 +495,13 @@ independently re-checked against the actual source before any action.
   own last-64-dimensions convention; Qwen3-Next's real, verified `partial_rotary_factor: 0.25`) —
   neither transferred as a win here, consistent with this project's own repeated finding that a
   real external precedent for an architectural idea is not itself evidence at this project's own
-  scale/data/budget, and needs its own real, own-corpus test regardless.
+  scale/data/budget, and needs its own real, own-corpus test regardless. **A third, earlier, and
+  much smaller-scale precedent (found 2026-09-19, benchmarking pass against `reference/`):**
+  EleutherAI's own Pythia suite uses partial RoPE (`rotary-pct: 0.25`) at every scale, including
+  its smallest 70M model — real evidence this convention isn't only a large-model idea, and
+  predates both DeepSeek-V4 and Qwen3-Next. Same conclusion stands: a real precedent at a
+  different lab/scale still isn't evidence for this project's own corpus/budget, which is exactly
+  what this task's own bounded comparison already tested and settled.
 
 ## 2026-09-12 — MF-095: data mixture adopted for the real MF-070 release run
 

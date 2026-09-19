@@ -224,6 +224,10 @@ Because the split happens *before* BPE merges, long digit strings can no longer 
 This change lives only in the pre-tokenizer. The rest of the frozen contract (special-token IDs, byte alphabet, no unknown token, deterministic training) is unchanged. 
 The vocabulary size was also raised from 16 384 → 32 768 at the same time so the larger model scale is not under-provisioned for tokens.
 
+**GPT-4/`cl100k regex tokenizer** Modern presets use a GPT-4/`cl100k_base`-style splitting
+pattern instead of the original GPT-2-style one — different rules for contractions,
+whitespace, and numbers — because a real, matched comparison found it a small but genuine
+win on both token fertility and held-out bits-per-byte. vs gpt2 and vs the digit splitting of starcoder2
 
 ### shards - the ready-to-train dataset
 is the main prepared training data.
@@ -523,6 +527,11 @@ Two details worth noticing in the code:
 - The rotation is applied to Q and K only — never to V. (Reason: it's about *where to look*,
   not *what to fetch*.)
 
+**A detail that looks cosmetic but isn't: which two numbers get paired up to rotate
+together.** `rope.py` pairs feature `i` with feature `i + head_dim/2` — split the head's
+numbers exactly in half, and rotate the first half against the second half. This is called
+the **split-half** convention (`rotate_half`), the one LLaMA, GPT-NeoX, and this repo use.
+
 ## 2.3 Step three: the Transformer Block, repeated
 
 A Transformer is a stack of identical **blocks** (also called layers), 
@@ -615,6 +624,30 @@ triangle of a grid is allowed, the upper-right is blocked.
 **Divide by √head_dim.** Before softmax, the scores get shrunk by the square root of the
 head size. Without this, the scores get big, softmax turns into "100% for one word, 0% for
 everything else", and learning stalls. It's a volume control on the comparison.
+
+**A detail worth knowing about softmax itself: it can't just be `e^x / sum(e^x)`, as
+written.** A model's raw scores can get large enough that `e^x` overflows a computer's
+floating-point range before you even reach the division. The real fix, used everywhere
+this project computes a softmax: subtract the row's own maximum score from every value
+*first*. `e^(x - max) / sum(e^(x - max))` is the exact same answer as `e^x / sum(e^x)` — the
+max cancels out — but now every exponent is `≤ 0`, so every `e^(...)` lands safely between
+`0` and `1` instead of risking overflow. This is why "60% dog, 30% barked, 10% the" above is
+actually safe to compute, not just a nice mental picture.
+
+**And a detail worth knowing about the causal mask: `-inf` isn't "a very low score", it's
+exact.** Once a forbidden (query, key) pair is set to `-inf`, that token's contribution to
+softmax is `e^(-inf - max)` — which is `e^(-inf)`, and floating-point arithmetic defines that
+as precisely `0.0`, not merely something very small. So a future token doesn't get
+*discouraged*, it gets a hard, exact-zero probability — the mask genuinely removes the
+option rather than just making it unlikely. (Worth noticing the flip side too: a token that
+*is* allowed but simply scores lower than its neighbors — say, because its Query happens to
+be orthogonal to some Key — still gets a real, nonzero share of the blend. Only an explicit
+mask entry produces the hard zero; a merely-low raw score never does.)
+
+Every one of these is real, checkable arithmetic, not hand-waving — `labs/00b_attention_pure_python.py`
+implements this entire section in plain Python lists and loops, zero libraries at all
+(no PyTorch, no NumPy), and prints every intermediate matrix so nothing stays hidden inside
+a black-box operation.
 
 **Multiple heads.** One listener isn't enough — a word might need to track grammar *and*
 subject *and* tone at once. So the 32 numbers get split into 4 groups of 8, and the entire
@@ -714,6 +747,15 @@ weights* as the meaning-card cabinet from step 2.1 — `lm_head.weight =
 token_embedding.weight`. Same table read in both directions: "ID → meaning" on the way in,
 "meaning → ID" on the way out. Saves memory and generally helps small models.
 
+*Untied* embeddings just mean the opposite
+choice — a separate `lm_head` matrix instead of reusing the input table, at the cost of
+another whole embedding table's worth of parameters. This isn't purely a "bigger models
+untie" story either — EleutherAI's own Pythia suite unties even at its smallest, 70M scale
+(`no-weight-tying: true` in its own real training config), so real recipes genuinely disagree
+on this at small scale too. This repo always ties, since the shared table measured as a real
+win here specifically — a real, checked choice for this project's own data/scale, not a
+universal law either direction.
+
 ## 2.7 How it learns (training)
 
 `next_token_loss` in `loss.py` does something you should look at, because it's a one-line
@@ -781,9 +823,28 @@ From `src/minifrontier/training.py`, the grown-up knobs:
   shadow copy that only ever drifts a tiny bit closer to the real weights each time
   (`ema.py`). Think of the real weights as a hand-held video and the EMA copy as that same
   video with motion blur averaged in — any one frame might be shaky, but the blurred average
-  is steadier. At evaluation or export time you can ask for this smoothed copy instead of the
-  raw one (`--weights ema`). It's off by default — a cheap, optional extra, not something the
-  model needs to work at all.
+  is steadier. (Same idea under a different name if it's a more familiar one: this is a
+  low-pass filter over the weight trajectory — it passes through the real underlying trend
+  and damps out the high-frequency, batch-to-batch jitter.) At evaluation or export time you
+  can ask for this smoothed copy instead of the raw one (`--weights ema`). It's off by
+  default — a cheap, optional extra, not something the model needs to work at all.
+
+  Worth being precise about what this does *not* do: EMA doesn't change what the model learned
+  from the data, or the gap between training and held-out performance — that's weight decay's
+  job (above), a genuinely different mechanism. What EMA actually fixes is noise in *which
+  specific snapshot* you call "the final model" — the raw weights at the very last step are one
+  noisy point on a jittery trajectory; the shadow copy is a steadier point near that same
+  trajectory. A model can EMA-smooth its weights and still overfit exactly as much as it would
+  without it, since both copies were trained on the same data with the same objective.
+
+  The actual update, run once per real optimizer step: `shadow = decay * shadow +
+  (1 - decay) * live`. With `decay = 0.9`, that's 90% of the old blurred value kept, 10% fresh
+  signal mixed in from the step that just happened — a higher decay (e.g. `0.999`) means a
+  longer, smoother memory; a lower one tracks the live weights more closely, with less
+  smoothing. "Once per *real* step" is exact, not loose: the shadow is deliberately never
+  updated on a step this loop itself didn't actually apply to the model — a non-finite
+  gradient, or (MF-148) one flagged anomalous under `--skip-anomalous-steps` — so the blurred
+  average never absorbs an update that had no real effect in the first place.
   
   
   Post-training beyond SFT:
@@ -870,7 +931,22 @@ stores only the compact gradients, and lets the rest of the model’s backward r
 
 In short: the model still learns “guess the next token,” but the memory peak that used to come from materializing the full vocabulary scores is gone.
 
+### z-loss — a small penalty riding along in the same loop
 
+The chunked loop above is also where an optional second penalty gets computed, for free,
+alongside the real loss: **z-loss** (`loss.py`, the PaLM paper's `log_sum_exp(logits)²`
+term, scaled by `--z-loss-weight`). The idea: nothing in ordinary cross-entropy stops the raw
+logits themselves from drifting to huge magnitudes — softmax only cares about the
+*differences* between them, so an enormous-but-proportionally-similar set of logits scores
+exactly the same cross-entropy as a small, well-behaved one. Large logits are still a real
+problem in low-precision training: they can overflow, or make the softmax numerically
+touchy. z-loss adds a tiny, separate penalty on how large `log_sum_exp(logits)` itself gets,
+independent of whether the prediction is right — a light tax on unnecessary magnitude, not a
+correctness signal. It costs nothing extra to compute here because the chunked loop already
+has each chunk's logits in hand for the real loss; off by default (`z_loss_weight=0` skips
+allocating its gradient buffers entirely), and when it's on, a real training run's progress
+log line shows it as its own number alongside the main loss — not folded silently into it —
+so you can see it's a small, separate quantity, not the thing actually driving learning.
 
 
 ### Packing strategies — how documents become rows
@@ -1008,11 +1084,16 @@ Everywhere above, `head_dim` was just "`d_model` split evenly across the heads" 
 in the toy example. That's still true for Edu. But real Modern-sized models
 (`configs/150m-modern.toml` and friends) actually use a *wider* head than that plain division
 would give: `head_dim_override` in `config.py` lets you hand each head more room to work with
-than `d_model / n_heads` alone would allow. It costs real, disclosed things in exchange — more
-parameters, and slower training — but a real, measured test found the wider heads produce a
-genuinely better model for the extra cost, so it's the real, adopted default at 50M/150M/500M
-scale (350M's own real test found it didn't fit that size's memory budget, so it stays at the
-plain divided-up number there instead). The lesson: even a "derived" number in this codebase
+than `d_model / n_heads` alone would allow. It costs real, disclosed things in exchange — a
+real, measured test at 150M scale (`reports/mf108-head-dim-comparison.md`) found widening
+from the derived `head_dim=64` to `head_dim_override=96` costs +11.35% parameters and runs
+about 23% slower on this project's own reference GPU, in exchange for a real (if modest)
+-0.44% relative bits-per-byte win — about 9.7× this project's own measured noise floor, so not
+just noise. That trade was judged worth it, so `head_dim=96` is the real, adopted default at
+50M/150M/500M scale (350M's own real test found it didn't fit that size's memory budget 
+(needs rtx4090 gpu for it) at
+its full context length, so it stays at the plain divided-up number there instead). The
+lesson: even a "derived" number in this codebase
 is really a *default*, not a law — check the actual config before assuming a formula from the
 toy example still holds at real scale.
 
@@ -1260,6 +1341,14 @@ branches for the whole warp one after another, masking off whichever threads don
 called "warp divergence," a real reason GPU kernels are written to avoid data-dependent
 branching wherever possible.)
 
+The tiling story above is about *why* a fused kernel is fast — but the underlying operations
+it's tiling (a matrix multiply, a softmax, a mask, a dropout) are, underneath all the SIMT
+and shared-memory machinery, still just arithmetic. `labs/00b_attention_pure_python.py` writes
+that arithmetic out directly in plain Python — no PyTorch, no NumPy — with a short mapping
+from each function to the real ATen/cuBLAS/CUDA source file that does the same job at
+production speed (`CUDABlas.cpp`'s `gemm`, `SoftMaxKernel.cpp`, `Dropout.cu`). Reading it
+alongside this section is a good way to confirm that "fused kernel" is an optimization of
+something ordinary, not a different kind of math.
 
 ## Why not just write custom kernels everywhere?
 
@@ -1370,11 +1459,26 @@ gate — a dial from "pass this through" to "suppress this almost entirely" — 
 the same input that built that head's query in the first place. The gate starts almost fully
 open (so training begins close to ordinary attention) and learns to close itself only where
 it helps. In this project's own real measurement, turning it on gave the single clearest
-quality improvement of any tested change so far.
+quality improvement of any tested change so far. Real external precedent, not just this
+project's own idea: Qwen3-Next's own published architecture uses a gated attention output
+the same way, for the same reason.
 
 Both are Modern-only, for the same reason GQA and hybrid attention are: Edu stays the plain,
 textbook architecture on purpose, so there's always one preset in this repo simple enough to
 hold in your head completely.
+
+**A related but different feature, implemented but not (yet) adopted: value residual**
+(`config.py`'s `value_residual`, off by default). The idea: compute layer 0's own Value
+projection once, then let every *other* layer optionally mix a little of that original,
+very-first-layer Value back into its own — `value = value + gate * first_layer_value`
+(`attention.py`'s `value_residual_gate`), where `gate` is a single learned number that starts
+at exactly `0.0`, so turning this on doesn't change behavior at all until training actually
+finds a use for it. The motivation: as a token's Value gets transformed layer after layer, a
+head deep in the stack has no direct way back to what that token's Value looked like right at
+the start — this gives it one. Unlike LayerNorm scaling and gated attention above, this one
+is *not* a real, adopted default here — it's real, working, Modern-only-gated infrastructure,
+kept in the codebase the same way Muon and Cautious AdamW are, available for a future bounded
+test rather than already having won one.
 
 ---
 
@@ -1458,6 +1562,47 @@ Two kinds of parameter are deliberately left on AdamW:
 - every 1-D parameter (RMSNorm scales, etc.).
 
 So a Muon run is really **two optimizers side-by-side** over a proven-disjoint partition of the weights (`partition_muon_parameters` + `build_muon_adamw`). The production path calls the real `torch.optim.Muon`; the readable FP32 Newton–Schulz function exists only so you can understand what is happening. AdamW remains the baseline that every claim is measured against.
+
+Muon's update is normalized (every step pushes
+roughly the same total "distance" regardless of the raw gradient's scale), so its natural
+learning rate lives on a completely different number line than AdamW's. Comparing them at
+"the same" learning rate would actually be comparing two different, arbitrary choices — not
+a real test of the optimizer itself. `build_muon_adamw`'s `match_rms_adamw` option (`muon.py`)
+fixes this by rescaling Muon's per-step update to match the root-mean-square size AdamW's own
+update would have taken, so both optimizers are spending a comparable step size and the
+comparison is actually about the *direction* each one chooses, not an accident of two
+mismatched dials. `scripts/compare_optimizers.py` runs the real sweep this way. The real
+result, at matched token budgets: AdamW won. Muon stays in the codebase, tested and ready, in
+case a future run at a different scale finds otherwise.
+
+`match_rms_adamw` isn't an ad-hoc invention specific to this project, either — it's a named,
+published convention (the Kimi/Moonlight paper, arXiv:2502.16982) for exactly this
+LR-compatibility problem, and it's not just cited in a paper: AI2's own current OLMo-core
+training library implements the identical `rms_norm` LR-adjustment strategy in its own Muon
+optimizer, real, current, independently-arrived-at agreement that this is the right fix.
+
+**A third optimizer, also real, also off by default: Cautious AdamW** (`cautious_adamw.py`,
+MF-083). Plain AdamW's momentum is a running average of *recent* gradients, so right after a
+gradient changes sign, momentum can briefly point the "wrong" way for a step or two. Cautious
+AdamW's fix is genuinely one line: mask the update, element by element, to only the entries
+where the proposed step's sign still agrees with the *current* gradient's sign; leave the
+disagreeing entries untouched for that one step (they get another chance next step, once
+momentum catches up). To keep the effective step size from silently shrinking as more
+elements get masked out, the learning rate for that step is scaled up in proportion to how
+much of the tensor was actually masked — the detail that lets the original paper (Liang et
+al., "Cautious Optimizers", arXiv:2411.16085) prove this preserves AdamW's own convergence
+guarantee rather than being a heuristic. This project's own bounded test found it lost to
+plain AdamW on both quality and speed at this project's scale — real, negative, and kept in
+the codebase anyway, same spirit as Muon.
+
+**Worth knowing: Muon itself hasn't stood still since this project's own comparison.** Newer
+public training recipes (e.g. `modded-nanogpt`'s current code) use **NorMuon** — Muon plus a
+second, per-row variance-reduction momentum buffer — and swap the Newton–Schulz iteration
+above for **Polar Express** orthogonalization (arXiv:2505.16932), a different numerical
+recipe for the same "even out the update's directions" goal. Neither is implemented here,
+and this project's own AdamW-won result was measured against *vanilla* Muon specifically — a
+real, honest caveat on that result, not a reason to distrust it: a more sophisticated Muon
+variant simply hasn't been tested at this project's own scale yet.
 
 ---
 

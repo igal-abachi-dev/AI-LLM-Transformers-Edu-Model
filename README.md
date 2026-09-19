@@ -347,6 +347,13 @@ V1 includes:
 
 V1 explicitly excludes MoE, MLA, DeltaNet, MTP, RL/GRPO, tool-using agents, vision, distributed training, custom CUDA/Triton kernels, serving frameworks, and production long-context scaling.
 
+## Learning from real full-stack open releases
+
+MiniFrontier's design and this session's own bounded ablations were repeatedly checked against real, current, full-stack open releases rather than developed in isolation. Three stood out enough to name here:
+
+- **[rasbt/LLMs-from-scratch](https://github.com/rasbt/LLMs-from-scratch)** (Sebastian Raschka) — the strongest pedagogical reference found while benchmarking this repo against comparable educational projects: a real book paired one-to-one with runnable notebooks, actively kept current (from-scratch Qwen3, Gemma 3, GQA, DeepSeek Sparse Attention, Muon implementations), and consumer-hardware friendly in the same spirit as this project's own reference-GPU discipline. Complementary reading for the many architecture families MiniFrontier deliberately doesn't cover — see `labs/README.md` for the fuller writeup.
+- **[allenai/OLMo](https://github.com/allenai/OLMo) + [allenai/OLMo-core](https://github.com/allenai/OLMo-core)** — AI2's real, currently-best example of a fully-open, genuinely competitive model: full training data (Dolma 3), full training code, intermediate checkpoints, and a real technical report, at 7B/32B with Base/Instruct/Think variants. 
+
 ## Roadmap
 
 Implementation is organized into dependency-ordered tasks with measurable acceptance criteria:
