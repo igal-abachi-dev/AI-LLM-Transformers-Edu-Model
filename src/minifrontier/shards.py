@@ -677,6 +677,30 @@ class ShardBatchProvider:
             raise ValueError("invalid shard provider state")
 
 
+def _validate_max_source_fraction(
+    weights: dict[str, float], max_source_fraction: float | None
+) -> None:
+    """Shared by `MixtureBatchProvider` and `CurriculumMixtureProvider` (MF-148).
+
+    Off by default (`None`). Raises if any one source's share of the total
+    mixture weight exceeds the cap -- nothing else stopped an accidentally
+    dominant source from silently swamping the rest of the mixture.
+    """
+
+    if max_source_fraction is None:
+        return
+    if not 0.0 < max_source_fraction <= 1.0:
+        raise ValueError("max_source_fraction must be in (0, 1]")
+    total_weight = sum(weights.values())
+    for name, weight in weights.items():
+        fraction = weight / total_weight
+        if fraction > max_source_fraction:
+            raise ValueError(
+                f"source {name!r} is {fraction:.1%} of the mixture, exceeding "
+                f"max_source_fraction={max_source_fraction:.1%}"
+            )
+
+
 class MixtureBatchProvider:
     """Draws whole batches from several sources at configured weights (MF-094).
 
@@ -696,6 +720,14 @@ class MixtureBatchProvider:
     whose weights differ from this instance's, rather than silently
     continuing to train with a different mixture than the one that produced
     the checkpoint.
+
+    ``max_source_fraction`` and ``max_repetition_ratio`` (MF-148, inspired by
+    AI2 OLMo-core's own `SourceMixtureConfig`) are optional, off-by-default
+    safety caps checked once here at construction time, not during training.
+    Nothing before this stopped an accidentally-tiny or badly-weighted source
+    from being silently over-repeated -- these two checks turn that into a
+    loud, immediate `ValueError` instead of a quality problem only noticed
+    much later, if at all.
     """
 
     def __init__(
@@ -704,6 +736,9 @@ class MixtureBatchProvider:
         weights: dict[str, float],
         *,
         seed: int = 0,
+        max_source_fraction: float | None = None,
+        max_repetition_ratio: float | None = None,
+        expected_total_batches: int | None = None,
     ) -> None:
         if not providers:
             raise ValueError("at least one source is required")
@@ -711,6 +746,30 @@ class MixtureBatchProvider:
             raise ValueError("providers and weights must name the exact same sources")
         if any(weight <= 0 for weight in weights.values()):
             raise ValueError("mixture weights must be positive")
+        total_weight = sum(weights.values())
+        _validate_max_source_fraction(weights, max_source_fraction)
+        if max_repetition_ratio is not None:
+            if max_repetition_ratio <= 0:
+                raise ValueError("max_repetition_ratio must be positive")
+            if expected_total_batches is None or expected_total_batches <= 0:
+                raise ValueError("max_repetition_ratio requires a positive expected_total_batches")
+            for name, weight in weights.items():
+                provider = providers[name]
+                # How many unique batches this source can serve before
+                # `ShardBatchProvider` starts a fresh, reshuffled epoch over
+                # data it has already served once -- an epoch boundary is a
+                # real repeat, not a bug, but too many of them for too small
+                # a source is exactly what this cap exists to catch.
+                available_batches = max(1, len(provider.dataset) // provider.batch_size)
+                expected_draws = expected_total_batches * (weight / total_weight)
+                repetition_ratio = expected_draws / available_batches
+                if repetition_ratio > max_repetition_ratio:
+                    raise ValueError(
+                        f"source {name!r} would be seen ~{repetition_ratio:.2f}x over this "
+                        f"run ({expected_draws:.0f} draws expected vs {available_batches} "
+                        f"available batches), exceeding max_repetition_ratio="
+                        f"{max_repetition_ratio}"
+                    )
         self.providers = providers
         self.weights = dict(weights)
         self.seed = seed
@@ -786,6 +845,7 @@ class CurriculumMixtureProvider:
         *,
         decay_phase_start_batch: int,
         seed: int = 0,
+        max_source_fraction: float | None = None,
     ) -> None:
         if not providers:
             raise ValueError("at least one source is required")
@@ -799,6 +859,8 @@ class CurriculumMixtureProvider:
             raise ValueError("mixture weights must be positive")
         if decay_phase_start_batch < 0:
             raise ValueError("decay_phase_start_batch must be non-negative")
+        _validate_max_source_fraction(stable_weights, max_source_fraction)
+        _validate_max_source_fraction(decay_weights, max_source_fraction)
         self.providers = providers
         self.stable_weights = dict(stable_weights)
         self.decay_weights = dict(decay_weights)

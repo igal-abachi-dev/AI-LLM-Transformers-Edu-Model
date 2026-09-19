@@ -48,6 +48,7 @@ from minifrontier.ema import EMAWeights
 from minifrontier.loss import chunked_next_token_loss_stats, next_token_loss_stats
 from minifrontier.model import MiniFrontier
 from minifrontier.precision import Precision, PrecisionPolicy, resolve_precision
+from minifrontier.stability import StabilityMonitor
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +137,21 @@ class TrainingConfig:
     # constant in the paper's effective-learning-rate rescaling
     # (dim / (aligned_count + xi)). 1.0 is the paper's own default.
     cautious_xi: float = 1.0
+    # Rolling window size (in updates) StabilityMonitor keeps for its own
+    # loss/grad-norm history (MF-148, inspired by AI2 OLMo-core's
+    # StabilityMonitorCallback/SkipStepOptimizer). The monitor always runs and
+    # always counts flagged updates in state.anomalous_updates -- this and
+    # stability_sigma_factor tune its sensitivity, not whether it runs at all.
+    stability_window: int = 128
+    # How many standard deviations above the rolling mean counts as anomalous.
+    # 6.0 matches OLMo-core's own real default.
+    stability_sigma_factor: float = 6.0
+    # Off by default: when True, a flagged update's gradients are discarded and
+    # the optimizer step is skipped entirely (same treatment as a genuinely
+    # non-finite gradient), instead of merely being counted. Complementary to
+    # gradient_clip, not redundant with it -- clipping shrinks an oversized
+    # step; this refuses a statistically anomalous one outright.
+    skip_anomalous_steps: bool = False
 
     def __post_init__(self) -> None:
         if self.max_updates <= 0:
@@ -178,6 +194,10 @@ class TrainingConfig:
             raise ValueError(f"unknown optimizer: {self.optimizer}")
         if self.cautious_xi <= 0:
             raise ValueError("cautious_xi must be positive")
+        if self.stability_window <= 0:
+            raise ValueError("stability_window must be positive")
+        if self.stability_sigma_factor <= 0:
+            raise ValueError("stability_sigma_factor must be positive")
 
 
 @dataclass(slots=True)
@@ -385,6 +405,12 @@ class TrainingState:
     # manually and counts it here -- a run climbing this number is unwell (a data
     # or numerical-stability problem), even though each skip alone is harmless.
     nonfinite_updates: int = 0
+    # How many updates StabilityMonitor flagged as a real statistical outlier on
+    # loss and/or grad norm (MF-148). Always counted regardless of
+    # config.skip_anomalous_steps -- with that flag off (the default) this is a
+    # free diagnostic ("how often would this have fired?"); with it on, every
+    # count here is an update whose gradients were actually discarded.
+    anomalous_updates: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -726,8 +752,18 @@ def train_updates(
     ``ema`` is an optional ``ema.EMAWeights`` tracker (see ``ema.py``). It must
     be provided if and only if ``config.ema_decay`` is set; this function never
     constructs one itself. Updated once per optimizer step actually taken --
-    never on a step this loop itself skipped for a non-finite gradient -- so
-    the shadow never absorbs an update that had no real effect on the model.
+    never on a step this loop itself skipped for a non-finite gradient or an
+    anomalous one (see below) -- so the shadow never absorbs an update that
+    had no real effect on the model.
+
+    A ``StabilityMonitor`` (see ``stability.py``, MF-148) always runs
+    internally -- unlike ``mtp_heads``/``ema``, it is never a caller-supplied
+    argument, since its rolling window is deliberately excluded from the
+    checkpoint/resume contract every other stateful piece of this function
+    participates in. A resumed run's monitor starts fresh and needs
+    ``config.stability_window`` fresh observations again before it can flag
+    anything -- a real, disclosed limitation, accepted because this is a
+    safety/diagnostic feature a resumed run's correctness never depends on.
     """
 
     if (config.mtp_extra_heads > 0) != (mtp_heads is not None):
@@ -739,6 +775,16 @@ def train_updates(
     optimizer = optimizer or build_optimizer(model, config)[0]
     schedule = schedule or build_schedule(config)
     state = state or TrainingState()
+    # Always freshly constructed, every call -- its rolling window is
+    # deliberately NOT part of the checkpoint/resume contract (unlike
+    # everything else with a state_dict in this file). A resumed run's monitor
+    # simply "warms back up" over the next stability_window updates before it
+    # can flag anything again; a real, disclosed limitation, not a silent one,
+    # accepted because this is a safety/diagnostic feature, not something a
+    # resumed run's correctness depends on.
+    stability_monitor = StabilityMonitor(
+        window_size=config.stability_window, sigma_factor=config.stability_sigma_factor
+    )
     # Disabled (the BF16/FP32 case) makes every scaler call below a transparent
     # no-op: .scale() returns its input unchanged, .step() just calls
     # optimizer.step(), .unscale_()/.update() do nothing. So this is safe to call
@@ -878,9 +924,25 @@ def train_updates(
         # below, so a skipped step still counts as one update, same as
         # nanoGPT/nanochat's convention.
         if policy.needs_grad_scaler or torch.isfinite(gradient_norm):
-            scaler.step(optimizer)
-            if ema is not None:
-                ema.update(model)
+            # StabilityMonitor always runs (see stability.py): it always scores
+            # this update against its own rolling history and always counts a
+            # flagged one in state.anomalous_updates. config.skip_anomalous_steps
+            # is the only thing that decides whether a flagged update actually
+            # gets its gradients discarded, same treatment as the genuinely
+            # non-finite case just below -- or is merely counted for later
+            # inspection, the cheaper "instrument first" default.
+            observation = stability_monitor.observe(
+                (detached_loss_sum / target_count).item(), gradient_norm.item()
+            )
+            if config.skip_anomalous_steps and observation.is_anomalous:
+                optimizer.zero_grad(set_to_none=True)
+                state.anomalous_updates += 1
+            else:
+                if observation.is_anomalous:
+                    state.anomalous_updates += 1
+                scaler.step(optimizer)
+                if ema is not None:
+                    ema.update(model)
         else:
             optimizer.zero_grad(set_to_none=True)
             state.nonfinite_updates += 1

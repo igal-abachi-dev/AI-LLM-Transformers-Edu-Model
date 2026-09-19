@@ -14,6 +14,7 @@ from minifrontier.ema import EMAWeights
 from minifrontier.model import MiniFrontier
 from minifrontier.mtp import MTPHeads
 from minifrontier.precision import resolve_precision
+from minifrontier.stability import MIN_OBSERVATIONS_BEFORE_DETECTION
 from minifrontier.training import (
     ListBatchProvider,
     ShuffledBatchProvider,
@@ -519,6 +520,101 @@ def test_train_updates_skips_step_and_counts_a_nonfinite_gradient_without_a_scal
     assert state.nonfinite_updates == 1
     assert state.completed_updates == 1
     assert torch.equal(model.blocks[0].feed_forward.down_proj.weight, initial_weight)
+
+
+def test_training_config_rejects_invalid_stability_fields() -> None:
+    with pytest.raises(ValueError, match="stability_window"):
+        TrainingConfig(max_updates=1, warmup_updates=0, stability_window=0)
+    with pytest.raises(ValueError, match="stability_sigma_factor"):
+        TrainingConfig(max_updates=1, warmup_updates=0, stability_sigma_factor=0.0)
+
+
+def _spike_grad_norm_after_history_builds(monkeypatch) -> None:
+    """Shared setup for the two anomalous-step tests below: the real
+    clip_grad_norm_ runs normally for MIN_OBSERVATIONS_BEFORE_DETECTION calls
+    (building real, ordinary history), then a wildly large-but-finite value is
+    injected on the very next call -- a real, controlled statistical outlier
+    the monitor cannot have seen coming, the same technique this file's own
+    nonfinite-gradient tests already use to control clip_grad_norm_'s return
+    value directly rather than fighting real model numerics."""
+
+    real_clip = torch.nn.utils.clip_grad_norm_
+    call_count = 0
+
+    def fake_clip(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= MIN_OBSERVATIONS_BEFORE_DETECTION:
+            return real_clip(*args, **kwargs)
+        return torch.tensor(1_000_000.0)
+
+    monkeypatch.setattr(torch.nn.utils, "clip_grad_norm_", fake_clip)
+
+
+def test_train_updates_counts_but_does_not_skip_an_anomalous_step_by_default(monkeypatch) -> None:
+    _spike_grad_norm_after_history_builds(monkeypatch)
+    config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
+    model = MiniFrontier(config)
+    tokens = torch.randint(0, config.vocab_size, (2, 8))
+    training_config = TrainingConfig(
+        max_updates=MIN_OBSERVATIONS_BEFORE_DETECTION + 1,
+        warmup_updates=0,
+        precision="float32",
+    )
+    weight_snapshots: list[torch.Tensor] = []
+    _, _, state, _ = train_updates(
+        model,
+        ListBatchProvider([TrainingBatch(tokens)]),
+        training_config,
+        update_callback=lambda model, optimizer, schedule, state: weight_snapshots.append(
+            model.blocks[0].feed_forward.down_proj.weight.clone()
+        ),
+    )
+
+    assert state.anomalous_updates == 1
+    assert state.completed_updates == MIN_OBSERVATIONS_BEFORE_DETECTION + 1
+    assert state.last_gradient_norm == pytest.approx(1_000_000.0)
+    # skip_anomalous_steps defaults to False -- the flagged step still ran.
+    assert not torch.equal(weight_snapshots[-1], weight_snapshots[-2])
+
+
+def test_train_updates_skips_step_and_does_not_move_ema_when_skip_anomalous_steps_is_set(
+    monkeypatch,
+) -> None:
+    _spike_grad_norm_after_history_builds(monkeypatch)
+    config = ModelConfig.tiny_edu(n_layers=1, d_model=16, n_heads=2, d_ff=32)
+    model = MiniFrontier(config)
+    ema = EMAWeights(model, decay=0.9)
+    tokens = torch.randint(0, config.vocab_size, (2, 8))
+    training_config = TrainingConfig(
+        max_updates=MIN_OBSERVATIONS_BEFORE_DETECTION + 1,
+        warmup_updates=0,
+        precision="float32",
+        skip_anomalous_steps=True,
+        ema_decay=0.9,
+    )
+    weight_snapshots: list[torch.Tensor] = []
+    ema_snapshots: list[torch.Tensor] = []
+
+    def snapshot(model, optimizer, schedule, state) -> None:
+        weight_snapshots.append(model.blocks[0].feed_forward.down_proj.weight.clone())
+        ema_snapshots.append(ema.state_dict()["blocks.0.feed_forward.down_proj.weight"].clone())
+
+    _, _, state, _ = train_updates(
+        model,
+        ListBatchProvider([TrainingBatch(tokens)]),
+        training_config,
+        update_callback=snapshot,
+        ema=ema,
+    )
+
+    assert state.anomalous_updates == 1
+    assert state.completed_updates == MIN_OBSERVATIONS_BEFORE_DETECTION + 1
+    # The flagged update's gradients were discarded outright -- the model
+    # weight and the EMA shadow (only updated on a real step) are both
+    # byte-identical to the update just before it, not merely close.
+    assert torch.equal(weight_snapshots[-1], weight_snapshots[-2])
+    assert torch.equal(ema_snapshots[-1], ema_snapshots[-2])
 
 
 def test_train_updates_requires_ema_iff_ema_decay_is_set() -> None:

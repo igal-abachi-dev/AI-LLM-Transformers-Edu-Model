@@ -20,6 +20,7 @@ from minifrontier.evaluation.code import (
     contamination_report,
     load_fixtures,
     score_fixture_predictions,
+    score_fixture_predictions_pass_at_k,
 )
 
 
@@ -35,20 +36,32 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Optional matched baseline/FIM language-metric JSON included in the report",
     )
+    parser.add_argument(
+        "--pass-at-k",
+        type=int,
+        action="append",
+        metavar="K",
+        help=(
+            "MF-148: repeatable, e.g. '--pass-at-k 1 --pass-at-k 10'. Switches to "
+            "multi-sample pass@k scoring (the real HumanEval/Codex methodology, see "
+            "evaluation/code.py's pass_at_k) instead of single-sample pass/fail. "
+            "--predictions rows must then carry a 'predictions' list field instead "
+            "of a single 'prediction' string, with at least max(k) samples per "
+            "fixture, and every fixture must have real tests. Omit entirely to keep "
+            "the original single-sample --predictions format and report shape."
+        ),
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     fixtures = load_fixtures(args.fixtures)
-    predictions = {
-        str(row["id"]): str(row["prediction"])
-        for row in (
-            json.loads(line)
-            for line in args.predictions.read_text(encoding="utf-8").splitlines()
-            if line
-        )
-    }
+    rows = [
+        json.loads(line)
+        for line in args.predictions.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
     signatures = {"exact": [], "simhash": []}
     if args.training_signatures is not None:
         signatures = json.loads(args.training_signatures.read_text(encoding="utf-8"))
@@ -57,41 +70,80 @@ def main() -> None:
         training_hashes=set(signatures["exact"]),
         training_simhashes={int(value, 16) for value in signatures["simhash"]},
     )
-    scores = score_fixture_predictions(
-        fixtures,
-        predictions,
-        execute_trusted_fixtures=args.execute_trusted_fixtures,
-    )
-    total = len(scores)
-    if total == 0:
-        raise ValueError("at least one evaluation fixture is required")
-    functional = [score.functional for score in scores if score.functional is not None]
     general_lm = (
         json.loads(args.general_lm_metrics.read_text(encoding="utf-8"))
         if args.general_lm_metrics is not None
         else {"status": "not_provided", "quality_claim": False}
     )
-    report = {
-        "fixture_sha256": hashlib.sha256(args.fixtures.read_bytes()).hexdigest(),
-        "contamination": asdict(contamination),
-        "metrics": {
-            "count": total,
-            "exact_rate": sum(score.exact for score in scores) / total,
-            "syntax_valid_rate": sum(score.syntax_valid for score in scores) / total,
-            "compile_rate": sum(score.compiles for score in scores) / total,
-            "functional_count": len(functional),
-            "functional_rate": (
-                sum(value is True for value in functional) / len(functional) if functional else None
-            ),
-        },
-        "general_lm_regression": general_lm,
-        "results": [asdict(score) for score in scores],
-        "limitations": [
-            "Small deterministic fixtures measure pipeline correctness, not broad coding quality.",
-            "Functional execution is allowed only for repository-owned trusted fixtures.",
-            "Report variance across training seeds before making an effect claim.",
-        ],
-    }
+    if args.pass_at_k:
+        pass_at_k_predictions = {str(row["id"]): list(row["predictions"]) for row in rows}
+        pass_at_k_results = score_fixture_predictions_pass_at_k(
+            fixtures,
+            pass_at_k_predictions,
+            k_values=args.pass_at_k,
+            execute_trusted_fixtures=args.execute_trusted_fixtures,
+        )
+        total = len(pass_at_k_results)
+        if total == 0:
+            raise ValueError("at least one evaluation fixture is required")
+        report = {
+            "fixture_sha256": hashlib.sha256(args.fixtures.read_bytes()).hexdigest(),
+            "contamination": asdict(contamination),
+            "metrics": {
+                "count": total,
+                "mean_pass_at_k": {
+                    k: sum(result.pass_at_k[k] for result in pass_at_k_results) / total
+                    for k in args.pass_at_k
+                },
+            },
+            "general_lm_regression": general_lm,
+            "results": [asdict(result) for result in pass_at_k_results],
+            "limitations": [
+                "Small deterministic fixtures measure pipeline correctness, not broad "
+                "coding quality.",
+                "Functional execution is allowed only for repository-owned trusted fixtures.",
+                "Report variance across training seeds before making an effect claim.",
+                "pass@k needs real sampling diversity (temperature > 0) across a "
+                "fixture's own predictions to be meaningful -- identical repeated "
+                "samples make pass@k collapse to a single-sample pass/fail regardless "
+                "of k.",
+            ],
+        }
+    else:
+        predictions = {str(row["id"]): str(row["prediction"]) for row in rows}
+        scores = score_fixture_predictions(
+            fixtures,
+            predictions,
+            execute_trusted_fixtures=args.execute_trusted_fixtures,
+        )
+        total = len(scores)
+        if total == 0:
+            raise ValueError("at least one evaluation fixture is required")
+        functional = [score.functional for score in scores if score.functional is not None]
+        report = {
+            "fixture_sha256": hashlib.sha256(args.fixtures.read_bytes()).hexdigest(),
+            "contamination": asdict(contamination),
+            "metrics": {
+                "count": total,
+                "exact_rate": sum(score.exact for score in scores) / total,
+                "syntax_valid_rate": sum(score.syntax_valid for score in scores) / total,
+                "compile_rate": sum(score.compiles for score in scores) / total,
+                "functional_count": len(functional),
+                "functional_rate": (
+                    sum(value is True for value in functional) / len(functional)
+                    if functional
+                    else None
+                ),
+            },
+            "general_lm_regression": general_lm,
+            "results": [asdict(score) for score in scores],
+            "limitations": [
+                "Small deterministic fixtures measure pipeline correctness, not broad "
+                "coding quality.",
+                "Functional execution is allowed only for repository-owned trusted fixtures.",
+                "Report variance across training seeds before making an effect claim.",
+            ],
+        }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"wrote {args.output}")

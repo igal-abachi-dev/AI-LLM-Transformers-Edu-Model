@@ -15,11 +15,13 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import math
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -206,49 +208,178 @@ class FixtureScore:
     functional: bool | None
 
 
+def _score_one_prediction(
+    fixture: dict[str, object],
+    fixture_id: str,
+    prediction: str,
+    *,
+    execute_trusted_fixtures: bool,
+) -> CodeScore:
+    """Build the real candidate source for one fixture/prediction pair and score it.
+
+    Shared by the single-sample path (`score_fixture_predictions`) and the
+    multi-sample pass@k path (`score_fixture_predictions_pass_at_k`, MF-148) so
+    the two never drift on how a candidate is assembled or dispatched.
+    """
+
+    kind = str(fixture["kind"])
+    language = str(fixture.get("language", "python"))
+    if kind == "fim":
+        source = str(fixture["prompt"]) + prediction + str(fixture.get("suffix", ""))
+    elif kind == "syntax_repair":
+        source = prediction
+    else:
+        source = str(fixture["prompt"]) + prediction
+    if language == "python":
+        return score_python(
+            source,
+            tests=str(fixture["tests"]) if fixture.get("tests") else None,
+            execute_trusted_fixture=execute_trusted_fixtures,
+        )
+    if language == "csharp":
+        if fixture.get("tests"):
+            raise ValueError(f"fixture {fixture_id}: C# scoring does not support tests yet")
+        return score_csharp(source)
+    raise ValueError(f"fixture {fixture_id}: unknown language {language!r}")
+
+
 def score_fixture_predictions(
     fixtures: list[dict[str, object]],
     predictions: dict[str, str],
     *,
     execute_trusted_fixtures: bool = False,
 ) -> list[FixtureScore]:
-    """Score versioned local fixtures without hiding missing predictions."""
+    """Score versioned local fixtures without hiding missing predictions.
+
+    One prediction per fixture -- a real, honest pass/fail, but noisy on any
+    fixture a model can pass by luck on one attempt without passing reliably.
+    See `score_fixture_predictions_pass_at_k` (MF-148) for the multi-sample,
+    noise-aware alternative modeled on the real HumanEval/Codex methodology.
+    """
 
     results = []
     for fixture in fixtures:
         fixture_id = str(fixture["id"])
         if fixture_id not in predictions:
             raise ValueError(f"missing prediction for fixture {fixture_id}")
-        kind = str(fixture["kind"])
-        language = str(fixture.get("language", "python"))
         prediction = predictions[fixture_id]
         reference = str(fixture["reference"])
-        if kind == "fim":
-            source = str(fixture["prompt"]) + prediction + str(fixture.get("suffix", ""))
-        elif kind == "syntax_repair":
-            source = prediction
-        else:
-            source = str(fixture["prompt"]) + prediction
-        if language == "python":
-            score = score_python(
-                source,
-                tests=str(fixture["tests"]) if fixture.get("tests") else None,
-                execute_trusted_fixture=execute_trusted_fixtures,
-            )
-        elif language == "csharp":
-            if fixture.get("tests"):
-                raise ValueError(f"fixture {fixture_id}: C# scoring does not support tests yet")
-            score = score_csharp(source)
-        else:
-            raise ValueError(f"fixture {fixture_id}: unknown language {language!r}")
+        score = _score_one_prediction(
+            fixture, fixture_id, prediction, execute_trusted_fixtures=execute_trusted_fixtures
+        )
         results.append(
             FixtureScore(
                 fixture_id,
-                kind,
+                str(fixture["kind"]),
                 prediction == reference,
                 score.syntax_valid,
                 score.compiles,
                 score.tests_passed,
+            )
+        )
+    return results
+
+
+def pass_at_k(n: int, c: int, k: int) -> float:
+    """The unbiased pass@k estimator from the real HumanEval/Codex paper.
+
+    (Chen et al., "Evaluating Large Language Models Trained on Code",
+    arXiv:2107.03374, equation 1.) Given ``n`` independent samples for one
+    problem, of which ``c`` pass, this is the probability that *at least one*
+    of ``k`` samples drawn (without replacement) from those ``n`` would pass --
+    not simply ``c / n`` (which is pass@n, a different, noisier number) and
+    not "run k samples and see if any pass" (a biased estimator with higher
+    variance than this closed form for the same n).
+
+    Uses the numerically stable product form
+    ``1 - prod_{i=0}^{k-1} (n-c-i)/(n-i)`` rather than computing
+    ``comb(n-c, k) / comb(n, k)`` directly, which real reference
+    implementations (including OpenAI's own) avoid because those binomial
+    coefficients overflow for even moderately large ``n``.
+    """
+
+    if n <= 0:
+        raise ValueError("n must be positive")
+    if not 0 <= c <= n:
+        raise ValueError("c must be in [0, n]")
+    if k <= 0:
+        raise ValueError("k must be positive")
+    if k > n:
+        raise ValueError(f"k={k} cannot exceed n={n} samples")
+    if n - c < k:
+        # Fewer than k samples failed, so at least one of any k drawn must pass.
+        return 1.0
+    return 1.0 - math.prod((n - c - i) / (n - i) for i in range(k))
+
+
+@dataclass(frozen=True, slots=True)
+class FixturePassAtK:
+    fixture_id: str
+    kind: str
+    num_samples: int
+    num_functional_passes: int
+    pass_at_k: dict[int, float]
+
+
+def score_fixture_predictions_pass_at_k(
+    fixtures: list[dict[str, object]],
+    predictions: dict[str, Sequence[str]],
+    *,
+    k_values: Sequence[int],
+    execute_trusted_fixtures: bool = False,
+) -> list[FixturePassAtK]:
+    """Multi-sample pass@k scoring (MF-148) -- the real HumanEval/Codex
+    methodology, generating several candidate completions per fixture and
+    reporting the unbiased pass@k estimator rather than a single-sample
+    pass/fail. This exists specifically because a single sample cannot tell
+    "reliably correct" apart from "got lucky once" -- see `pass_at_k`.
+
+    Every fixture must supply at least ``max(k_values)`` samples; fixtures
+    that can only be sampled once (e.g. a deterministic reference-predictions
+    smoke) should keep using `score_fixture_predictions` instead, which this
+    function does not replace.
+
+    Only fixtures with real ``tests`` are meaningful here -- a fixture with no
+    tests has no notion of "functional pass" to estimate pass@k over, so one
+    without tests raises rather than silently reporting a meaningless number.
+    """
+
+    if not k_values:
+        raise ValueError("at least one k value is required")
+    if any(k <= 0 for k in k_values):
+        raise ValueError("k values must be positive")
+    max_k = max(k_values)
+    results = []
+    for fixture in fixtures:
+        fixture_id = str(fixture["id"])
+        if not fixture.get("tests"):
+            raise ValueError(f"fixture {fixture_id} has no tests; pass@k requires functional tests")
+        if fixture_id not in predictions:
+            raise ValueError(f"missing predictions for fixture {fixture_id}")
+        samples = predictions[fixture_id]
+        if len(samples) < max_k:
+            raise ValueError(
+                f"fixture {fixture_id} has {len(samples)} samples, fewer than the "
+                f"requested max k={max_k}"
+            )
+        num_functional_passes = sum(
+            1
+            for prediction in samples
+            if _score_one_prediction(
+                fixture,
+                fixture_id,
+                prediction,
+                execute_trusted_fixtures=execute_trusted_fixtures,
+            ).tests_passed
+        )
+        n = len(samples)
+        results.append(
+            FixturePassAtK(
+                fixture_id,
+                str(fixture["kind"]),
+                n,
+                num_functional_passes,
+                {k: pass_at_k(n, num_functional_passes, k) for k in k_values},
             )
         )
     return results

@@ -112,7 +112,12 @@ def _args(
         ema_decay=None,
         optimizer="adamw",
         cautious_xi=1.0,
+        stability_window=128,
+        stability_sigma_factor=6.0,
+        skip_anomalous_steps=False,
         decay_mixture=None,
+        mixture_max_source_fraction=None,
+        mixture_max_repetition_ratio=None,
         validation_interval=0,
         validation_shards=None,
         validation_batch_size=pretrain.VALIDATION_BATCH_SIZE,
@@ -652,6 +657,60 @@ def test_mixture_and_train_shards_are_mutually_exclusive(tmp_path, mini_tokenize
     with pytest.raises(ValueError, match="exactly one"):
         pretrain.run(
             _args(config_path, None, tmp_path / "out", train_shards=None, no_checkpoint=True)
+        )
+
+
+def test_mixture_max_source_fraction_flag_rejects_a_dominant_source(
+    tmp_path, mini_tokenizer
+) -> None:
+    """MF-148: --mixture-max-source-fraction reaches MixtureBatchProvider's own
+    real validation -- this is a wiring test, the cap logic itself is unit-tested
+    directly against the class in test_shards.py."""
+
+    web_shards = _build_shards(tmp_path / "web-src", mini_tokenizer)
+    code_shards = _build_shards(tmp_path / "code-src", mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    mixture = [f"web;{web_shards};0.9", f"code;{code_shards};0.1"]
+
+    with pytest.raises(ValueError, match="max_source_fraction"):
+        pretrain.run(
+            _args(
+                config_path,
+                None,
+                tmp_path / "out",
+                train_shards=None,
+                mixture=mixture,
+                mixture_max_source_fraction=0.5,
+                no_checkpoint=True,
+            )
+        )
+
+
+def test_mixture_max_repetition_ratio_flag_rejects_an_over_repeated_source(
+    tmp_path, mini_tokenizer
+) -> None:
+    """MF-148: --mixture-max-repetition-ratio reaches MixtureBatchProvider's own
+    real validation, computing expected_total_batches from --updates x
+    --accumulation-steps -- this is a wiring test, the cap logic itself is
+    unit-tested directly against the class in test_shards.py."""
+
+    web_shards = _build_shards(tmp_path / "web-src", mini_tokenizer)
+    code_shards = _build_shards(tmp_path / "code-src", mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    mixture = [f"web;{web_shards};0.5", f"code;{code_shards};0.5"]
+
+    with pytest.raises(ValueError, match="max_repetition_ratio"):
+        pretrain.run(
+            _args(
+                config_path,
+                None,
+                tmp_path / "out",
+                train_shards=None,
+                mixture=mixture,
+                updates=1000,
+                mixture_max_repetition_ratio=0.01,
+                no_checkpoint=True,
+            )
         )
 
 

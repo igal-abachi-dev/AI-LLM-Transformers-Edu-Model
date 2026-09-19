@@ -95,6 +95,30 @@ def parse_args() -> argparse.Namespace:
         "with --train-shards; at least two --mixture entries make a real mixture, "
         "though one is accepted as a degenerate single-source case.",
     )
+    parser.add_argument(
+        "--mixture-max-source-fraction",
+        type=float,
+        help=(
+            "MF-148 (inspired by AI2 OLMo-core's SourceMixtureConfig): reject "
+            "--mixture at startup if any one source's share of the total weight "
+            "exceeds this fraction, e.g. 0.9 to catch an accidentally dominant "
+            "source. Omit to disable (the default) -- purely a safety check, "
+            "changes nothing about how batches are actually drawn."
+        ),
+    )
+    parser.add_argument(
+        "--mixture-max-repetition-ratio",
+        type=float,
+        help=(
+            "MF-148 (inspired by AI2 OLMo-core's SourceMixtureConfig): reject "
+            "--mixture at startup if any source would be drawn from, on expectation "
+            "over the whole run (--updates x --accumulation-steps total batches), "
+            "more than this many times its own available batch count -- catches an "
+            "accidentally tiny or over-weighted source before a real multi-day run "
+            "starts, rather than silently over-repeating it. Omit to disable (the "
+            "default)."
+        ),
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--resume", type=Path)
     parser.add_argument("--device", default="cuda")
@@ -239,6 +263,39 @@ def parse_args() -> argparse.Namespace:
         "normalization constant (their default is 1.0).",
     )
     parser.add_argument(
+        "--stability-window",
+        type=int,
+        default=128,
+        help=(
+            "MF-148 (inspired by AI2 OLMo-core's StabilityMonitorCallback/"
+            "SkipStepOptimizer): rolling window size (in updates) the always-on "
+            "stability monitor keeps for its own loss/grad-norm history. Purely "
+            "diagnostic by default -- see --skip-anomalous-steps to actually act "
+            "on what it flags."
+        ),
+    )
+    parser.add_argument(
+        "--stability-sigma-factor",
+        type=float,
+        default=6.0,
+        help="How many standard deviations above the rolling mean counts as "
+        "anomalous (default matches OLMo-core's own real default).",
+    )
+    parser.add_argument(
+        "--skip-anomalous-steps",
+        action="store_true",
+        help=(
+            "MF-148: when the stability monitor flags an update (loss and/or "
+            "grad norm a real statistical outlier against its own recent "
+            "history), discard its gradients and skip the optimizer step "
+            "entirely, same treatment as a genuinely non-finite gradient. Off "
+            "by default -- without this flag, flagged updates are still "
+            "counted (state.anomalous_updates) but proceed normally, so a real "
+            "run can show how often this would have fired before anyone turns "
+            "the action on."
+        ),
+    )
+    parser.add_argument(
         "--validation-interval",
         type=int,
         default=0,
@@ -372,8 +429,18 @@ def _build_batch_provider(
         for name, shards_path, _ in entries
     }
     stable_weights = {name: weight for name, _, weight in entries}
+    # Total batches the whole run will actually draw -- what
+    # --mixture-max-repetition-ratio's expectation is computed against.
+    expected_total_batches = args.updates * args.accumulation_steps
     if not args.decay_mixture:
-        return MixtureBatchProvider(providers, weights=stable_weights, seed=args.seed)
+        return MixtureBatchProvider(
+            providers,
+            weights=stable_weights,
+            seed=args.seed,
+            max_source_fraction=args.mixture_max_source_fraction,
+            max_repetition_ratio=args.mixture_max_repetition_ratio,
+            expected_total_batches=expected_total_batches,
+        )
     if train_config.schedule != "wsd":
         raise ValueError("--decay-mixture requires --schedule wsd")
     decay_overrides = dict(_parse_decay_mixture_entry(spec) for spec in args.decay_mixture)
@@ -387,6 +454,7 @@ def _build_batch_provider(
         decay_weights=decay_weights,
         decay_phase_start_batch=decay_phase_start_batch,
         seed=args.seed,
+        max_source_fraction=args.mixture_max_source_fraction,
     )
 
 
@@ -422,6 +490,9 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         ema_decay=args.ema_decay,
         optimizer=args.optimizer,
         cautious_xi=args.cautious_xi,
+        stability_window=args.stability_window,
+        stability_sigma_factor=args.stability_sigma_factor,
+        skip_anomalous_steps=args.skip_anomalous_steps,
     )
     device = torch.device(args.device)
     seed_everything(args.seed)

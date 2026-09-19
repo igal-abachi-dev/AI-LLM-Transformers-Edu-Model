@@ -21,8 +21,10 @@ from minifrontier.evaluation.code import (
     dotnet_available,
     load_fixtures,
     normalized_hash,
+    pass_at_k,
     score_csharp,
     score_fixture_predictions,
+    score_fixture_predictions_pass_at_k,
     score_python,
 )
 from minifrontier.evaluation.fim import score_fim
@@ -139,6 +141,87 @@ def test_score_fixture_predictions_rejects_unknown_language() -> None:
     ]
     with pytest.raises(ValueError, match="unknown language"):
         score_fixture_predictions(fixtures, {"x-1": "a, b) -> i32 { a + b }"})
+
+
+def test_pass_at_k_matches_the_real_humaneval_closed_form() -> None:
+    """MF-148: hand-computed against the paper's own formula,
+    1 - C(n-c, k) / C(n, k) -- n=10, c=3, k=5: 1 - C(7,5)/C(10,5) = 1 - 21/252."""
+
+    assert pass_at_k(10, 3, 5) == pytest.approx(1.0 - 21 / 252)
+    assert pass_at_k(5, 0, 1) == 0.0  # never passed -> pass@k is always 0
+    assert pass_at_k(5, 5, 1) == 1.0  # always passed -> pass@k is always 1
+    assert pass_at_k(5, 5, 5) == 1.0
+    # Fewer failures than k means at least one of any k draws must be a pass.
+    assert pass_at_k(5, 4, 5) == 1.0
+
+
+def test_pass_at_k_rejects_invalid_arguments() -> None:
+    with pytest.raises(ValueError, match="n must be positive"):
+        pass_at_k(0, 0, 1)
+    with pytest.raises(ValueError, match="c must be in"):
+        pass_at_k(5, 6, 1)
+    with pytest.raises(ValueError, match="k must be positive"):
+        pass_at_k(5, 2, 0)
+    with pytest.raises(ValueError, match="cannot exceed"):
+        pass_at_k(5, 2, 6)
+
+
+def _tests_fixture(fixture_id: str) -> dict[str, object]:
+    return {
+        "id": fixture_id,
+        "kind": "completion",
+        "language": "python",
+        "prompt": "def add(a, b):\n    ",
+        "reference": "return a + b\n",
+        "tests": "assert add(2, 3) == 5",
+    }
+
+
+def test_score_fixture_predictions_pass_at_k_counts_functional_passes_correctly() -> None:
+    fixtures = [_tests_fixture("add-1")]
+    # 4 samples: 3 correct, 1 broken (syntax error) -> n=4, c=3.
+    samples = [
+        "return a + b\n",
+        "return a + b\n",
+        "return a + b\n",
+        "return a - b\n",  # compiles but fails the test -> not a functional pass
+    ]
+    results = score_fixture_predictions_pass_at_k(
+        fixtures,
+        {"add-1": samples},
+        k_values=[1, 2],
+        execute_trusted_fixtures=True,
+    )
+    assert len(results) == 1
+    result = results[0]
+    assert result.num_samples == 4
+    assert result.num_functional_passes == 3
+    assert result.pass_at_k[1] == pytest.approx(pass_at_k(4, 3, 1))
+    assert result.pass_at_k[2] == pytest.approx(pass_at_k(4, 3, 2))
+
+
+def test_score_fixture_predictions_pass_at_k_rejects_fixture_without_tests() -> None:
+    fixture = _tests_fixture("no-tests-1")
+    del fixture["tests"]
+    with pytest.raises(ValueError, match="has no tests"):
+        score_fixture_predictions_pass_at_k(
+            [fixture], {"no-tests-1": ["return a + b\n"]}, k_values=[1]
+        )
+
+
+def test_score_fixture_predictions_pass_at_k_rejects_missing_predictions() -> None:
+    with pytest.raises(ValueError, match="missing predictions"):
+        score_fixture_predictions_pass_at_k([_tests_fixture("add-2")], {}, k_values=[1])
+
+
+def test_score_fixture_predictions_pass_at_k_rejects_too_few_samples() -> None:
+    with pytest.raises(ValueError, match="fewer than the requested max k"):
+        score_fixture_predictions_pass_at_k(
+            [_tests_fixture("add-3")],
+            {"add-3": ["return a + b\n"]},
+            k_values=[1, 5],
+            execute_trusted_fixtures=True,
+        )
 
 
 @pytest.mark.skipif(not dotnet_available(), reason="dotnet SDK not found on PATH")

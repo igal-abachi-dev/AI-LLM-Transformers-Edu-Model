@@ -395,6 +395,128 @@ def test_mixture_batch_provider_rejects_empty_or_non_positive_weights(
         MixtureBatchProvider({"web": ShardBatchProvider(web, batch_size=1)}, weights={"web": 0.0})
 
 
+def test_mixture_batch_provider_accepts_source_within_max_source_fraction(
+    tmp_path, mini_tokenizer
+) -> None:
+    web = _make_shard_pool(tmp_path / "web", mini_tokenizer, prefix="web", count=12)
+    code = _make_shard_pool(tmp_path / "code", mini_tokenizer, prefix="code", count=12)
+    providers = {
+        "web": ShardBatchProvider(web, batch_size=1, seed=1),
+        "code": ShardBatchProvider(code, batch_size=1, seed=2),
+    }
+    MixtureBatchProvider(
+        providers, weights={"web": 0.6, "code": 0.4}, seed=1, max_source_fraction=0.7
+    )
+
+
+def test_mixture_batch_provider_rejects_source_exceeding_max_source_fraction(
+    tmp_path, mini_tokenizer
+) -> None:
+    web = _make_shard_pool(tmp_path / "web", mini_tokenizer, prefix="web", count=12)
+    code = _make_shard_pool(tmp_path / "code", mini_tokenizer, prefix="code", count=12)
+    providers = {
+        "web": ShardBatchProvider(web, batch_size=1, seed=1),
+        "code": ShardBatchProvider(code, batch_size=1, seed=2),
+    }
+    with pytest.raises(ValueError, match="max_source_fraction"):
+        MixtureBatchProvider(
+            providers, weights={"web": 0.9, "code": 0.1}, seed=1, max_source_fraction=0.5
+        )
+
+
+def test_mixture_batch_provider_rejects_invalid_max_source_fraction(
+    tmp_path, mini_tokenizer
+) -> None:
+    web = _make_shard_pool(tmp_path / "web", mini_tokenizer, prefix="web", count=4)
+    providers = {"web": ShardBatchProvider(web, batch_size=1)}
+    with pytest.raises(ValueError, match="max_source_fraction must be in"):
+        MixtureBatchProvider(providers, weights={"web": 1.0}, max_source_fraction=0.0)
+    with pytest.raises(ValueError, match="max_source_fraction must be in"):
+        MixtureBatchProvider(providers, weights={"web": 1.0}, max_source_fraction=1.5)
+
+
+def test_mixture_batch_provider_accepts_repetition_within_max_repetition_ratio(
+    tmp_path, mini_tokenizer
+) -> None:
+    web = _make_shard_pool(tmp_path / "web", mini_tokenizer, prefix="web", count=12)
+    code = _make_shard_pool(tmp_path / "code", mini_tokenizer, prefix="code", count=12)
+    providers = {
+        "web": ShardBatchProvider(web, batch_size=1, seed=1),
+        "code": ShardBatchProvider(code, batch_size=1, seed=2),
+    }
+    # A tiny 20-batch run at 50/50 draws far fewer batches than either source
+    # can actually supply, so repetition stays comfortably under the 2x cap.
+    MixtureBatchProvider(
+        providers,
+        weights={"web": 0.5, "code": 0.5},
+        seed=1,
+        max_repetition_ratio=2.0,
+        expected_total_batches=20,
+    )
+
+
+def test_mixture_batch_provider_rejects_source_exceeding_max_repetition_ratio(
+    tmp_path, mini_tokenizer
+) -> None:
+    web = _make_shard_pool(tmp_path / "web", mini_tokenizer, prefix="web", count=12)
+    code = _make_shard_pool(tmp_path / "code", mini_tokenizer, prefix="code", count=12)
+    providers = {
+        "web": ShardBatchProvider(web, batch_size=1, seed=1),
+        "code": ShardBatchProvider(code, batch_size=1, seed=2),
+    }
+    # Each source packs to well under 100 available sequences at this tiny
+    # sequence_length; 1000 total draws at 50/50 (500 expected per source)
+    # comfortably exceeds the 2x cap regardless of the exact packed count.
+    with pytest.raises(ValueError, match="max_repetition_ratio"):
+        MixtureBatchProvider(
+            providers,
+            weights={"web": 0.5, "code": 0.5},
+            seed=1,
+            max_repetition_ratio=2.0,
+            expected_total_batches=1000,
+        )
+
+
+def test_mixture_batch_provider_max_repetition_ratio_requires_expected_total_batches(
+    tmp_path, mini_tokenizer
+) -> None:
+    web = _make_shard_pool(tmp_path / "web", mini_tokenizer, prefix="web", count=4)
+    providers = {"web": ShardBatchProvider(web, batch_size=1)}
+    with pytest.raises(ValueError, match="expected_total_batches"):
+        MixtureBatchProvider(providers, weights={"web": 1.0}, max_repetition_ratio=2.0)
+
+
+def test_curriculum_provider_accepts_and_rejects_max_source_fraction(
+    tmp_path, mini_tokenizer
+) -> None:
+    web = _make_shard_pool(tmp_path / "web", mini_tokenizer, prefix="web", count=12)
+    code = _make_shard_pool(tmp_path / "code", mini_tokenizer, prefix="code", count=12)
+    providers = {
+        "web": ShardBatchProvider(web, batch_size=1, seed=1),
+        "code": ShardBatchProvider(code, batch_size=1, seed=2),
+    }
+    CurriculumMixtureProvider(
+        providers,
+        stable_weights={"web": 0.6, "code": 0.4},
+        decay_weights={"web": 0.5, "code": 0.5},
+        decay_phase_start_batch=5,
+        max_source_fraction=0.7,
+    )
+    providers_again = {
+        "web": ShardBatchProvider(web, batch_size=1, seed=1),
+        "code": ShardBatchProvider(code, batch_size=1, seed=2),
+    }
+    # The cap applies to both phases -- this one is only violated in the decay phase.
+    with pytest.raises(ValueError, match="max_source_fraction"):
+        CurriculumMixtureProvider(
+            providers_again,
+            stable_weights={"web": 0.6, "code": 0.4},
+            decay_weights={"web": 0.9, "code": 0.1},
+            decay_phase_start_batch=5,
+            max_source_fraction=0.7,
+        )
+
+
 def test_curriculum_provider_switches_weights_at_the_configured_batch_index(
     tmp_path, mini_tokenizer
 ) -> None:
