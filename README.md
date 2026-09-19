@@ -354,6 +354,11 @@ MiniFrontier's design and this session's own bounded ablations were repeatedly c
 - **[rasbt/LLMs-from-scratch](https://github.com/rasbt/LLMs-from-scratch)** (Sebastian Raschka) — the strongest pedagogical reference found while benchmarking this repo against comparable educational projects: a real book paired one-to-one with runnable notebooks, actively kept current (from-scratch Qwen3, Gemma 3, GQA, DeepSeek Sparse Attention, Muon implementations), and consumer-hardware friendly in the same spirit as this project's own reference-GPU discipline. Complementary reading for the many architecture families MiniFrontier deliberately doesn't cover — see `labs/README.md` for the fuller writeup.
 - **[allenai/OLMo](https://github.com/allenai/OLMo) + [allenai/OLMo-core](https://github.com/allenai/OLMo-core)** — AI2's real, currently-best example of a fully-open, genuinely competitive model: full training data (Dolma 3), full training code, intermediate checkpoints, and a real technical report, at 7B/32B with Base/Instruct/Think variants. 
 
+this repo might not the absolute gentlest starting point. If you want the
+shortest possible path from "Attention Is All You Need" pdf to a working GPT-2 in a couple hundred
+lines, [nanoGPT](https://github.com/karpathy/nanoGPT) or
+[rasbt/LLMs-from-scratch](https://github.com/rasbt/LLMs-from-scratch) are gentler for start
+
 ## Roadmap
 
 Implementation is organized into dependency-ordered tasks with measurable acceptance criteria:
@@ -429,11 +434,14 @@ ecosystem.py,Compatibility helpers for external runtimes.
 
 ## Bootstrap
 
-MiniFrontier requires Python 3.12 and [`uv`](https://docs.astral.sh/uv/). On Windows, install `uv`
-with any one of these methods.
-
+MiniFrontier requires Python 3.12 and [`uv`](https://docs.astral.sh/uv/). This section's bootstrap
+script (`init.cmd`) is Windows-specific (documented below); everything after that first sync step
+is plain `uv`/Python and works identically on Linux/macOS.
 
 - [Install instructions](install.md)
+
+**Windows.** Install `uv` with any one of these methods, then open a new terminal if the installer
+changed `PATH`:
 
 Official PowerShell installer:
 
@@ -455,9 +463,17 @@ python -m pip install --user --upgrade uv
 
 also you can install triton-windows, for possible 16% speedup in muon training
 
-Open a new terminal if the installer changed `PATH`, then verify the prerequisites:
+**Linux/macOS.** Install `uv` with the equivalent official installer, or via Homebrew on macOS:
 
-```powershell
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# or, on macOS:
+brew install uv
+```
+
+Verify the prerequisites (identical on every platform):
+
+```
 python --version
 uv --version
 ```
@@ -470,9 +486,20 @@ init.cmd cu130
 
 Available PyTorch backends are `cpu`, `cu126`, `cu130`, and `cu132`; `cu130` is the project default. Choose the wheel supported by the installed NVIDIA driver, or use `cpu` for correctness work. Backends are mutually exclusive locked extras, so `init.cmd cpu` on a Dev Box and `init.cmd cu130` on an RTX machine use the same project metadata safely. The default sync installs the core and development groups. Add `--all-groups` when evaluation and plotting dependencies are needed. The script creates missing directories and package markers but never overwrites an existing file.
 
-The normal developer loop is:
+`init.cmd` is a Windows batch script with no Linux/macOS equivalent committed yet, but for a normal
+clone of this already-initialized repo (`pyproject.toml`/`uv.lock` already exist, so the
+new-project branch of the script never fires) it does little more than sync and verify — the real
+equivalent on Linux/macOS is just:
 
-```bat
+```bash
+uv sync --extra cu130 --group dev   # or --extra cpu, --all-groups
+uv run --no-sync python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+uv run --no-sync pytest
+```
+
+The normal developer loop, identical on every platform:
+
+```bash
 uv sync --extra cpu --group dev
 uv run --extra cpu ruff check .
 uv run --extra cu130 python -m pytest
