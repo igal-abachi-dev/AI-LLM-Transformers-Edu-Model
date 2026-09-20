@@ -1862,6 +1862,24 @@ So the geometric idea is fully compatible with your architecture, but the specif
 
 # Part 5 — Suggested reading order
 
+first after this intro, open only those 2 labs on attention:
+`00_attention_math.py` , `00b_attention_pure_python.py`
+
+core papers for reading:
+1) Attention Is All You Need (Vaswani et al., 2017) – arXiv:1706.03762
+2) LLaMA (Touvron et al., 2023) – arXiv:2302.13971
+3) Language Models are Few-Shot Learners (GPT-3, Brown et al., 2020) – arXiv:2005.14165
+
+
+other recommended books to read (optional):
+1) Build a Large Language Model (From Scratch) - Sebastian Raschka
+2) AI Engineering - Chip Huyen
+3) Hands-On Large Language Models - Jay Alammar & Maarten Grootendorst
+4) Natural Language Processing with Transformers - Tunstall, von Werra, Wolf et al. (Hugging Face book)
+5) Deep Learning - Goodfellow, Bengio, Courville
+6) Co-Intelligence - Ethan Mollick
+
+
 Don't open `model.py` first. Go bottom-up — every file below depends only on the ones above
 it:
 
@@ -1877,9 +1895,8 @@ it:
 8. **`generation.py`** — the guessing loop, for real.
 9. **`cache.py`** — only once everything above makes sense.
 
-Then the labs, in this order — `02_mha_vs_gqa.py`, `03_qk_norm.py`, `04_full_vs_hybrid.py`,
-`07_rope_vs_global_nope.py`, `06_adamw_vs_muon.py`. (Some labs are still placeholders that
-raise `SystemExit`; the tests in `tests/` cover the same ground meanwhile.)
+Then the labs, in this order — `01_rope.py` ,`02_mha_vs_gqa.py`, `03_qk_norm.py`, `04_full_vs_hybrid.py`,
+`05_kv_cache.py`, `06_adamw_vs_muon.py` , `07_rope_vs_global_nope.py` , `08_mtp.py` , `09_chunked_vs_fused_cross_entropy.py`.
 
 And the tests are documentation. `tests/test_model.py` and `tests/test_attention.py` are
 short, and they show what each piece is *supposed* to do.
@@ -1951,6 +1968,25 @@ It adjusts its weights so that its output gets closer to the truth.
 That gentle non-linearity is the entire reason deep networks can separate data that no straight line could. 
 Stack many of these units into layers, connect the layers, and you get a neural network. 
 The Transformer is just a particularly clever way of arranging and connecting these units so they can look at an entire sequence at once.
+
+
+![Artificial Neuron](svg/neuron.jpg)
+
+**How it maps to the MiniFrontier code you mentioned:**
+
+1. **Weighted sum + bias** → every `nn.Linear`  
+   - Attention: `q_proj`, `k_proj`, `v_proj`, `out_proj`  
+   - SwiGLU FFN: `gate_proj`, `up_proj`, `down_proj`  
+   - Final head: `lm_head`
+
+2. **Non-linearity** → the “bend”  
+   - Classic: sigmoid  
+   - In MiniFrontier: mainly `F.silu` inside SwiGLU (`layers.py`)
+
+3. **Learning** (shrink the mistakes)  
+   - Happens *outside* the forward pass of inference: happens during training -> loss → `backward()` → optimizer step (AdamW / Muon)
+
+Stack thousands of these simple units, connect them cleverly (attention, residual streams, etc.), and you get Transformers and LLMs.
 
 
 1. Weigh its inputs (weighted sum + bias)
