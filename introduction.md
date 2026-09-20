@@ -516,6 +516,10 @@ token 1 a little, token 7 more.
 
 ![RoPE: position as a rotation](svg/08-rope.svg)
 
+![lanes](svg/causal_self_attention_forward_lanes.svg)
+
+
+
 The clever bit: when two tokens later compare themselves against each other, the maths works
 out so that what matters is the **difference** between their rotations — that is, *how far
 apart they are*. So the model learns about distance rather than about absolute slot numbers.
@@ -551,6 +555,12 @@ return inputs + self.feed_forward(self.ffn_norm(inputs))
 Read that as: **normalize → do something → add the result back onto the conveyor belt.**
 
 ![Inside one transformer block](svg/07-transformer-block.svg)
+
+
+![transformer block call](svg/minifrontier_attention_call_path.svg)
+
+![residual stream](svg/transformer_block_residual_stream.svg)
+
 
 Three ideas are packed into those two lines:
 
@@ -589,6 +599,13 @@ In code those are three plain matrix multiplications with no bias:
 `q_proj`, `k_proj`, `v_proj`.
 
 ![Attention as a classroom of queries, keys and values](svg/09-attention.svg)
+
+![Attention](svg/attention.png)
+
+![SDPA](svg/sdpa_attention_pipeline_three_tokens.svg)
+
+![fan](svg/sdpa_token2_attention_fan.svg)
+
 
 Now every child compares their Query against **everyone's** name tag. High match = high
 score (`Q · Kᵀ`). The scores get turned into percentages with softmax — so each child ends
