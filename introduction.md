@@ -587,6 +587,9 @@ much more reliably.
 
 This is the famous part. `CausalSelfAttention` in `src/minifrontier/attention.py`.
 
+
+This attention logic itself in pure python reference. in `labs/00b_attention_pure_python.py`.
+
 Picture a classroom where every child is one token. Each child does three things at once:
 
 - Writes a **Query** on a card: *"here's what I'm looking for"* — e.g. the word `it` might
