@@ -558,6 +558,41 @@ respond like:
  well short of Chinchilla-optimal (~20 tokens/param, ~3B tokens) — expect grammatically coherent 
  but factually shaky/generic completions, especially past the first sentence or two.
 
+### Sampling from a checkpoint mid-training
+
+`sample.py` needs a real, exported **release** directory (weights + tokenizer + a manifest) —
+not a raw periodic training checkpoint, which has no tokenizer files of its own. You don't have
+to wait for a run to finish to check on it: export any periodic checkpoint into a release
+directory, keeping the source checkpoint intact, then sample from that.
+
+1. Find the latest checkpoint:
+   ```powershell
+   Get-ChildItem artifacts\<run-name>\checkpoint-* | Sort-Object Name -Descending | Select-Object -First 1
+   ```
+2. Export it (`--keep-source` is required for a mid-run check — without it, `export.py`
+   deletes the source checkpoint once the release is verified loadable, which you don't want
+   while the run is still live):
+   ```powershell
+   .venv\Scripts\python.exe scripts\export.py --checkpoint artifacts\<run-name>\checkpoint-00291000 --tokenizer data\tokenizer --output artifacts\<run-name>-sample-check-291000 --keep-source
+   ```
+   Naming the output folder after the checkpoint number (rather than reusing one fixed name)
+   lets you keep several snapshots around and actually compare progress across checkpoints,
+   instead of overwriting the same folder every time you check.
+3. Sample from it:
+   ```powershell
+   .venv\Scripts\python.exe scripts\sample.py --model artifacts\<run-name>-sample-check-291000 --prompt "Photosynthesis is the process by which plants" --device cpu --precision float16 --temperature 0.7 --top-k 40 --max-new-tokens 100
+   ```
+
+`--device cpu` is the right call whenever the GPU is busy training (i.e. always, mid-run) —
+export only reads the checkpoint file, so this never contends with or otherwise touches the
+live run either way. `artifacts/` is already git-ignored, so these throwaway exports never
+pollute the repo. Expect a real precision fallback message on CPU (`FP16 autocast is not
+reliably supported on cpu`) — that's the code correctly protecting you, not an error; a real
+FP16 measurement needs `--device cuda`. Also expect the completion quality itself to reflect
+genuine mid-training undertraining (e.g. repetition collapse after a coherent, on-topic start)
+well before a run nears completion — that's a real, expected signature of an undertrained
+checkpoint, not a bug in the export/sample path.
+
 ## Implemented CPU checks
 
 The current code supports the Edu/Modern path, resumable training, code/FIM, Muon, and assistant
