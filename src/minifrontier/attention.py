@@ -229,7 +229,8 @@ def manual_scaled_dot_product_attention(
     mask: torch.Tensor,
     dropout_p: float = 0.0,
     training: bool = False,
-) -> torch.Tensor:
+    return_weights: bool = False,
+) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """Readable attention reference over ``[batch, heads, sequence, head_dim]``.
 
     ``softmax(Q @ K^T / sqrt(head_dim) + mask) @ V``, spelled out step by step and
@@ -240,6 +241,15 @@ def manual_scaled_dot_product_attention(
     tensor below is ``[batch, heads, queries, keys]``, which at a 2,048-token
     context is millions of numbers per head. That is exactly the quadratic wall
     that SDPA and FlexAttention were built to get around.
+
+    ``return_weights`` -- off by default, so every existing caller (this is the
+    manual-attention path `CausalSelfAttention` runs in production, not just the
+    teaching labs) is unaffected -- also returns the post-softmax, post-dropout
+    ``[batch, heads, queries, keys]`` probability grid alongside the usual output.
+    This is the actual attention-weight matrix real interpretability tools (e.g.
+    a logit lens's cousin, attention visualization) inspect; only available on
+    this reference path since the fused SDPA/FlexAttention kernels never
+    materialize it.
     """
 
     if query.ndim != 4 or key.ndim != 4 or value.ndim != 4:
@@ -273,7 +283,10 @@ def manual_scaled_dot_product_attention(
     probabilities = F.dropout(probabilities, p=dropout_p, training=training)
     # The weighted blend of value vectors -> [B, H, Sq, D]. This is the answer.
     output = torch.matmul(probabilities, value.float())
-    return output.to(dtype=query.dtype)
+    output = output.to(dtype=query.dtype)
+    if return_weights:
+        return output, probabilities
+    return output
 
 
 class CausalSelfAttention(nn.Module):

@@ -28,6 +28,43 @@ def test_manual_attention_matches_sdpa_output_and_gradients() -> None:
         assert torch.allclose(tensor.grad, reference.grad, atol=2e-6)
 
 
+def test_manual_attention_return_weights_is_off_by_default() -> None:
+    """Every existing caller (CausalSelfAttention's own manual path included)
+    calls this without return_weights -- confirm the return type stays a bare
+    tensor, not a tuple, so nothing downstream needs to change."""
+
+    query = torch.randn(1, 1, 3, 4)
+    key = torch.randn(1, 1, 3, 4)
+    value = torch.randn(1, 1, 3, 4)
+    mask = build_attention_mask(3, 3)
+
+    result = manual_scaled_dot_product_attention(query, key, value, mask=mask)
+    assert isinstance(result, torch.Tensor)
+
+
+def test_manual_attention_return_weights_gives_a_real_probability_grid() -> None:
+    """The returned weights must be the actual post-softmax attention grid: one
+    row per query, summing to 1 over visible keys, and exactly zero on every
+    key the causal mask forbids -- not just some arbitrary same-shaped tensor."""
+
+    torch.manual_seed(7)
+    query = torch.randn(1, 2, 4, 8)
+    key = torch.randn(1, 2, 4, 8)
+    value = torch.randn(1, 2, 4, 8)
+    mask = build_attention_mask(4, 4)
+
+    output, weights = manual_scaled_dot_product_attention(
+        query, key, value, mask=mask, return_weights=True
+    )
+    assert weights.shape == (1, 2, 4, 4)
+    assert torch.allclose(weights.sum(dim=-1), torch.ones(1, 2, 4), atol=1e-6)
+    forbidden = ~mask.unsqueeze(0).unsqueeze(0).expand_as(weights)
+    assert torch.all(weights[forbidden] == 0.0)
+    # And the output this call returns must still match the return_weights=False path.
+    plain_output = manual_scaled_dot_product_attention(query, key, value, mask=mask)
+    assert torch.allclose(output, plain_output)
+
+
 def test_attention_module_manual_and_sdpa_match() -> None:
     torch.manual_seed(4)
     config = ModelConfig.tiny_edu()
