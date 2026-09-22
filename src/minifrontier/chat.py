@@ -166,6 +166,9 @@ def complete_text(
     temperature: float = 0.0,
     top_k: int | None = None,
     top_p: float = 1.0,
+    min_p: float = 0.0,
+    repetition_penalty: float = 1.0,
+    no_repeat_ngram_size: int | None = None,
     seed: int = 42,
     mtp_heads: MTPHeads | None = None,
 ) -> str:
@@ -175,8 +178,19 @@ def complete_text(
     # decoding -- its acceptance rule has no probability-ratio correction for
     # sampling yet. Any non-default temperature/top-k/top-p silently falls
     # back to plain decoding rather than producing an approximation under a
-    # decoding mode the guarantee doesn't cover.
-    if mtp_heads is not None and temperature == 0.0 and top_k is None and top_p == 1.0:
+    # decoding mode the guarantee doesn't cover. repetition_penalty/
+    # no_repeat_ngram_size join that same guard because, unlike min_p (a
+    # no-op under greedy -- see sample_next_token's temperature==0 early
+    # return), both are applied *before* the greedy argmax and can change
+    # which token wins -- min_p needs no guard for the same reason.
+    if (
+        mtp_heads is not None
+        and temperature == 0.0
+        and top_k is None
+        and top_p == 1.0
+        and repetition_penalty == 1.0
+        and no_repeat_ngram_size is None
+    ):
         generated, _stats = speculative_generate(
             model, mtp_heads, tokens, max_new_tokens=max_new_tokens, eos_id=tokenizer.eos_id
         )
@@ -188,6 +202,9 @@ def complete_text(
         temperature=temperature,
         top_k=top_k,
         top_p=top_p,
+        min_p=min_p,
+        repetition_penalty=repetition_penalty,
+        no_repeat_ngram_size=no_repeat_ngram_size,
         eos_id=tokenizer.eos_id,
         generator=generator,
     )

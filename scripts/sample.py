@@ -12,8 +12,18 @@
 # The interesting knobs are the decoding ones, and they change nothing about what
 # the model knows -- only how adventurously it picks from scores it has already
 # produced. `--temperature 0` (the default) is greedy and deterministic; raise it
-# for variety. `--top-k` and `--top-p` restrict the candidate pool. See
-# `sample_next_token` in `src/minifrontier/generation.py`.
+# for variety. `--top-k` and `--top-p` restrict the candidate pool. `--repetition-penalty`
+# and `--no-repeat-ngram-size` (both off by default, matching prior behavior) push back
+# on a model looping on its own output -- e.g. `--no-repeat-ngram-size 3` if you see
+# it stuck repeating a phrase or closing bracket. See `sample_next_token` in
+# `src/minifrontier/generation.py`.
+#
+# Multi-line prompts on the command line: most shells pass `--prompt "a\nb"` through
+# with a LITERAL backslash-n, not a real newline byte -- the model then sees two
+# unrelated tokens (`\` and `n`) instead of one newline, which reads as noise to it
+# and can visibly degrade a code completion. Pipe a real file with actual newlines
+# via stdin instead (omit `--prompt` and this script reads stdin), e.g.
+# `python scripts/sample.py --model ... < my_prompt.txt`.
 
 from __future__ import annotations
 
@@ -38,6 +48,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-k", type=int)
     parser.add_argument("--top-p", type=float, default=1.0)
+    parser.add_argument(
+        "--min-p",
+        type=float,
+        default=0.0,
+        help="adaptive floor: drop candidates below min_p * top-candidate probability",
+    )
+    parser.add_argument(
+        "--repetition-penalty",
+        type=float,
+        default=1.0,
+        help="1.0 disables (default); >1.0 discourages repeating already-emitted tokens",
+    )
+    parser.add_argument(
+        "--no-repeat-ngram-size",
+        type=int,
+        default=None,
+        help="hard-block any n-gram (size N) that would repeat one already emitted",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--no-speculative",
@@ -80,6 +108,9 @@ def main() -> None:
             temperature=args.temperature,
             top_k=args.top_k,
             top_p=args.top_p,
+            min_p=args.min_p,
+            repetition_penalty=args.repetition_penalty,
+            no_repeat_ngram_size=args.no_repeat_ngram_size,
             seed=args.seed,
             mtp_heads=mtp_heads,
         )

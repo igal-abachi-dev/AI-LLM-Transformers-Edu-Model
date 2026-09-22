@@ -593,6 +593,68 @@ genuine mid-training undertraining (e.g. repetition collapse after a coherent, o
 well before a run nears completion — that's a real, expected signature of an undertrained
 checkpoint, not a bug in the export/sample path.
 
+#### Testing a multi-line / code prompt against a mid-run checkpoint
+
+`--prompt "line one\nline two"` on the command line almost always does **not** work the way
+you'd expect: most shells pass `\n` through as two literal characters (backslash, `n`), not a
+real newline byte. The model then sees two unrelated tokens where a newline should be, which
+breaks up every line of a code prompt and can visibly degrade the completion — this looks like
+a model/tokenizer bug but is really an input-passing artifact. `sample.py` reads `stdin` when
+`--prompt` is omitted, so pipe a real file with genuine newlines instead:
+
+```powershell
+@'
+import { z } from 'zod';
+import { router, protectedProcedure } from '../trpc';
+
+export const userRouter = router({
+  updateRole: protectedProcedure
+    .input(z.object({ userId: z.string().uuid(), role: z.enum(['admin', 'member']) }))
+    .mutation(async ({ ctx, input }) => {
+'@ | Set-Content -Encoding utf8 test3.ts
+
+.venv\Scripts\python.exe scripts\sample.py --model artifacts\<run-name>-sample-check-291000 --no-repeat-ngram-size 2 --repetition-penalty 1.3 --max-new-tokens 35 < test3.ts
+```
+
+(bash/POSIX: `cat << 'EOF' > test3.ts` ... `EOF`, then `< test3.ts` the same way.)
+
+`--repetition-penalty`/`--no-repeat-ngram-size`/`--min-p` (all off by default, so existing
+invocations are unaffected) push back on a model looping on its own output — a real, common
+pattern well before a run nears completion, distinct from plain undertraining: greedy decoding
+plus no repetition control lets a token like `}` or `try {` become self-reinforcing once
+emitted, so the model repeats it until `--max-new-tokens` is reached rather than genuinely
+getting stuck on content. **Real, measured comparison against a live mid-run MF-070
+checkpoint (update 293,500/732,422, ~40%, pre-decay)**, same tRPC prompt above: plain greedy
+looped the literal closing brace forever; `--no-repeat-ngram-size 3 --repetition-penalty 1.15`
+broke that exact loop but drifted into a *different* repeating pattern (nested `try {` blocks,
+8+ levels deep). Verified directly against this project's own tokenizer: `\n` is one token
+regardless of indentation depth, but the whitespace run right after it is a *different* token
+at each depth (4/8/12/16 spaces are 4 distinct token IDs here) — so the 3-gram starting there
+never repeats even though the visible pattern obviously does, while the 2-gram `(" try", " {")`
+has no whitespace in it and repeats exactly every level. `--no-repeat-ngram-size 2
+--repetition-penalty 1.3` did break that — out after 2 nesting levels into different (if still
+weak/hallucinated) content — but **treat size-2 as a mid-run diagnostic knob only, not a
+general/production decoding default**: source code legitimately repeats 2-grams constantly and
+correctly (`return null;` across guard clauses, `if (err != nil)` throughout idiomatic Go,
+`const x = ...; const y = ...;`) — leaving it on for real sampling would block the model from
+ever legitimately repeating a short, correct idiom. A stricter setting only reduces *how long* a
+loop runs; it doesn't fix content quality — a base model this far from its decay phase (see the
+note above) is still expected to produce fluent-but-hollow or outright wrong completions even
+once it stops looping.
+
+A shorter-horizon prompt sidesteps the loop question entirely and gives a cleaner read on
+learned content specifically: prompt right up to an expression (e.g. ending in `await ctx.`)
+rather than after an opening brace, and keep `--max-new-tokens` around 15-18 — closer to how
+inline autocomplete tools actually query a model anyway. Real result from the same checkpoint,
+prompting `...const user = await ctx.` with 15 new tokens (plain greedy, no repetition control
+needed at this horizon — no loop occurred): it did not predict a tRPC-specific completion
+(`.prisma`/`.db`/`.user.update`) at all — it broke into a comment instead
+(`// If the user is not a consumer, the default is to use`), and at 40 tokens on the same
+prompt drifted into Java-flavored syntax (`StringUtils.isNotBlank`, `String[][]`). Real,
+directly-observed language drift this time (this prompt file has genuine newlines throughout,
+so it isn't the shell-escaping artifact above) — consistent with a still-pre-decay checkpoint
+not yet having crystallized this specific framework's idiom, not a bug in the sampling path.
+
 ## Implemented CPU checks
 
 The current code supports the Edu/Modern path, resumable training, code/FIM, Muon, and assistant

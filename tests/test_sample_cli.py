@@ -69,3 +69,57 @@ def test_sample_passes_none_when_release_has_no_mtp_heads(
     monkeypatch.setattr("sys.argv", _base_argv(release))
     sample.main()
     assert captured["mtp_heads"] is None
+
+
+def test_sample_defaults_leave_repetition_controls_disabled(
+    tmp_path, mini_tokenizer, monkeypatch
+) -> None:
+    """MF-149: the new flags must default to a no-op, preserving prior behavior
+    for every existing invocation that doesn't pass them."""
+
+    config = ModelConfig.tiny_edu(vocab_size=max(512, mini_tokenizer.vocab_size))
+    release = tmp_path / "release"
+    export_release(release, MiniFrontier(config), mini_tokenizer)
+    captured = {}
+
+    def fake_complete_text(model, tokenizer, prompt, **kwargs):
+        captured.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(sample, "complete_text", fake_complete_text)
+    monkeypatch.setattr("sys.argv", _base_argv(release))
+    sample.main()
+    assert captured["min_p"] == 0.0
+    assert captured["repetition_penalty"] == 1.0
+    assert captured["no_repeat_ngram_size"] is None
+
+
+def test_sample_wires_repetition_control_flags_through(
+    tmp_path, mini_tokenizer, monkeypatch
+) -> None:
+    config = ModelConfig.tiny_edu(vocab_size=max(512, mini_tokenizer.vocab_size))
+    release = tmp_path / "release"
+    export_release(release, MiniFrontier(config), mini_tokenizer)
+    captured = {}
+
+    def fake_complete_text(model, tokenizer, prompt, **kwargs):
+        captured.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(sample, "complete_text", fake_complete_text)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            *_base_argv(release),
+            "--min-p",
+            "0.05",
+            "--repetition-penalty",
+            "1.15",
+            "--no-repeat-ngram-size",
+            "3",
+        ],
+    )
+    sample.main()
+    assert captured["min_p"] == 0.05
+    assert captured["repetition_penalty"] == 1.15
+    assert captured["no_repeat_ngram_size"] == 3
