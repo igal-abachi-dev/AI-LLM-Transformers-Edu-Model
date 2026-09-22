@@ -175,6 +175,25 @@ def test_hybrid_schedule_is_three_local_then_global() -> None:
     ]
 
 
+def test_dense_modern_full_attention_is_already_supported_with_no_code_changes() -> None:
+    """MF-140 dense-Modern ablation scaffolding: a Modern preset (GQA, QK-Norm,
+    LayerNorm scaling, gated attention, head_dim_override all still on) with
+    attention_pattern="full" instead of the usual hybrid schedule. Confirms the
+    combination is structurally valid today -- every layer behaves as a global
+    layer, the same state Edu's own full-attention preset already relies on
+    (see README.md's own note on is_local_layer)."""
+
+    config = replace(ModelConfig.tiny_modern(), attention_pattern="full")
+    assert all(config.is_local_layer(index) is False for index in range(config.n_layers))
+    assert all(
+        config.position_encoding_for_layer(index) == "rope" for index in range(config.n_layers)
+    )
+    # Modern-only fields stay on -- attention_pattern="full" doesn't fall back to Edu.
+    assert config.preset == "modern"
+    assert config.qk_norm is True
+    assert config.n_kv_heads < config.n_heads  # GQA is still real here
+
+
 def test_global_rope_theta_defaults_to_rope_theta() -> None:
     config = ModelConfig.tiny_modern()
     assert config.global_rope_theta is None

@@ -475,6 +475,41 @@ def test_modern_cached_full_and_chunked_logits_match(global_position_encoding: s
     assert torch.equal(full.argmax(dim=-1), cached.argmax(dim=-1))
 
 
+def test_dense_modern_full_attention_forward_and_cached_logits_match() -> None:
+    """MF-140 dense-Modern ablation scaffolding: a real forward pass through a
+    Modern config with attention_pattern="full" (every layer global, no hybrid
+    local/global split) -- proving the combination isn't just config-valid
+    (see test_config.py) but actually builds and runs a real model, with cached
+    decode matching a full forward pass exactly like every other Modern
+    variant already tested in this file."""
+
+    torch.manual_seed(29)
+    config = replace(
+        ModelConfig.tiny_modern(max_seq_len=16, attention_impl="sdpa"),
+        attention_pattern="full",
+    )
+    model = MiniFrontier(config).eval()
+    tokens = torch.randint(0, config.vocab_size, (1, 11))
+    full = model(tokens).logits
+    cache = KVCache.allocate(
+        config,
+        batch_size=1,
+        device="cpu",
+        dtype=model.token_embedding.weight.dtype,
+        capacity=11,
+    )
+    cached = torch.cat(
+        (
+            model(tokens[:, :3], cache=cache).logits,
+            model(tokens[:, 3:7], cache=cache).logits,
+            model(tokens[:, 7:], cache=cache).logits,
+        ),
+        dim=1,
+    )
+    assert torch.allclose(full, cached, atol=2e-5)
+    assert torch.equal(full.argmax(dim=-1), cached.argmax(dim=-1))
+
+
 def test_modern_gqa_reduces_parameters_and_cache_bytes() -> None:
     edu_config = ModelConfig.tiny_edu(n_layers=4, d_model=32, n_heads=4, d_ff=96)
     modern_config = ModelConfig.tiny_modern(

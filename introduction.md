@@ -1871,7 +1871,7 @@ core papers for reading:
 3) Language Models are Few-Shot Learners (GPT-3, Brown et al., 2020) – arXiv:2005.14165
 
 
-other recommended books to read (optional):
+other recommended books to read (optional but high-value):
 1) Build a Large Language Model (From Scratch) - Sebastian Raschka
 2) AI Engineering - Chip Huyen
 3) Hands-On Large Language Models - Jay Alammar & Maarten Grootendorst
