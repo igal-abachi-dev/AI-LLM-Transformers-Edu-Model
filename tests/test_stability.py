@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from minifrontier.stability import (
@@ -80,3 +82,52 @@ def test_window_size_bounds_how_much_history_is_kept() -> None:
         monitor.observe(loss=1.0, grad_norm=1.0)
     assert len(monitor._loss_history) == 10
     assert len(monitor._grad_norm_history) == 10
+
+
+def test_nonfinite_loss_is_flagged_immediately_not_silently_accepted() -> None:
+    """Before the fix, Python's `nan > sigma_factor` is always False, so a NaN
+    loss was silently judged NOT anomalous on the call that introduced it."""
+
+    monitor = StabilityMonitor(window_size=128, sigma_factor=6.0)
+    for _ in range(MIN_OBSERVATIONS_BEFORE_DETECTION):
+        monitor.observe(loss=1.0, grad_norm=1.0)
+    observation = monitor.observe(loss=float("nan"), grad_norm=1.0)
+    assert observation.is_anomalous
+    assert observation.loss_z_score == float("inf")
+
+
+def test_nonfinite_grad_norm_is_flagged_immediately() -> None:
+    monitor = StabilityMonitor(window_size=128, sigma_factor=6.0)
+    for _ in range(MIN_OBSERVATIONS_BEFORE_DETECTION):
+        monitor.observe(loss=1.0, grad_norm=1.0)
+    observation = monitor.observe(loss=1.0, grad_norm=float("inf"))
+    assert observation.is_anomalous
+    assert observation.grad_norm_z_score == float("inf")
+
+
+def test_nonfinite_value_never_crashes_the_following_call() -> None:
+    """Real reproduction of the actual bug: a NaN loss used to be silently
+    appended to history (see the test above), and the *next* call would then
+    crash inside statistics.pstdev with AttributeError -- verified by direct
+    reproduction against Python 3.12's real `statistics` module before this fix
+    (pstdev raises `AttributeError: 'float' object has no attribute
+    'numerator'` once NaN is anywhere in its input). This must not crash before
+    OR after MIN_OBSERVATIONS_BEFORE_DETECTION worth of history exists."""
+
+    monitor = StabilityMonitor(window_size=128, sigma_factor=6.0)
+    for _ in range(MIN_OBSERVATIONS_BEFORE_DETECTION - 1):
+        monitor.observe(loss=1.0, grad_norm=1.0)
+    monitor.observe(loss=float("nan"), grad_norm=1.0)
+    # This call used to crash with AttributeError once enough history existed.
+    following = monitor.observe(loss=1.05, grad_norm=1.05)
+    assert isinstance(following.is_anomalous, bool)
+
+
+def test_nonfinite_value_is_not_folded_into_history() -> None:
+    monitor = StabilityMonitor(window_size=128, sigma_factor=6.0)
+    for _ in range(MIN_OBSERVATIONS_BEFORE_DETECTION + 5):
+        monitor.observe(loss=1.0, grad_norm=1.0)
+    monitor.observe(loss=float("nan"), grad_norm=float("inf"))
+    assert float("nan") not in monitor._loss_history
+    assert all(math.isfinite(value) for value in monitor._loss_history)
+    assert all(math.isfinite(value) for value in monitor._grad_norm_history)

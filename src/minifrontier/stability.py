@@ -32,6 +32,7 @@ abnormal is not evidence of that.
 
 from __future__ import annotations
 
+import math
 import statistics
 from collections import deque
 from dataclasses import dataclass
@@ -90,8 +91,27 @@ class StabilityMonitor:
 
         Call exactly once per optimizer update actually attempted, with the
         real values that update produced -- not, e.g., a running average.
+
+        A non-finite ``loss``/``grad_norm`` (real and routine under FP16+GradScaler,
+        see ``training.py``) is flagged immediately, before it ever reaches
+        ``statistics.pstdev`` -- that function raises ``AttributeError`` on a NaN
+        input (CPython's `statistics` module tries an internal exact-ratio
+        conversion that NaN has no `.numerator` for), and without this check the
+        crash would not even happen on *this* call: Python's `nan > sigma_factor`
+        is always `False`, so the broken value would be silently judged "not
+        anomalous," folded into history by the existing code below, and only
+        crash the *next* time `observe` runs and tries to compute statistics over
+        a history that now contains it. Neither value is folded into history
+        here, matching the same "a flagged value is never folded into future
+        history" rule every other anomaly already follows.
         """
 
+        if not math.isfinite(loss) or not math.isfinite(grad_norm):
+            return StabilityObservation(
+                is_anomalous=True,
+                loss_z_score=None if math.isfinite(loss) else float("inf"),
+                grad_norm_z_score=None if math.isfinite(grad_norm) else float("inf"),
+            )
         loss_z = self._z_score(self._loss_history, loss)
         grad_norm_z = self._z_score(self._grad_norm_history, grad_norm)
         is_anomalous = (loss_z is not None and loss_z > self.sigma_factor) or (
