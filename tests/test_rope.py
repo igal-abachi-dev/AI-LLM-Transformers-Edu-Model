@@ -94,3 +94,24 @@ def test_rope_matches_transformers_llama_primitive() -> None:
     )
     assert torch.equal(actual_query, expected_query)
     assert torch.equal(actual_key, expected_key)
+
+
+def test_inverse_frequency_stays_fp32_after_casting_to_bfloat16() -> None:
+    """`model.to(bfloat16)` (precision.cast_model_for_inference) used to round
+    this table's 8 mantissa bits, giving an angle error (distance * rounding
+    error) of several radians at long range -- verified separately at ~3.3 rad
+    for head_dim=96 at distance 2047. The table must survive a dtype cast exactly."""
+
+    rope = RoPE(head_dim=96, max_seq_len=2048)
+    exact = rope.inverse_frequency.clone()
+    rope_bf16 = rope.to(torch.bfloat16)
+    assert rope_bf16.inverse_frequency.dtype == torch.float32
+    assert torch.equal(rope_bf16.inverse_frequency, exact)
+
+
+def test_inverse_frequency_still_moves_device_when_cast() -> None:
+    """The FP32 rebuild must not skip the device move `_apply` is also for."""
+
+    rope = RoPE(head_dim=8, max_seq_len=16)
+    moved = rope.to(torch.device("cpu"))
+    assert moved.inverse_frequency.device == torch.device("cpu")

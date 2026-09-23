@@ -65,14 +65,21 @@ def score_python(
         raise ValueError("timeout_seconds must be positive")
     program = f"{source}\n{tests}\n"
     with tempfile.TemporaryDirectory(prefix="minifrontier-eval-") as directory:
-        completed = subprocess.run(
-            [sys.executable, "-I", "-c", program],
-            cwd=directory,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-            check=False,
-        )
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-I", "-c", program],
+                cwd=directory,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            # A model-written middle that loops forever (real risk: this is
+            # untrusted, model-generated code, run with no sandbox beyond
+            # `python -I` and a temp directory) is a failed test, not a reason
+            # to crash the whole evaluation run.
+            return CodeScore(True, True, False)
     return CodeScore(True, True, completed.returncode == 0)
 
 

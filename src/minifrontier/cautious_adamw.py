@@ -18,9 +18,10 @@ step size from shrinking as more elements get masked out, the learning rate
 for that step is scaled up by how much of the tensor was actually masked
 (``dim / (aligned_count + xi)``) -- this is also what lets the paper prove
 the modification preserves AdamW's own convergence guarantee, rather than
-being pure heuristic. Weight decay is applied afterward, unmasked, at that
-same scaled rate -- caution protects the gradient signal, not the
-regularizer.
+being pure heuristic. Weight decay is applied unmasked and decoupled, at the
+plain base learning rate (as in AdamW and the paper's reference code) --
+caution protects the gradient signal, not the regularizer, so the decay must
+not inherit the mask's rescaling.
 
 This is a from-scratch, readable reference implementation (a manual
 per-parameter loop, like ``muon.py``'s Newton-Schulz reference) rather than a
@@ -101,14 +102,20 @@ class CautiousAdamW(torch.optim.Optimizer):
                 moment_hat = exp_avg / bias_correction1
                 variance_hat = exp_avg_sq / bias_correction2
                 update = moment_hat / (variance_hat.sqrt() + eps)
+                # Decoupled weight decay at the BASE learning rate, exactly like
+                # torch.optim.AdamW and the paper's reference C-AdamW. It must not
+                # share the mask rescaling below: that factor is 1/(aligned
+                # fraction) -- ~1.6x on average in practice, and numel/xi (e.g.
+                # 786,432x for a 1024x768 weight) when a tensor's gradient is all
+                # zero -- which silently strengthened decay versus the AdamW
+                # baseline and can flip a weight's sign in one step.
+                if weight_decay:
+                    parameter.mul_(1 - lr * weight_decay)
                 # phi_t: 1 where this update element points the same way the
                 # current (not momentum-smoothed) gradient does, 0 otherwise.
                 mask = (update * gradient > 0).to(update.dtype)
                 # Rescale so a heavily-masked tensor still takes a full-size
                 # step on its surviving elements -- see module docstring.
                 scale = update.numel() / (mask.sum() + xi)
-                effective_lr = lr * scale
-                parameter.sub_(effective_lr * mask * update)
-                if weight_decay:
-                    parameter.sub_(effective_lr * weight_decay * parameter)
+                parameter.sub_(lr * scale * mask * update)
         return loss

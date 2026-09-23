@@ -1013,8 +1013,20 @@ def _extract_one_repo_documents(
     license_value = resolve_license(repo_name, destination)
     if license_value is None:
         return
+    clone_root = destination.resolve()
     for file_path in sorted(destination.rglob("*")):
+        # Never follow a symlink: git checks symlinks out as real filesystem
+        # links on Linux/WSL/macOS (Windows checks them out as small text files
+        # by default, so this is a real, platform-dependent gap, not a
+        # hypothetical one), so a repo file `x.py -> ../../../../etc/passwd` (or
+        # any absolute/out-of-tree target) would otherwise be read from OUTSIDE
+        # the clone and written into the training corpus. `Path.is_file()`
+        # follows symlinks, so this check must come before it, not rely on it.
+        if file_path.is_symlink():
+            continue
         if not file_path.is_file():
+            continue
+        if not file_path.resolve().is_relative_to(clone_root):
             continue
         relative_path = file_path.relative_to(destination)
         # Case-insensitive: real, confirmed case variants exist across these

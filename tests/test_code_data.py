@@ -3,9 +3,12 @@ from __future__ import annotations
 from minifrontier.code_data import (
     FIM_TRANSFORM_VERSION,
     CodeAdmissionStats,
+    CodeFilterConfig,
     deterministic_fim,
     filter_code_documents,
     mix_fim_documents,
+    redact_code_document,
+    redact_secrets_and_personal_data,
 )
 from minifrontier.data import Document, split_bucket
 from minifrontier.evaluation.code import (
@@ -30,22 +33,77 @@ def code_document(text: str, record_id: str, *, path: str = "src/module.py") -> 
     )
 
 
-def test_code_admission_filters_sensitive_generated_and_vendor_content() -> None:
+def test_code_admission_masks_secrets_and_pii_instead_of_dropping_the_file() -> None:
+    """A real secret/email costs only its own matched span, not the whole file's
+    real training signal -- an early real-corpus scan found the old reject-the-
+    whole-file behavior would have dropped ~14% of an already-curated, top-repo
+    GitHub corpus, overwhelmingly false positives on the loose phone/email
+    patterns. `generated`/`vendor` remain outright rejections -- those are a
+    content-quality signal about the whole file, not a localized span to mask."""
+
     good = code_document("def add(a, b):\n    return a + b\n# documented implementation", "good")
-    secret = code_document("api_key = 'super-secret-value-123'\nprint(api_key)", "secret")
+    secret = code_document(
+        "def connect():\n"
+        "    api_key = 'super-secret-value-123'\n"
+        "    client = Client(api_key=api_key)\n"
+        "    return client.ping()\n",
+        "secret",
+    )
     generated = code_document("# AUTO-GENERATED - DO NOT EDIT\nvalue = 1\n", "generated")
     vendor = code_document("def vendored():\n    return True\n", "vendor", path="vendor/x.py")
-    personal = code_document("owner = 'person@example.com'\nvalue = 1\n", "pii")
+    personal = code_document(
+        "def notify_owner():\n"
+        "    owner = 'person@example.com'\n"
+        "    send_email(owner, subject='build failed')\n",
+        "pii",
+    )
     stats = CodeAdmissionStats()
     admitted = list(filter_code_documents([good, secret, generated, vendor, personal], stats=stats))
-    assert admitted == [good]
-    assert stats.admitted == 1
-    assert stats.reasons == {
-        "secret_or_credential": 1,
-        "generated": 1,
-        "vendor_or_generated_path": 1,
-        "personal_data": 1,
-    }
+    assert [document.record_id for document in admitted] == ["good", "secret", "pii"]
+    assert stats.admitted == 3
+    assert stats.redacted == 2
+    assert stats.reasons == {"generated": 1, "vendor_or_generated_path": 1}
+    redacted_secret = next(document for document in admitted if document.record_id == "secret")
+    assert "super-secret-value-123" not in redacted_secret.text
+    assert "[REDACTED]" in redacted_secret.text
+    assert "client.ping()" in redacted_secret.text  # rest of the file survives
+    redacted_personal = next(document for document in admitted if document.record_id == "pii")
+    assert "person@example.com" not in redacted_personal.text
+    # Redaction changes content_hash but records the pre-redaction identity so
+    # the document stays on the same train/validation side it would have been
+    # on before redaction, the same pattern mix_fim_documents already uses.
+    assert redacted_secret.content_hash != secret.content_hash
+    assert redacted_secret.parent_content_hash == secret.content_hash
+
+
+def test_redact_secrets_and_personal_data_masks_only_the_matched_span() -> None:
+    text = "before\napi_key = 'super-secret-value-123'\nafter"
+    redacted, changed = redact_secrets_and_personal_data(text, CodeFilterConfig())
+    assert changed
+    assert "before" in redacted and "after" in redacted
+    assert "super-secret-value-123" not in redacted
+
+
+def test_redact_secrets_and_personal_data_leaves_clean_text_untouched() -> None:
+    text = "def add(a, b):\n    return a + b\n"
+    redacted, changed = redact_secrets_and_personal_data(text, CodeFilterConfig())
+    assert not changed
+    assert redacted == text
+
+
+def test_redact_personal_data_can_be_disabled_independently_of_secrets() -> None:
+    text = "contact: person@example.com\napi_key = 'super-secret-value-123'"
+    redacted, changed = redact_secrets_and_personal_data(
+        text, CodeFilterConfig(redact_personal_data=False)
+    )
+    assert changed
+    assert "person@example.com" in redacted  # personal-data redaction is off
+    assert "super-secret-value-123" not in redacted  # secrets are always redacted
+
+
+def test_redact_code_document_returns_the_same_object_when_nothing_matched() -> None:
+    document = code_document("def add(a, b):\n    return a + b\n", "clean")
+    assert redact_code_document(document, CodeFilterConfig()) is document
 
 
 def test_fim_transform_is_deterministic_reconstructable_and_versioned() -> None:

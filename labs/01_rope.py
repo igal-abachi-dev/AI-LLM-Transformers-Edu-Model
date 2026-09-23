@@ -11,9 +11,11 @@ faith:
    the last arrow slowest.
 2. The dot product between a rotated Query and a rotated Key -- the number
    attention actually compares -- depends only on the *distance* between their
-   positions, not on where in the sequence they sit. Query at position 5 and Key
-   at position 8 produce the same score as Query at position 50 and Key at
-   position 53: both are "3 apart".
+   positions, not on where in the sequence they sit. Key at position 5 and Query
+   at position 8 produce the same score as Key at position 50 and Query at
+   position 53: both are "3 apart". Key before Query, not the other way around --
+   that is the only direction causal attention ever actually looks: the current
+   token (Query) attending *back* at an earlier one (Key), never forward.
 
 Run it with::
 
@@ -53,28 +55,32 @@ def main() -> None:
     print("Each column grows linearly in position -- that is 'twist token 5 more than token 2'.")
 
     # Fact 2: relative-position invariance. Fix one Query and one Key vector, then
-    # rotate them at several (start, start + distance) position pairs sharing the
-    # same distance. The dot product between the rotated vectors should be
-    # constant across every start, because it depends only on the distance.
+    # rotate them at several (key_start, key_start + distance) position pairs
+    # sharing the same distance -- Key always the earlier position, Query the
+    # later one, matching the only direction causal attention ever actually
+    # looks (the current token attending back at an earlier one, never forward).
+    # The dot product between the rotated vectors should be constant across
+    # every key_start, because it depends only on the distance.
     torch.manual_seed(0)
     query = torch.randn(1, 1, 1, head_dim)
     key = torch.randn(1, 1, 1, head_dim)
     distance = 3
     print(f"\nFixed distance={distance}: Q@K dot product across different starting positions")
-    for start in (0, 1, 5, 20, 40):
-        query_position = torch.tensor([start])
-        key_position = torch.tensor([start + distance])
+    for key_start in (0, 1, 5, 20, 40):
+        key_position = torch.tensor([key_start])
+        query_position = torch.tensor([key_start + distance])
         q_cos, q_sin = rope(query_position, dtype=torch.float32, device=torch.device("cpu"))
         k_cos, k_sin = rope(key_position, dtype=torch.float32, device=torch.device("cpu"))
         rotated_query = apply_rotary(query, q_cos, q_sin)
         rotated_key = apply_rotary(key, k_cos, k_sin)
         dot_product = (rotated_query * rotated_key).sum().item()
-        print(f"  Query@{start:<3} Key@{start + distance:<3} -> dot product = {dot_product:.6f}")
+        query_start = key_start + distance
+        print(f"  Key@{key_start:<3} Query@{query_start:<3} -> dot product = {dot_product:.6f}")
 
     print("\nNow vary the distance itself -- the dot product should change:")
     for distance in (0, 1, 3, 10):
-        query_position = torch.tensor([7])
-        key_position = torch.tensor([7 + distance])
+        key_position = torch.tensor([7])
+        query_position = torch.tensor([7 + distance])
         q_cos, q_sin = rope(query_position, dtype=torch.float32, device=torch.device("cpu"))
         k_cos, k_sin = rope(key_position, dtype=torch.float32, device=torch.device("cpu"))
         rotated_query = apply_rotary(query, q_cos, q_sin)

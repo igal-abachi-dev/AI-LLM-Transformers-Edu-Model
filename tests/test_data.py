@@ -1257,3 +1257,36 @@ def test_iterable_dataset_worker_sharding_is_deterministic(monkeypatch) -> None:
     first = [tensor.tolist() for tensor in PackedTokenDataset(sequences)]
     second = [tensor.tolist() for tensor in PackedTokenDataset(sequences)]
     assert first == second == [[1, 1], [3, 3], [5, 5]]
+
+
+def test_repo_ingestion_never_follows_symlinks_out_of_the_clone(tmp_path) -> None:
+    """Real, reproduced risk: git checks symlinks out as real filesystem links on
+    Linux/WSL/macOS, so a repo file `leak.py -> ../outside.txt` (or a symlinked
+    directory) would otherwise read content from OUTSIDE the clone into the
+    training corpus. `Path.is_file()` follows symlinks, so this must be checked
+    before relying on it."""
+
+    from minifrontier.data import _extract_one_repo_documents
+
+    outside = tmp_path / "outside.txt"
+    outside.write_text("PRIVATE_KEY_MATERIAL outside the clone\n", encoding="utf-8")
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "src" / "ok.py").write_text("print('ok')\n", encoding="utf-8")
+    (tmp_path / "outside_dir").mkdir()
+    (tmp_path / "outside_dir" / "secret.py").write_text("TOKEN = 1\n", encoding="utf-8")
+    try:
+        (repo / "src" / "leak.py").symlink_to(outside)
+        (repo / "linked_dir").symlink_to(tmp_path / "outside_dir", target_is_directory=True)
+    except OSError:
+        pytest.skip("this environment cannot create symlinks (needs elevated Windows privileges)")
+
+    documents = list(
+        _extract_one_repo_documents(
+            "o/r",
+            repo,
+            clone_repo=lambda name, dest: "abc123",
+            resolve_license=lambda name, dest: "MIT",
+        )
+    )
+    assert [document.path for document in documents] == ["src/ok.py"]

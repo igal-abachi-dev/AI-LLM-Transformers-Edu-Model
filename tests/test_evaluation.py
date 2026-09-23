@@ -85,6 +85,19 @@ def test_code_and_fim_scoring_is_explicit_and_tested() -> None:
     assert fim.exact and fim.functional
 
 
+def test_score_python_treats_a_non_terminating_program_as_a_failed_test() -> None:
+    """Real risk: this executes untrusted, model-generated code with no sandbox
+    beyond `python -I` and a temp directory -- a model-written infinite loop
+    must score as a failed test, not crash the whole evaluation run."""
+
+    source = "def loop():\n    while True:\n        pass\n"
+    tests = "loop()"
+    score = score_python(source, tests=tests, execute_trusted_fixture=True, timeout_seconds=0.5)
+    assert score.syntax_valid
+    assert score.compiles
+    assert score.tests_passed is False
+
+
 @pytest.mark.skipif(not dotnet_available(), reason="dotnet SDK not found on PATH")
 def test_score_csharp_compiles_a_real_method_wrapped_in_a_class() -> None:
     source = "int Add(int a, int b)\n{\n    return a + b;\n}\n"

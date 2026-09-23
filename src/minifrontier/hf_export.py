@@ -156,7 +156,10 @@ def export_transformers_repository(
     )
     GenerationConfig(
         bos_token_id=tokenizer.bos_id,
-        eos_token_id=tokenizer.eos_id,
+        # Chat turns end with <|eot|> (MF-103), documents with <|eos|>. With only
+        # <|eos|> here, HF generate()/vLLM would run straight past the end of an
+        # assistant turn and start inventing the next user turn.
+        eos_token_id=[tokenizer.eos_id, tokenizer.eot_id],
         pad_token_id=tokenizer.pad_id,
         max_length=native.config.max_seq_len,
         do_sample=False,

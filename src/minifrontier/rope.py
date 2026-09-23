@@ -105,6 +105,14 @@ class RoPE(nn.Module):
             raise ValueError("max_seq_len and theta must be positive")
         self.head_dim = head_dim
         self.max_seq_len = max_seq_len
+        self.theta = theta
+        # A buffer, not a Parameter: it moves with the model but is never trained.
+        # persistent=False keeps it out of checkpoints since it is recomputable.
+        self.register_buffer(
+            "inverse_frequency", self._fp32_inverse_frequency(device=None), persistent=False
+        )
+
+    def _fp32_inverse_frequency(self, device: torch.device | None) -> torch.Tensor:
         # One rotation speed per arrow: 1 / theta**(2i/head_dim) for i = 0, 1, 2...
         # Arrow 0 advances a full radian per token, so it comes back around every
         # six or so -- useful for "is this token right next to me?". The slowest
@@ -112,12 +120,24 @@ class RoPE(nn.Module):
         # moves across the whole context and encodes coarse, long-range distance.
         # Raising `theta` slows every arrow down, which is the standard knob for
         # stretching an already-trained model to longer contexts.
-        inverse_frequency = 1.0 / (
-            theta ** (torch.arange(0, head_dim, 2, dtype=torch.float32) / head_dim)
-        )
-        # A buffer, not a Parameter: it moves with the model but is never trained.
-        # persistent=False keeps it out of checkpoints since it is recomputable.
-        self.register_buffer("inverse_frequency", inverse_frequency, persistent=False)
+        exponents = torch.arange(0, self.head_dim, 2, dtype=torch.float32, device=device)
+        return 1.0 / (self.theta ** (exponents / self.head_dim))
+
+    def _apply(self, fn, recurse: bool = True):  # type: ignore[no-untyped-def]
+        # `cast_model_for_inference(bfloat16/float16)` calls `model.to(dtype)`,
+        # which casts every floating buffer -- this table included. Rounding these
+        # rotation speeds to 8 (BF16) or 10 (FP16) mantissa bits and then
+        # multiplying by position gives an angle error that GROWS with distance:
+        # empirically ~0.2 rad at 128 tokens, ~0.8 at 512, ~3.3 at 2047 for
+        # head_dim=96 in BF16 -- more than half a full rotation, scrambling
+        # relative position at exactly the long-range end RoPE exists to encode.
+        # Training never casts the model this way, so this only bites inference
+        # (sample.py/chat.py/eval.py/inspect_attention.py under --precision
+        # bfloat16/float16, or "auto" on hardware where that's what auto picks).
+        # Follow the device move, but always rebuild the table in FP32.
+        result = super()._apply(fn, recurse)
+        self.inverse_frequency = self._fp32_inverse_frequency(self.inverse_frequency.device)
+        return result
 
     def forward(
         self,

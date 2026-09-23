@@ -337,7 +337,11 @@ def export_release(
         json.dumps(
             {
                 "bos_token_id": tokenizer.bos_id,
-                "eos_token_id": tokenizer.eos_id,
+                # Both stop tokens: <|eos|> ends a document, <|eot|> a chat turn
+                # (MF-103). With only <|eos|> here, generation would run straight
+                # past the end of an assistant turn and start inventing the next
+                # user turn.
+                "eos_token_id": [tokenizer.eos_id, tokenizer.eot_id],
                 "pad_token_id": tokenizer.pad_id,
                 "max_length": model.config.max_seq_len,
                 "do_sample": False,

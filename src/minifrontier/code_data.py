@@ -46,6 +46,7 @@ _EMAIL_PATTERN = re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
 _PHONE_PATTERN = re.compile(r"(?<!\d)(?:\+?\d[\d .()-]{8,}\d)(?!\d)")
 _GENERATED_MARKERS = ("@generated", "generated file", "do not edit", "auto-generated")
 _VENDOR_PARTS = {"node_modules", "vendor", "third_party", "dist", "build"}
+_REDACTION_PLACEHOLDER = "[REDACTED]"
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +55,7 @@ class CodeFilterConfig:
     max_characters: int = 1_000_000
     max_line_length: int = 2_000
     max_average_line_length: float = 300.0
-    reject_personal_data: bool = True
+    redact_personal_data: bool = True
 
 
 @dataclass(slots=True)
@@ -62,13 +63,68 @@ class CodeAdmissionStats:
     version: str = CODE_ADMISSION_VERSION
     seen: int = 0
     admitted: int = 0
+    redacted: int = 0
     reasons: dict[str, int] = field(default_factory=dict)
 
     def reject(self, reason: str) -> None:
         self.reasons[reason] = self.reasons.get(reason, 0) + 1
 
 
+def redact_secrets_and_personal_data(text: str, config: CodeFilterConfig) -> tuple[str, bool]:
+    """Replace matched secrets/credentials (and, if enabled, emails/phone numbers)
+    with a fixed placeholder, keeping the surrounding file intact.
+
+    A real secret makes the whole file worth dropping -- a model that memorizes
+    a leaked key will happily reproduce it. But a *rare, real* email or phone
+    number in an otherwise ordinary, legitimate file (a code comment, a sample
+    config) does not, and this project's own early real-corpus scan found the
+    email/phone patterns alone would reject ~11% of an already-curated,
+    top-repo GitHub corpus -- overwhelmingly false positives (version strings,
+    hashes, IDs matching the phone pattern's loose digit-run shape), not real
+    PII. Masking only the matched span, rather than dropping the whole
+    document, keeps that file's real training signal instead of losing it.
+    """
+
+    redacted = False
+
+    def _replace(match: re.Match[str]) -> str:
+        nonlocal redacted
+        redacted = True
+        return _REDACTION_PLACEHOLDER
+
+    for pattern in _SECRET_PATTERNS:
+        text = pattern.sub(_replace, text)
+    if config.redact_personal_data:
+        text = _EMAIL_PATTERN.sub(_replace, text)
+        text = _PHONE_PATTERN.sub(_replace, text)
+    return text, redacted
+
+
+def redact_code_document(document: Document, config: CodeFilterConfig) -> Document:
+    """Return `document` with any secret/personal-data spans masked.
+
+    Only rebuilds the document (with a fresh `content_hash`, `parent_content_hash`
+    preserving the pre-redaction identity so it stays on the same train/validation
+    side as it would have without redaction -- the same pattern `mix_fim_documents`
+    already uses) when something was actually matched; an unaffected document is
+    returned unchanged, not needlessly recomputed.
+    """
+
+    redacted_text, changed = redact_secrets_and_personal_data(document.text, config)
+    if not changed:
+        return document
+    return replace(
+        document,
+        text=redacted_text,
+        content_hash=content_sha256(redacted_text),
+        parent_content_hash=document.parent_content_hash or document.content_hash,
+    )
+
+
 def code_rejection_reason(document: Document, config: CodeFilterConfig) -> str | None:
+    """Structural admission only -- secrets/personal data are handled by
+    redaction (`redact_code_document`), not rejection; call that first."""
+
     if document.source_type != "code":
         return "not_code"
     if not document.path:
@@ -86,10 +142,6 @@ def code_rejection_reason(document: Document, config: CodeFilterConfig) -> str |
     lowered = text[:2_000].casefold()
     if any(marker in lowered for marker in _GENERATED_MARKERS):
         return "generated"
-    if any(pattern.search(text) for pattern in _SECRET_PATTERNS):
-        return "secret_or_credential"
-    if config.reject_personal_data and (_EMAIL_PATTERN.search(text) or _PHONE_PATTERN.search(text)):
-        return "personal_data"
     lines = text.splitlines() or [text]
     if max(map(len, lines)) > config.max_line_length:
         return "minified_or_malformed"
@@ -104,17 +156,22 @@ def filter_code_documents(
     config: CodeFilterConfig | None = None,
     stats: CodeAdmissionStats,
 ) -> Any:
-    """Yield approved code while retaining aggregate reasons, never rejected text."""
+    """Redact secrets/personal data, then yield approved code, keeping aggregate
+    reasons -- never a rejected document's real text, but a redacted document's
+    surviving text (with the sensitive span masked, not the whole file lost)."""
 
     config = config or CodeFilterConfig()
     for document in documents:
         stats.seen += 1
-        reason = code_rejection_reason(document, config)
+        redacted_document = redact_code_document(document, config)
+        if redacted_document is not document:
+            stats.redacted += 1
+        reason = code_rejection_reason(redacted_document, config)
         if reason is not None:
             stats.reject(reason)
             continue
         stats.admitted += 1
-        yield document
+        yield redacted_document
 
 
 @dataclass(frozen=True, slots=True)

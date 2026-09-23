@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 from pathlib import Path
 
 from minifrontier.chat import (
@@ -65,8 +66,32 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="hard-block any n-gram (size N) that would repeat one already emitted",
     )
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="base seed; each turn derives its own seed from this plus its turn "
+        "number, so repeating a question doesn't always give the same reply -- "
+        "the whole session's sequence of turns is still fully reproducible given "
+        "the same base seed",
+    )
     return parser.parse_args()
+
+
+def _turn_seed(base_seed: int, turn_index: int) -> int:
+    """Derive one turn's own seed from the session's base seed, deterministically.
+
+    A fixed `seed=args.seed` reused on every turn (the prior behavior) meant the
+    same question always got the same reply within a session -- and always would,
+    on any repeated question, since `complete_text`'s own `torch.Generator` starts
+    fresh from that seed each call. Same derivation idiom already used elsewhere
+    in this project (`training.py`'s per-epoch shuffle seed, `code_data.py`'s FIM
+    selection) -- real per-context variety without sacrificing reproducibility:
+    the same `--seed` still reproduces the exact same sequence of turn seeds.
+    """
+
+    digest = hashlib.sha256(f"{base_seed}:{turn_index}".encode()).digest()
+    return int.from_bytes(digest[:8], "big")
 
 
 def main() -> None:
@@ -87,6 +112,7 @@ def main() -> None:
         system_prompt = load_system_prompt(release_prompt if release_prompt.exists() else None)
     messages = [ChatMessage("system", system_prompt)] if system_prompt else []
     suppress_token_ids = non_assistant_special_token_ids()
+    turn_index = 0
     while True:
         try:
             prompt = input("user> ")
@@ -108,8 +134,9 @@ def main() -> None:
                 repetition_penalty=args.repetition_penalty,
                 no_repeat_ngram_size=args.no_repeat_ngram_size,
                 suppress_token_ids=suppress_token_ids,
-                seed=args.seed,
+                seed=_turn_seed(args.seed, turn_index),
             )
+            turn_index += 1
         except ValueError as error:
             messages.pop()
             print(f"error: {error}")

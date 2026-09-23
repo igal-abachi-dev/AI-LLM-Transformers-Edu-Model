@@ -24,6 +24,7 @@ import shutil
 from dataclasses import asdict
 from pathlib import Path
 
+from minifrontier.code_data import CodeAdmissionStats, filter_code_documents
 from minifrontier.data import (
     iter_cosmopedia_v2,
     iter_dclm_edu,
@@ -226,8 +227,15 @@ def prepare_output_directories(
         shutil.rmtree(path)
 
 
-def document_stream(args: argparse.Namespace):
-    """Select a bounded streaming source without creating an intermediate corpus file."""
+def document_stream(args: argparse.Namespace, *, code_stats: CodeAdmissionStats | None = None):
+    """Select a bounded streaming source without creating an intermediate corpus file.
+
+    ``code_stats``, when given, is only consulted for ``--source github-code``:
+    that branch routes through `filter_code_documents` (secret/personal-data
+    redaction, generated/vendor-path rejection -- see `code_data.py`) before
+    `admit_documents`'s own generic length/dedup/contamination checks ever see
+    it. Every other source is prose, not code, and is unaffected.
+    """
 
     if args.manifest is not None:
         if args.limit is not None or args.start or args.shuffle_seed is not None:
@@ -264,6 +272,7 @@ def document_stream(args: argparse.Namespace):
             shuffle_buffer=args.shuffle_buffer,
         )
     if args.source == "github-code":
+        code_stats = code_stats if code_stats is not None else CodeAdmissionStats()
         if args.github_repo_allowlist is not None:
             repo_names = [
                 line.strip()
@@ -275,7 +284,7 @@ def document_stream(args: argparse.Namespace):
             # `git clone --depth 1`) instead of scanning
             # codeparrot/github-code, a static 2022-03-16 snapshot, for
             # them. See iter_github_code_from_repos's own docstring.
-            return iter_github_code_from_repos(
+            stream = iter_github_code_from_repos(
                 repo_names,
                 languages=args.github_languages,
                 limit=args.limit,
@@ -283,14 +292,16 @@ def document_stream(args: argparse.Namespace):
                 shuffle_seed=args.shuffle_seed,
                 force_refresh=args.github_force_refresh,
             )
-        return iter_github_code(
-            languages=args.github_languages,
-            repo_names=None,
-            limit=args.limit,
-            start=args.start,
-            shuffle_seed=args.shuffle_seed,
-            shuffle_buffer=args.shuffle_buffer,
-        )
+        else:
+            stream = iter_github_code(
+                languages=args.github_languages,
+                repo_names=None,
+                limit=args.limit,
+                start=args.start,
+                shuffle_seed=args.shuffle_seed,
+                shuffle_buffer=args.shuffle_buffer,
+            )
+        return filter_code_documents(stream, stats=code_stats)
     if args.source == "ebook-markdown":
         if args.ebook_directory is None:
             raise ValueError("--source ebook-markdown requires --ebook-directory")
@@ -321,6 +332,7 @@ def main() -> None:
     if args.evaluation_signatures is not None:
         signatures = json.loads(args.evaluation_signatures.read_text(encoding="utf-8"))
     stats = AdmissionStats()
+    code_stats = CodeAdmissionStats()
     train_writer = TokenShardWriter(
         args.output / "train",
         tokenizer,
@@ -353,7 +365,7 @@ def main() -> None:
         max_hamming_distance=stats.max_hamming_distance,
     ) as deduplicator:
         admitted = admit_documents(
-            document_stream(args),
+            document_stream(args, code_stats=code_stats),
             deduplicator,
             stats=stats,
             evaluation_exact_hashes=set(signatures["exact"]),
@@ -379,6 +391,7 @@ def main() -> None:
     )
     metadata = {
         "admission": asdict(stats),
+        "code_admission": asdict(code_stats) if args.source == "github-code" else None,
         "source": args.source or "manifest",
         "source_manifest": str(args.manifest) if args.manifest is not None else None,
         "source_start": args.start if args.source is not None else None,

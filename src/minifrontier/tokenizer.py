@@ -294,13 +294,35 @@ class MiniFrontierTokenizer:
         *,
         add_bos: bool = False,
         add_eos: bool = False,
+        allow_special_tokens: bool = False,
     ) -> list[int]:
+        """Encode text; marker strings inside it stay plain text unless allowed.
+
+        By default a literal ``"<|assistant|>"`` or ``"<|eos|>"`` appearing in the
+        text -- a web page about chat templates, a Zephyr/Phi-3 config in a code
+        repo, a user typing it into chat -- is tokenized as ordinary characters,
+        never as the control token. Otherwise pretraining data teaches role
+        markers in random contexts, and any chat user can forge an assistant turn
+        or end-of-turn. Only text this project renders itself with markers on
+        purpose (FIM rewrites, see ``code_data.FIMTransform.render``) passes
+        ``allow_special_tokens=True``.
+        """
+
         if not isinstance(text, str):
             raise TypeError("text must be a string")
         # add_special_tokens=False keeps the library from inserting markers of its
         # own: in this project the caller decides explicitly, via the flags below.
         # Not doing so silently changes what the model is trained to expect.
-        token_ids = self.backend.encode(text, add_special_tokens=False).ids
+        # encode_special_tokens is a different, separate switch (real, verified
+        # directly): it controls whether special-token TEXT already inside the
+        # input is recognized as the atomic token during encoding, independent of
+        # add_special_tokens's own auto-insertion behavior above.
+        previous = self.backend.encode_special_tokens
+        self.backend.encode_special_tokens = not allow_special_tokens
+        try:
+            token_ids = self.backend.encode(text, add_special_tokens=False).ids
+        finally:
+            self.backend.encode_special_tokens = previous
         if add_bos:
             token_ids.insert(0, self.bos_id)
         if add_eos:

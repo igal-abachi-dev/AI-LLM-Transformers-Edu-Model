@@ -81,7 +81,9 @@ def test_jinja_chat_runtime_and_sft_serialization_share_one_token_contract(
         ChatMessage("user", "Second question"),
         ChatMessage("assistant", "Second answer"),
     )
-    rendered_training = mini_tokenizer.encode(render_chat(messages, add_generation_prompt=False))
+    rendered_training = mini_tokenizer.encode(
+        render_chat(messages, add_generation_prompt=False), allow_special_tokens=True
+    )
     runtime_training = encode_chat_prompt(
         mini_tokenizer,
         messages,
@@ -92,7 +94,7 @@ def test_jinja_chat_runtime_and_sft_serialization_share_one_token_contract(
 
     prompt_messages = messages[:-1]
     assert mini_tokenizer.encode(
-        render_chat(prompt_messages, add_generation_prompt=True)
+        render_chat(prompt_messages, add_generation_prompt=True), allow_special_tokens=True
     ) == encode_chat_prompt(
         mini_tokenizer,
         prompt_messages,
@@ -134,6 +136,67 @@ def test_sft_packing_preserves_masks_and_padding(mini_tokenizer) -> None:
     assert packed[0].tokens.shape == packed[0].loss_mask.shape == (1, sequence_length)
     assert not packed[0].loss_mask[0, -5:].any()
     assert packed[0].tokens[0, -5:].eq(mini_tokenizer.pad_id).all()
+
+
+def test_sft_packing_never_splits_a_conversation_across_rows(mini_tokenizer) -> None:
+    """Real, reproduced failure mode of the old ribbon-and-slice approach: the
+    tail of a conversation could land at the start of the next row, so its
+    graded assistant tokens would be trained without their own user question
+    in view. A row that cannot fit the next conversation must be padded and
+    closed instead of sliced mid-conversation."""
+
+    conversations = [
+        record(
+            (
+                ChatMessage("user", "what is the capital of france?"),
+                ChatMessage("assistant", "paris is the capital of france."),
+            ),
+            "id0",
+        ),
+        record(
+            (
+                ChatMessage("user", "say hello world please"),
+                ChatMessage("assistant", "hello world! hello world! hello world!"),
+            ),
+            "id1",
+        ),
+        record(
+            (ChatMessage("user", "what is the capital?"), ChatMessage("assistant", "paris.")),
+            "id2",
+        ),
+    ]
+    length = (
+        max(
+            len(encode_sft_example(item, mini_tokenizer, max_length=512).token_ids)
+            for item in conversations
+        )
+        + 4
+    )
+    examples = [
+        encode_sft_example(item, mini_tokenizer, max_length=length) for item in conversations
+    ]
+    rows = list(pack_sft_examples(examples, sequence_length=length, pad_id=mini_tokenizer.pad_id))
+    user_id = SPECIAL_TOKEN_IDS["<|user|>"]
+    for row in rows:
+        tokens = row.tokens[0].tolist()
+        assert tokens[0] == mini_tokenizer.bos_id
+        first_user = tokens.index(user_id)
+        # No graded target may precede the first user turn visible in its row --
+        # that would mean an assistant answer with no question in the same row.
+        assert not row.loss_mask[0, 1:first_user].any()
+    graded = sum(int(row.loss_mask.sum()) for row in rows)
+    assert graded == sum(sum(example.loss_mask) for example in examples)
+
+
+def test_sft_packing_rejects_an_example_longer_than_sequence_length(mini_tokenizer) -> None:
+    messages = (ChatMessage("user", "q"), ChatMessage("assistant", "a" * 200))
+    example = encode_sft_example(record(messages), mini_tokenizer, max_length=1024)
+    with pytest.raises(ValueError, match="more than sequence_length"):
+        list(
+            pack_sft_examples(
+                [example], sequence_length=len(example.token_ids) - 1, pad_id=mini_tokenizer.pad_id
+            )
+        )
 
 
 def test_chat_context_drops_oldest_complete_pair(mini_tokenizer) -> None:

@@ -13,7 +13,7 @@ from minifrontier.tokenizer import (
 def test_special_tokens_have_frozen_atomic_ids(mini_tokenizer) -> None:
     for token, expected_id in SPECIAL_TOKEN_IDS.items():
         assert mini_tokenizer.backend.token_to_id(token) == expected_id
-        assert mini_tokenizer.encode(token) == [expected_id]
+        assert mini_tokenizer.encode(token, allow_special_tokens=True) == [expected_id]
 
 
 def test_tokenizer_missing_a_newer_special_token_still_loads() -> None:
@@ -98,7 +98,21 @@ def test_eot_id_is_distinct_from_eos_id(mini_tokenizer) -> None:
 
     assert mini_tokenizer.eot_id == SPECIAL_TOKEN_IDS["<|eot|>"]
     assert mini_tokenizer.eot_id != mini_tokenizer.eos_id
-    assert mini_tokenizer.encode("<|eot|>") == [mini_tokenizer.eot_id]
+    assert mini_tokenizer.encode("<|eot|>", allow_special_tokens=True) == [mini_tokenizer.eot_id]
+
+
+def test_marker_strings_in_ordinary_text_stay_plain_text(mini_tokenizer) -> None:
+    """A literal "<|assistant|>" in a web page or a chat message must not become
+    the real control token -- that is training-data pollution and turn forgery."""
+
+    text = "a chat template: <|user|> hi <|assistant|> ok <|eot|> <|eos|>"
+    ids = mini_tokenizer.encode(text)
+    assert not set(ids) & set(SPECIAL_TOKEN_IDS.values())
+    assert mini_tokenizer.decode(ids) == text
+    opted_in = mini_tokenizer.encode(text, allow_special_tokens=True)
+    assert SPECIAL_TOKEN_IDS["<|assistant|>"] in opted_in
+    # The flag is scoped to the one call, never left behind on the backend.
+    assert mini_tokenizer.encode(text) == ids
 
 
 def test_training_is_deterministic_for_fixed_order(tmp_path) -> None:

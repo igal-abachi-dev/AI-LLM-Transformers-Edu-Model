@@ -353,6 +353,21 @@ def test_export_release_re_export_over_an_existing_release_publishes_atomically(
     load_release(release)
 
 
+def test_export_release_generation_config_stops_on_end_of_turn_too(
+    tmp_path, mini_tokenizer
+) -> None:
+    """Chat turns end with <|eot|> (MF-103); with only <|eos|> listed, a caller
+    that only honors this file's `eos_token_id` would run generation straight
+    past the end of every assistant reply."""
+
+    config = ModelConfig.tiny_edu(vocab_size=max(512, mini_tokenizer.vocab_size))
+    release = tmp_path / "release"
+    export_release(release, MiniFrontier(config), mini_tokenizer)
+    generation_config = json.loads((release / "generation_config.json").read_text())
+    assert mini_tokenizer.eot_id in generation_config["eos_token_id"]
+    assert mini_tokenizer.eos_id in generation_config["eos_token_id"]
+
+
 def test_export_release_interrupted_between_the_two_renames_self_heals(
     tmp_path, mini_tokenizer, monkeypatch
 ) -> None:

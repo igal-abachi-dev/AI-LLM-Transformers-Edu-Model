@@ -10,6 +10,7 @@ from transformers import (
     AutoModel,
     AutoModelForCausalLM,
     AutoTokenizer,
+    GenerationConfig,
     dynamic_module_utils,
 )
 
@@ -192,6 +193,27 @@ def test_hub_repository_auto_classes_load_locally(
         AutoModelForCausalLM.from_pretrained(output, trust_remote_code=True).__class__.__name__
         == "MiniFrontierForCausalLM"
     )
+
+
+def test_export_transformers_repository_generation_config_stops_on_end_of_turn(
+    tmp_path: Path, mini_tokenizer
+) -> None:
+    """Chat turns end with <|eot|> (MF-103); with only <|eos|> listed, HF
+    generate()/vLLM would run past the end of every assistant reply and start
+    inventing the next user turn."""
+
+    native_release = tmp_path / "native"
+    output = tmp_path / "hub"
+    config = ModelConfig.tiny_edu(vocab_size=max(512, mini_tokenizer.vocab_size))
+    export_release(native_release, MiniFrontier(config), mini_tokenizer)
+    export_transformers_repository(
+        native_release,
+        output,
+        source_revision="0123456789abcdef0123456789abcdef01234567",
+    )
+    generation_config = GenerationConfig.from_pretrained(output)
+    assert mini_tokenizer.eot_id in generation_config.eos_token_id
+    assert mini_tokenizer.eos_id in generation_config.eos_token_id
     tokenizer = AutoTokenizer.from_pretrained(output, trust_remote_code=True)
     assert tokenizer.bos_token_id == mini_tokenizer.bos_id
     assert tokenizer.eos_token_id == mini_tokenizer.eos_id

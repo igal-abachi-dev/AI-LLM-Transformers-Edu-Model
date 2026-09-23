@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import random
 
 import pytest
 
@@ -61,19 +62,56 @@ def test_does_not_tolerate_realistic_noise_as_a_false_positive() -> None:
     assert not any(flags)
 
 
-def test_an_anomalous_observation_is_not_folded_into_future_history() -> None:
-    """Confirms the real design decision stated in the module docstring: a
-    flagged value must not corrupt what "normal" means for the next check."""
+def test_a_spike_is_clipped_before_folding_so_it_cannot_inflate_normal() -> None:
+    """Confirms the real design: a flagged value is folded into history, but
+    clipped to the anomaly ceiling -- so it cannot corrupt what "normal" means
+    for the next check the way folding it in at full value would."""
 
     monitor = StabilityMonitor(window_size=128, sigma_factor=3.0)
-    for _ in range(MIN_OBSERVATIONS_BEFORE_DETECTION + 5):
-        monitor.observe(loss=1.0, grad_norm=1.0)
+    rng_losses = [
+        3.0 + 0.01 * ((i * 7) % 5 - 2) for i in range(MIN_OBSERVATIONS_BEFORE_DETECTION + 5)
+    ]
+    for value in rng_losses:
+        monitor.observe(loss=value, grad_norm=1.0)
     spike = monitor.observe(loss=1_000_000.0, grad_norm=1.0)
     assert spike.is_anomalous
-    # If the spike had been folded in, the mean/std would have shifted enough
-    # that this next, perfectly ordinary value might not score as extreme.
-    still_ordinary = monitor.observe(loss=1.0, grad_norm=1.0)
+    # If the spike had been folded in at full value, the mean/std would have
+    # shifted enough that this next, perfectly ordinary value might not score
+    # as extreme -- or the history itself would visibly contain 1,000,000.
+    still_ordinary = monitor.observe(loss=3.0, grad_norm=1.0)
     assert not still_ordinary.is_anomalous
+    assert 1_000_000.0 not in monitor._loss_history
+
+
+def test_stability_monitor_absorbs_a_level_shift_instead_of_locking_out() -> None:
+    """Real, reproduced failure mode: under the old rule (never fold a flagged
+    value in at all), a genuine, lasting level shift -- e.g. a decay-phase
+    data-mixture switch raising the per-update loss -- flagged 300/300
+    subsequent updates, forever, since the history could never catch up."""
+
+    rng = random.Random(0)
+    monitor = StabilityMonitor(window_size=128, sigma_factor=6.0)
+    for _ in range(300):
+        monitor.observe(3.0 + rng.gauss(0, 0.03), 0.3 + rng.gauss(0, 0.01))
+    flags = [
+        monitor.observe(3.4 + rng.gauss(0, 0.03), 0.3 + rng.gauss(0, 0.01)).is_anomalous
+        for _ in range(300)
+    ]
+    assert flags[0]
+    assert not any(flags[150:])  # used to be 300/300 flagged, forever
+
+
+def test_stability_monitor_never_flags_an_improvement() -> None:
+    """Detection is one-sided: a sudden drop in loss/grad_norm is good news,
+    never an instability."""
+
+    rng = random.Random(1)
+    monitor = StabilityMonitor(window_size=128, sigma_factor=6.0)
+    for _ in range(200):
+        monitor.observe(3.0 + rng.gauss(0, 0.02), 0.3 + rng.gauss(0, 0.01))
+    assert not monitor.observe(2.5, 0.3).is_anomalous
+    assert not monitor.observe(3.0, 0.1).is_anomalous
+    assert monitor.observe(4.0, 0.3).is_anomalous
 
 
 def test_window_size_bounds_how_much_history_is_kept() -> None:

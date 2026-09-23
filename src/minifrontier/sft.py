@@ -174,29 +174,39 @@ def pack_sft_examples(
     pad_id: int,
     drop_remainder: bool = False,
 ) -> Iterator[TrainingBatch]:
-    """Pack encoded conversations into fixed-length batches, masks included.
+    """Pack whole encoded conversations into fixed-length rows, masks included.
 
-    Same ribbon-and-slice idea as ``data.pack_documents``, with the loss mask cut
-    at exactly the same points so the two never drift apart. Unlike pretraining,
-    the trailing remainder is kept and padded by default: SFT datasets are small
-    enough that throwing away a partial sequence is a real loss.
+    Unlike pretraining's ribbon (``data.pack_documents``), a conversation is never
+    split across two rows: a row that cannot fit the next conversation is padded
+    and closed, and the conversation starts the next row. Slicing a ribbon would
+    leave the tail of a conversation -- graded assistant tokens -- at the start of
+    a row whose user turn is in the previous row, training the model to answer a
+    question it cannot see. ``encode_sft_example(max_length=sequence_length)``
+    already guarantees every conversation fits one row. The trailing partial row
+    is kept by default: SFT datasets are small enough that dropping it is a loss.
     """
 
     tokens: list[int] = []
     masks: list[bool] = []
-    for example in examples:
-        tokens.extend(example.token_ids)
-        masks.extend(example.loss_mask)
-        while len(tokens) >= sequence_length:
-            yield TrainingBatch(
-                torch.tensor([tokens[:sequence_length]], dtype=torch.long),
-                loss_mask=torch.tensor([masks[:sequence_length]], dtype=torch.bool),
-            )
-            del tokens[:sequence_length]
-            del masks[:sequence_length]
-    if tokens and not drop_remainder:
+
+    def padded_row() -> TrainingBatch:
         padding = sequence_length - len(tokens)
-        yield TrainingBatch(
+        return TrainingBatch(
             torch.tensor([[*tokens, *([pad_id] * padding)]], dtype=torch.long),
             loss_mask=torch.tensor([[*masks, *([False] * padding)]], dtype=torch.bool),
         )
+
+    for example in examples:
+        if len(example.token_ids) > sequence_length:
+            raise ValueError(
+                f"SFT example {example.record_id} has {len(example.token_ids)} tokens, "
+                f"more than sequence_length={sequence_length}; encode it with "
+                "max_length=sequence_length"
+            )
+        if len(tokens) + len(example.token_ids) > sequence_length:
+            yield padded_row()
+            tokens, masks = [], []
+        tokens.extend(example.token_ids)
+        masks.extend(example.loss_mask)
+    if tokens and not drop_remainder:
+        yield padded_row()

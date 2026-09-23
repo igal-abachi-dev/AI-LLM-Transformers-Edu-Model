@@ -25,9 +25,12 @@ rather than bundled into one behavior:
   skipped entirely -- not shrunk, refused -- the same way `train_updates` already
   handles a genuinely non-finite gradient (see ``training.py``).
 
-A flagged value is never folded into its own rolling history -- the monitor's
-whole job is remembering what "normal" looks like, and a value it just judged
-abnormal is not evidence of that.
+Detection is one-sided: only an upward spike in loss or gradient norm is
+anomalous; a sudden improvement never is. A flagged value is folded into the
+rolling history only clipped to the anomaly threshold -- so one spike cannot
+redefine "normal", yet a real, lasting level shift (a decay-phase data-mixture
+switch, say) is still absorbed within roughly one window instead of locking
+the monitor into flagging every later update forever.
 """
 
 from __future__ import annotations
@@ -75,16 +78,42 @@ class StabilityMonitor:
 
     @staticmethod
     def _z_score(history: deque[float], value: float) -> float | None:
+        """Signed z-score: only an UPWARD excursion (a spike) can exceed sigma_factor.
+
+        A sudden drop in loss or gradient norm is good news, not an instability,
+        and must never cause an update to be flagged or discarded.
+        """
+
         if len(history) < MIN_OBSERVATIONS_BEFORE_DETECTION:
             return None
         mean = statistics.fmean(history)
         deviation = statistics.pstdev(history, mean)
         if deviation == 0.0:
             # Every recent value was identical -- any real difference is an
-            # infinite z-score in principle; report a large-but-finite number
-            # so callers can still compare it against sigma_factor sensibly.
-            return 0.0 if value == mean else float("inf")
-        return abs(value - mean) / deviation
+            # infinite z-score in principle.
+            if value == mean:
+                return 0.0
+            return float("inf") if value > mean else float("-inf")
+        return (value - mean) / deviation
+
+    def _ceiling(self, history: deque[float]) -> float | None:
+        if len(history) < MIN_OBSERVATIONS_BEFORE_DETECTION:
+            return None
+        mean = statistics.fmean(history)
+        return mean + self.sigma_factor * statistics.pstdev(history, mean)
+
+    def _remember(self, history: deque[float], value: float) -> None:
+        # Fold every finite observation in, but clipped to the current anomaly
+        # ceiling: one spike cannot inflate "normal" (it enters as a borderline
+        # value, not as itself), while a genuine, lasting level shift is still
+        # absorbed within roughly one window instead of being flagged forever.
+        # Never folding flagged values in at all (the prior rule) meant the
+        # history could never catch up to a new level, so every later update
+        # was flagged -- and, with skip_anomalous_steps, silently discarded for
+        # the rest of the run. Reproduced directly: a real level shift flagged
+        # 300/300 subsequent updates under the old rule.
+        ceiling = self._ceiling(history)
+        history.append(value if ceiling is None else min(value, ceiling))
 
     def observe(self, loss: float, grad_norm: float) -> StabilityObservation:
         """Score one update's (loss, grad_norm) against this monitor's own history.
@@ -117,7 +146,6 @@ class StabilityMonitor:
         is_anomalous = (loss_z is not None and loss_z > self.sigma_factor) or (
             grad_norm_z is not None and grad_norm_z > self.sigma_factor
         )
-        if not is_anomalous:
-            self._loss_history.append(loss)
-            self._grad_norm_history.append(grad_norm)
+        self._remember(self._loss_history, loss)
+        self._remember(self._grad_norm_history, grad_norm)
         return StabilityObservation(is_anomalous, loss_z, grad_norm_z)

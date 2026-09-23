@@ -45,10 +45,10 @@ def _reference_step(
     update = moment_hat / (variance_hat.sqrt() + eps)
     mask = (update * grad > 0).float()
     scale = update.numel() / (mask.sum() + xi)
-    effective_lr = lr * scale
-    new_param = param - effective_lr * mask * update
-    if weight_decay:
-        new_param = new_param - effective_lr * weight_decay * new_param
+    # Decoupled decay at the BASE lr, as in the paper's reference C-AdamW
+    # (kyleliang919/C-Optim): the mask rescaling applies to the update only.
+    decayed = param * (1 - lr * weight_decay)
+    new_param = decayed - lr * scale * mask * update
     return new_param, {"step": step, "exp_avg": exp_avg, "exp_avg_sq": exp_avg_sq}, mask
 
 
@@ -129,3 +129,35 @@ def test_step_requires_grad_and_is_a_noop_for_parameters_without_one() -> None:
     optimizer.step()
     assert without_grad.item() == 2.0
     assert with_grad.item() != 1.0
+
+
+def test_weight_decay_uses_the_base_learning_rate_not_the_masked_rescale() -> None:
+    """Real, reproduced failure mode: an all-zero gradient masks every element
+    (aligned count 0), which used to multiply decay by numel/xi -- for a
+    1024x768 weight starting at 1.0 with lr=3e-4/weight_decay=0.1, that flipped
+    it to -22.6 in one step. Decay must use the plain base lr instead."""
+
+    weight = torch.nn.Parameter(torch.ones(1024, 768))
+    optimizer = CautiousAdamW([weight], lr=3e-4, betas=(0.9, 0.95), weight_decay=0.1)
+    weight.grad = torch.zeros_like(weight)
+    optimizer.step()
+    assert torch.allclose(weight, torch.full_like(weight, 1 - 3e-4 * 0.1))
+
+
+def test_decay_matches_adamw_when_every_element_is_aligned() -> None:
+    """On the first step every element is aligned (see the test above this
+    one's own reasoning), so with matching hyperparameters CautiousAdamW and
+    plain AdamW must decay identically -- confirms the fix isn't merely
+    "smaller decay" but the actual AdamW-matching base-lr rate."""
+
+    torch.manual_seed(0)
+    start = torch.randn(64, 64)
+    cautious = torch.nn.Parameter(start.clone())
+    plain = torch.nn.Parameter(start.clone())
+    c_opt = CautiousAdamW([cautious], lr=1e-3, weight_decay=0.1)
+    a_opt = torch.optim.AdamW([plain], lr=1e-3, weight_decay=0.1)
+    gradient = torch.randn(64, 64)
+    cautious.grad, plain.grad = gradient.clone(), gradient.clone()
+    c_opt.step()
+    a_opt.step()
+    assert torch.allclose(cautious, plain, atol=1e-6)
