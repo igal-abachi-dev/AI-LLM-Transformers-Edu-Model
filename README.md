@@ -29,6 +29,7 @@ MiniFrontier is a from-scratch, educational decoder-only language model built wi
 
 ## Introduction (read first)
 - [Introduction to LLM / Transformers / Attention](introduction.md)
+- [Attention is All You Need - reading companion for this project](docs/attention_is_all_you_need.md)
 - [Architecture / Diagrams](minifrontier-architecture-diagrams.md)
 
 If your goal is to understand how modern decoder-only transformers actually work by reading and running real, well-structured code (attention → RoPE → GQA → training loop → decoding → SFT),

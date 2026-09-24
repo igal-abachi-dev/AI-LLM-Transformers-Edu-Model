@@ -88,7 +88,26 @@ dot products push softmax into a region where its gradient is nearly zero. Divid
 equation), the SDPA fast path, and the FlexAttention fast path for local layers (see
 `labs/00_attention_math.py` and `labs/10_manual_flex_attention.py`, which verify all of this
 project's own real code paths against each other and against the real production kernels,
-not just against this formula in the abstract).
+not just against this formula in the abstract). Equation (1), line for line, from
+`src/minifrontier/attention.py:275-285` (`manual_scaled_dot_product_attention`):
+
+```python
+scale = 1.0 / math.sqrt(query.shape[-1])
+# [B, H, Sq, D] @ [B, H, D, Sk] -> [B, H, Sq, Sk]: one score per (query, key).
+scores = torch.matmul(query.float(), key.float().transpose(-2, -1)) * scale
+# Disallowed pairs become -inf, which softmax turns into exactly zero weight.
+scores = scores.masked_fill(~mask.unsqueeze(0).unsqueeze(0), float("-inf"))
+# Each query's row now sums to 1: "60% of that token, 30% of this one, ...".
+probabilities = F.softmax(scores, dim=-1)
+probabilities = F.dropout(probabilities, p=dropout_p, training=training)
+# The weighted blend of value vectors -> [B, H, Sq, D]. This is the answer.
+output = torch.matmul(probabilities, value.float())
+```
+
+The masking line is MiniFrontier's own addition — the paper folds masking into "optionally
+set illegal positions to −∞ before the softmax" as a single sentence (§3.2.3); here it is its
+own explicit step, shared by every attention path via `masking.build_attention_mask` rather
+than reimplemented per call site.
 
 #### Multi-head attention *(PDF p4-5, §3.2.2, Figure 2 right half)*
 
@@ -107,7 +126,22 @@ cheap.
 MHA, `n_heads == n_kv_heads`). Modern goes one step further with **GQA** — several query
 heads sharing one narrower key/value head, a real, later technique this paper doesn't have
 (see `labs/02_mha_vs_gqa.py` for the real memory numbers GQA buys, and `AGENTS.md`'s own
-frozen 3:1/4:1 GQA-ratio decisions).
+frozen 3:1/4:1 GQA-ratio decisions). The four projection matrices — `W^Q_i`, `W^K_i`,
+`W^V_i`, `W^O` — from `src/minifrontier/attention.py:318-322`
+(`CausalSelfAttention.__init__`):
+
+```python
+self.q_proj = nn.Linear(config.d_model, config.n_heads * self.head_dim, bias=False)
+self.k_proj = nn.Linear(config.d_model, config.n_kv_heads * self.head_dim, bias=False)
+self.v_proj = nn.Linear(config.d_model, config.n_kv_heads * self.head_dim, bias=False)
+self.out_proj = nn.Linear(config.n_heads * self.head_dim, config.d_model, bias=False)
+```
+
+`n_heads * self.head_dim` on `q_proj`/`out_proj` is exactly the paper's `h` heads of
+`d_k`/`d_v` each, concatenated. The divergence is `k_proj`/`v_proj`: the paper always sizes
+them by the same `h`; here they are sized by `n_kv_heads`, which is smaller than `n_heads`
+under GQA (Modern) — narrower K/V projections are the entire mechanism, and the entire
+reason GQA's KV cache is smaller than plain MHA's.
 
 #### The three ways attention gets used *(PDF p5, §3.2.3)*
 
@@ -130,11 +164,27 @@ weights at every position in a given layer, different weights layer to layer) �
 notes this is equivalent to two convolutions with kernel size 1. Width: `d_model = 512` in,
 `d_ff = 2048` in the middle, `512` back out — a 4x expansion.
 
-**MiniFrontier**: `SwiGLU` (`model.py`), not plain ReLU — a gated variant
-(`down(silu(gate(x)) * up(x))`) that real, later architectures (LLaMA, PaLM, and this
-project) adopted specifically because it measurably outperforms ReLU at matched parameter
-count. This is one of the clearest "the field moved past this exact 2017 choice" examples in
-the whole paper.
+**MiniFrontier**: `SwiGLU` (`src/minifrontier/layers.py`), not plain ReLU — a gated variant
+that real, later architectures (LLaMA, PaLM, and this project) adopted specifically because
+it measurably outperforms ReLU at matched parameter count. This is one of the clearest "the
+field moved past this exact 2017 choice" examples in the whole paper. Equation (2)'s
+replacement, from `src/minifrontier/layers.py:99-101,119` (`SwiGLU.forward`, clamp branch
+elided — that part is an unrelated, off-by-default MF-106 experiment):
+
+```python
+gate = self.gate_proj(inputs)
+up = self.up_proj(inputs)
+# silu(x) = x * sigmoid(x): like ReLU but smooth, and slightly negative for
+# small negative x, which lets the gate subtract as well as pass through.
+return self.down_proj(F.silu(gate) * up)
+```
+
+Same two-linear-layers-in/one-out shape as `FFN(x) = max(0, xW1+b1)W2+b2`, but three
+matrices instead of two: `up_proj` plays the paper's `W1`, `down_proj` plays `W2`, and
+`gate_proj` is the addition — a second, independent projection of the same input that
+decides, per feature, how much of `up`'s content actually passes through. `F.silu` replaces
+the paper's `max(0, ·)` (ReLU) with a smooth curve that stays slightly negative just below
+zero rather than clamping to exactly zero.
 
 ### 2.4 Embeddings, softmax, and positional encoding *(PDF p5-6, §3.4-3.5)*
 
@@ -157,16 +207,38 @@ the ones encountered during training" — an early version of exactly the long-c
 extrapolation problem RoPE scaling (YaRN, NTK-aware methods) was later built to solve
 properly.
 
-**MiniFrontier**: RoPE (`rope.py`), not additive sinusoidal encoding. RoPE *rotates* the
-query/key vectors by a position-dependent angle rather than adding a position vector to the
-token embedding — a later, now-standard technique (LLaMA and effectively every current open
-model use it) that makes the *relative* distance between two tokens fall directly out of the
-dot product between their rotated vectors, which is the specific property the 2017 paper was
-reaching for with its "linear function of a fixed offset" argument but doesn't fully deliver
-on its own. See `labs/01_rope.py` for the real, measured version of exactly that relative-
-distance property, and this project's own real regex/RoPE-scaling decisions in `AGENTS.md`
-(full rotation, `rope_fraction=1.0`, is this project's own frozen default — partial rotation
-was tested and found a real, consistent loss, MF-107).
+**MiniFrontier**: RoPE (`src/minifrontier/rope.py`), not additive sinusoidal encoding. RoPE
+*rotates* the query/key vectors by a position-dependent angle rather than adding a position
+vector to the token embedding — a later, now-standard technique (LLaMA and effectively every
+current open model use it) that makes the *relative* distance between two tokens fall
+directly out of the dot product between their rotated vectors, which is the specific property
+the 2017 paper was reaching for with its "linear function of a fixed offset" argument but
+doesn't fully deliver on its own. See `labs/01_rope.py` for the real, measured version of
+exactly that relative-distance property, and this project's own real regex/RoPE-scaling
+decisions in `AGENTS.md` (full rotation, `rope_fraction=1.0`, is this project's own frozen
+default — partial rotation was tested and found a real, consistent loss, MF-107). The direct
+analogue of `PE(pos, 2i)`/`PE(pos, 2i+1)` — one rotation speed per pair of dimensions, from
+`src/minifrontier/rope.py:123-124,157-164` (`RoPE._fp32_inverse_frequency` /
+`RoPE.forward`):
+
+```python
+# One rotation speed per arrow: 1 / theta**(2i/head_dim) for i = 0, 1, 2...
+exponents = torch.arange(0, self.head_dim, 2, dtype=torch.float32, device=device)
+inverse_frequency = 1.0 / (self.theta ** (exponents / self.head_dim))
+...
+# outer product -> angles[p, i] = position p * speed i, in FP32 for accuracy.
+frequencies = torch.outer(positions.to(dtype=torch.float32), inverse_frequency)
+angles = torch.cat((frequencies, frequencies), dim=-1)
+return angles.cos(), angles.sin()
+```
+
+`theta ** (2i / head_dim)` is this project's own name for the paper's `10000 ** (2i /
+d_model)` — same geometric progression of frequencies, `theta` generalizing the paper's fixed
+`10000` into a tunable knob (raising it is the standard way to stretch a trained model to
+longer contexts, e.g. NTK-aware/YaRN scaling). The output is also structurally different:
+the paper *adds* `PE(pos)` to the token embedding once, at the bottom of the stack; RoPE
+returns `cos`/`sin` tables that *rotate* Q and K inside every attention layer instead —
+angles, not embeddings, and applied at every layer, not just the input.
 
 ### 2.5 Why self-attention (Table 1) *(PDF p6-7, Table 1, §4)*
 
