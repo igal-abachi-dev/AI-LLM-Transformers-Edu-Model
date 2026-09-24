@@ -1226,6 +1226,16 @@ room.
 full attention allows **2,098,176** token-pairs; local allows **917,760** — about 44%. And
 that's at a short context; the gap widens fast as context grows.
 
+`labs/10_manual_flex_attention.py` picks up where that leaves off, one level deeper: not just
+that a local layer's real FlexAttention kernel agrees with the manual math (it does), but
+*why* it can be cheaper in the first place. It inspects the real `BlockMask` object directly,
+at this project's own actual `local_window=512`/1024-token default, and prints exactly which
+of the 64 possible 128-token tiles each query block touches versus skips entirely before any
+score is ever computed — the real block-skipping mechanism, not a sentence to take on faith.
+`labs/10b_manual_flex_attention_pure_python.py` is its zero-dependency companion, same
+relationship `00b` has to `00`: no PyTorch, no `BlockMask` object, just a brute-force loop over
+every (query, key) pair in each tile — and it reproduces lab 10's exact real counts anyway.
+
 The cache saving is larger still, because the local layers only need to *remember* 512
 tokens, ever. For the 150M model at 2,048 context, KV cache drops from ~126 MB to ~18 MB —
 roughly **7× less**, combining GQA and hybrid.
@@ -1896,7 +1906,8 @@ it:
 9. **`cache.py`** — only once everything above makes sense.
 
 Then the labs, in this order — `01_rope.py` ,`02_mha_vs_gqa.py`, `03_qk_norm.py`, `04_full_vs_hybrid.py`,
-`05_kv_cache.py`, `06_adamw_vs_muon.py` , `07_rope_vs_global_nope.py` , `08_mtp.py` , `09_chunked_vs_fused_cross_entropy.py`.
+`10_manual_flex_attention.py`, `10b_manual_flex_attention_pure_python.py`, `05_kv_cache.py`,
+`06_adamw_vs_muon.py` , `07_rope_vs_global_nope.py` , `08_mtp.py` , `09_chunked_vs_fused_cross_entropy.py`.
 
 And the tests are documentation. `tests/test_model.py` and `tests/test_attention.py` are
 short, and they show what each piece is *supposed* to do.

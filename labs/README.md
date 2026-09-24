@@ -1,6 +1,6 @@
 # MiniFrontier labs
 
-Ten small, runnable scripts, each isolating exactly one concept from
+Twelve small, runnable scripts, each isolating exactly one concept from
 [`introduction.md`](../introduction.md) and putting a real number or a real printed
 tensor behind it. None of these take command-line arguments — just run the file. None
 need a GPU; all are sized to run on CPU in seconds.
@@ -27,6 +27,8 @@ want more than the one-line summary below.
 | 07 | `07_rope_vs_global_nope.py` | The global RoPE-versus-NoPE flag isolated on identical random weights, so the only thing that differs is that one setting. | **3.4 NoPE on global layers (the experiment)** |
 | 08 | `08_mtp.py` | What Multi-Token Prediction's extra heads are actually graded on, beyond the ordinary next-token loss. | **3.8 MTP — Multi-Token Prediction (optional auxiliary loss)** |
 | 09 | `09_chunked_vs_fused_cross_entropy.py` | Why the final vocabulary-sized projection, not the transformer body, is what actually breaks memory at scale. | **Chunked cross-entropy (CCE) — computing the loss without exploding memory** |
+| 10 | `10_manual_flex_attention.py` | What FlexAttention actually does for a local layer, not just that it agrees with the manual math — the real `BlockMask` object inspected directly, at this project's own real `local_window=512`/1024-token default, showing exactly which of the 64 possible 128-token tiles get skipped entirely versus computed. | **3.3 Hybrid attention — three near-sighted layers, one far-sighted** |
+| 10b | `10b_manual_flex_attention_pure_python.py` | The same block-skip classification with zero libraries at all — no PyTorch, no `BlockMask` — a brute-force loop over every (query, key) pair in each tile that reproduces lab 10's exact real counts (30/64 tiles touched, 53.125% skipped) from pure Python range comparisons alone. | **3.3 Hybrid attention — three near-sighted layers, one far-sighted** |
 
 ## Scope
 
