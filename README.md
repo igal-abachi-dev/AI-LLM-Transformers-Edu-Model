@@ -15,8 +15,9 @@ MiniFrontier is a from-scratch, educational decoder-only language model built wi
 > SFT/chat are implemented. M9 protocol/export/release validation tooling is implemented, while the
 > real matched 150M training artifacts remain open. M10 preflight and the M11 Transformers/export,
 > external-runtime, and GGUF orchestration paths are implemented; hardware/upstream-runtime gates
-> remain unmeasured. The CPU suite passes all 191 tests (187 in the
-> default non-slow gate). The first home-GPU pass (RTX 2070 Super, 8GB) landed 2026-08-21: real CUDA
+> remain unmeasured. The CPU suite passes 633 of 639 tests (634 in the
+> default non-slow gate; 1 skipped in this environment specifically due to a Windows symlink-creation
+> privilege limitation, 5 marked slow). The first home-GPU pass (RTX 2070 Super, 8GB) landed 2026-08-21: real CUDA
 > BF16/accumulation/activation-checkpointing parity, an initial 50M/150M profiling matrix, and a real
 > 1-5M-token FineWeb-Edu 50M-Edu training gate with decreasing loss/validation — see
 > `tasks/evidence/MF-046-050-063-home-rtx.md`. On 2026-08-25, real FP16+GradScaler support was added
