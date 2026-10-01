@@ -301,6 +301,7 @@ better for general chat and coding completions
 (1B-3B need to lease paid servers to train the model , not feasable on home pc single gpu,
 7B+ needs massive resources)
 
+and also (_v2/) folder
 
 ### Architecture
 Pre-norm residual blocks: x = x + attn(norm(x)); x = x + ffn(norm(x))
@@ -357,7 +358,7 @@ MiniFrontier's design and this session's own bounded ablations were repeatedly c
 - **[allenai/OLMo](https://github.com/allenai/OLMo) + [allenai/OLMo-core](https://github.com/allenai/OLMo-core)** — AI2's real, currently-best example of a fully-open, genuinely competitive model: full training data (Dolma 3), full training code, intermediate checkpoints, and a real technical report, at 7B/32B with Base/Instruct/Think variants. 
 
 this repo might not the absolute gentlest starting point. If you want the
-shortest possible path from "Attention Is All You Need" pdf to a working GPT-2 in a couple hundred
+shortest possible path from [Attention is All You Need](docs/attention_is_all_you_need.md) pdf to a working GPT-2 in a couple hundred
 lines, [nanoGPT](https://github.com/karpathy/nanoGPT) or
 [rasbt/LLMs-from-scratch](https://github.com/rasbt/LLMs-from-scratch) are gentler for start
 
@@ -546,7 +547,8 @@ Given the model was trained on FineWeb-Edu (educational web text — explanatory
 2. "Photosynthesis is the process by which plants" — biology/textbook
 respond like:
 "Photosynthesis is the process by which plants use a chemical process to generate light and light. Since the process involves the use of light, the plant is able to produce light and light in a similar manner as the plant itself. The process of plants producing light has been a significant part of modern agriculture."
-
+or
+"Photosynthesis is the process by which plants produce their own carbon dioxide. It is the process of growing and transporting carbon dioxide from one plant to another."
 3. "The French Revolution began in" — history/factual
 4. "In mathematics, a prime number is defined as" — math/definition
 5. "Climate change is caused primarily by" — science/current topics
@@ -584,6 +586,48 @@ directory, keeping the source checkpoint intact, then sample from that.
    ```powershell
    .venv\Scripts\python.exe scripts\sample.py --model artifacts\<run-name>-sample-check-291000 --prompt "Photosynthesis is the process by which plants" --device cpu --precision float16 --temperature 0.7 --top-k 40 --max-new-tokens 100
    ```
+
+
+science / general knowledge:
+   ```powershell
+.venv\Scripts\python.exe scripts\sample.py --model artifacts\mf070-sample-check-588500 --prompt "Photosynthesis is the process by which plants" --device cpu --precision float32 --temperature 0.7 --top-k 40 --max-new-tokens 100
+   ```
+
+
+for code:
+
+greedy:
+   ```powershell
+@'
+import { z } from 'zod';
+import { router, protectedProcedure } from '../trpc';
+
+export const userRouter = router({
+  updateRole: protectedProcedure
+    .input(z.object({ userId: z.string().uuid(), role: z.enum(['admin', 'member']) }))
+    .mutation(async ({ ctx, input }) => {
+      const user = await ctx.
+'@ | Set-Content -Encoding utf8 test3.ts
+
+Get-Content test3.ts -Raw | .venv\Scripts\python.exe scripts\sample.py --model artifacts\mf070-sample-check-588500 --device cpu --precision float32 --max-new-tokens 15
+   ```
+or
+with repitition controls:
+
+   ```powershell
+@'
+import { z } from 'zod';
+import { router, protectedProcedure } from '../trpc';
+
+export const userRouter = router({
+  updateRole: protectedProcedure
+    .input(z.object({ userId: z.string().uuid(), role: z.enum(['admin', 'member']) }))
+    .mutation(async ({ ctx, input }) => {
+'@ | Set-Content -Encoding utf8 test3.ts
+
+Get-Content test3.ts -Raw | .venv\Scripts\python.exe scripts\sample.py --model artifacts\mf070-sample-check-588500 --device cpu --precision float32 --no-repeat-ngram-size 3 --repetition-penalty 1.15 --max-new-tokens 35
+   ```
+   
 
 `--device cpu` is the right call whenever the GPU is busy training (i.e. always, mid-run) —
 export only reads the checkpoint file, so this never contends with or otherwise touches the
