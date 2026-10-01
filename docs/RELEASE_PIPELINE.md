@@ -53,15 +53,27 @@ prompt/seed/`temperature=0` confirming byte-identical output.
 
 ## 5. SFT -- a separate, additionally-published release, not a gate on the base one
 
+**Decision (2026-10-01, user-confirmed after a direct question): release base and SFT decoupled,
+same as real `Base` vs `Instruct` model families ship.** The base model is a genuinely usable,
+intentional release on its own -- not an incomplete one -- for exactly the use case
+`sample.py`'s own header already documents: *"This is BASE completion, not chat -- the model
+continues your text rather than answering it... use `chat.py` with an SFT model to get replies
+instead."* It is not chat-capable (never trained on the `<|system|>`/`<|user|>`/`<|assistant|>`
+role markers), and its model card must say so plainly, but "not chat-capable" is not the same as
+"not usable" -- raw completion, further fine-tuning, and research/benchmarking are all real,
+documented uses that don't need SFT first.
+
 Real precedent already exists: `MF-066` published **four** releases for the prior generation --
 base Edu, base Modern, and a clearly-labeled SFT variant of each, never conflated with the base
-(`artifacts/mf066-150m-edu-sft-release`, `artifacts/mf066-150m-modern-sft-release`). The same
-shape applies here: the base `MF-070` release finishes steps 2-4 on its own first. Separately,
-`MF-123`'s real reasoning-demonstration dataset (`data/sft/gsm8k-reasoning-v1.jsonl`, 7,473
-provenance-tracked GSM8K train-split examples, already built and verified while the base run was
-still training) feeds `train/sft.py` against the finished base checkpoint. The resulting SFT
-checkpoint gets its own pass through the instruction/chat tier (`MF-061`'s existing
-base-vs-SFT comparison pattern) and its own export + model card via step 4's same tooling. Both
+(`artifacts/mf066-150m-edu-sft-release`, `artifacts/mf066-150m-modern-sft-release`), and the base
+pair was released on its own well before the SFT variants existed, not held back pending them.
+The same shape applies here: the base `MF-070` release finishes steps 2-4 and gets uploaded on
+its own schedule. Separately, `MF-123`'s real reasoning-demonstration dataset
+(`data/sft/gsm8k-reasoning-v1.jsonl`, 7,473 provenance-tracked GSM8K train-split examples,
+already built and verified while the base run was still training) feeds `train/sft.py` against
+the finished base checkpoint. The resulting SFT checkpoint gets its own pass through the
+instruction/chat tier (`MF-061`'s existing base-vs-SFT comparison pattern) and its own export +
+model card via step 4's same tooling, uploaded as its own separate repository once ready. Both
 the base and the SFT'd model end up as separate, clearly labeled artifacts -- matching how real
 released model families ship `Base` and `Instruct` as distinct repositories rather than one
 replacing the other. Only once an SFT release exists does `chat.py` become the right tool to test
