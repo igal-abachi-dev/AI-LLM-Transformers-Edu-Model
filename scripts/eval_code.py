@@ -22,6 +22,8 @@ from minifrontier.evaluation.code import (
     score_fixture_predictions,
     score_fixture_predictions_pass_at_k,
 )
+from minifrontier.evaluation.degeneration import distinct_n, repeated_ngram_fraction
+from minifrontier.tokenizer import MiniFrontierTokenizer
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,6 +37,18 @@ def parse_args() -> argparse.Namespace:
         "--general-lm-metrics",
         type=Path,
         help="Optional matched baseline/FIM language-metric JSON included in the report",
+    )
+    parser.add_argument(
+        "--tokenizer",
+        type=Path,
+        help=(
+            "MF-165: when given, tokenizes every real prediction and reports pooled "
+            "distinct-n/repeated-n-gram-fraction (n=2,3,4) over the actual generated "
+            "code, catching repetition-collapse loops the syntax/compile/functional "
+            "checks alone cannot see (MF-091's degeneration.py metrics, not wired into "
+            "any eval script before this). Omit to keep the original report shape with "
+            "no repetition metrics -- off by default, same as --general-lm-metrics."
+        ),
     )
     parser.add_argument(
         "--pass-at-k",
@@ -52,6 +66,34 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     return parser.parse_args()
+
+
+def _repetition_metrics(predictions: list[str], tokenizer_path: Path | None) -> dict[str, object]:
+    """MF-165: pooled repetition/degeneracy signal over real predictions, closing a
+    real eval-gate gap -- the coding tier's syntax/compile/functional checks never
+    detect a model looping on its own output, since `degeneration.py`'s `distinct_n`
+    (MF-091) was never wired into any eval script before this. Off by default (same
+    convention as `--general-lm-metrics`): omitting `--tokenizer` reports a
+    `not_provided` status rather than silently computing nothing.
+    """
+
+    if tokenizer_path is None:
+        return {"status": "not_provided"}
+    tokenizer = MiniFrontierTokenizer.from_directory(tokenizer_path)
+    token_sequences = [tokenizer.encode(text) for text in predictions if text]
+    if not token_sequences:
+        return {"status": "no_predictions"}
+    metrics: dict[str, object] = {"token_count": sum(len(seq) for seq in token_sequences)}
+    for n in (2, 3, 4):
+        try:
+            metrics[f"distinct_{n}"] = distinct_n(token_sequences, n)
+            metrics[f"repeated_{n}gram_fraction"] = repeated_ngram_fraction(token_sequences, n)
+        except ValueError:
+            # Every sequence shorter than n -- too little text to score at this n;
+            # report as None rather than crashing the whole evaluation run.
+            metrics[f"distinct_{n}"] = None
+            metrics[f"repeated_{n}gram_fraction"] = None
+    return metrics
 
 
 def main() -> None:
@@ -97,6 +139,10 @@ def main() -> None:
                 },
             },
             "general_lm_regression": general_lm,
+            "repetition": _repetition_metrics(
+                [sample for samples in pass_at_k_predictions.values() for sample in samples],
+                args.tokenizer,
+            ),
             "results": [asdict(result) for result in pass_at_k_results],
             "limitations": [
                 "Small deterministic fixtures measure pipeline correctness, not broad "
@@ -136,6 +182,7 @@ def main() -> None:
                 ),
             },
             "general_lm_regression": general_lm,
+            "repetition": _repetition_metrics(list(predictions.values()), args.tokenizer),
             "results": [asdict(score) for score in scores],
             "limitations": [
                 "Small deterministic fixtures measure pipeline correctness, not broad "

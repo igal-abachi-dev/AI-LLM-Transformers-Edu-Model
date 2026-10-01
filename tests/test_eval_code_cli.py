@@ -56,6 +56,75 @@ def test_eval_code_default_single_sample_path_writes_the_original_report_shape(
     assert report["metrics"]["exact_rate"] == 1.0
     assert report["metrics"]["functional_rate"] == 1.0
     assert "mean_pass_at_k" not in report["metrics"]
+    assert report["repetition"] == {"status": "not_provided"}
+
+
+def test_eval_code_omits_repetition_metrics_without_a_tokenizer(tmp_path, monkeypatch) -> None:
+    fixtures_path = tmp_path / "fixtures.jsonl"
+    _write_fixture(fixtures_path)
+    predictions_path = tmp_path / "predictions.jsonl"
+    predictions_path.write_text(
+        json.dumps({"id": "add-1", "prediction": "return a + b\n"}) + "\n", encoding="utf-8"
+    )
+    output_path = tmp_path / "report.json"
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "eval_code.py",
+            "--fixtures",
+            str(fixtures_path),
+            "--predictions",
+            str(predictions_path),
+            "--output",
+            str(output_path),
+            "--execute-trusted-fixtures",
+        ],
+    )
+    eval_code.main()
+
+    report = json.loads(output_path.read_text(encoding="utf-8"))
+    assert report["repetition"] == {"status": "not_provided"}
+
+
+def test_eval_code_computes_real_repetition_metrics_when_a_tokenizer_is_given(
+    tmp_path, monkeypatch, tokenizer_dir
+) -> None:
+    """MF-165: a real repeating prediction should read as degenerate (low distinct_n,
+    high repeated_ngram_fraction), closing the gap where `degeneration.py`'s metrics
+    (MF-091) existed but were never actually computed by any eval script."""
+
+    fixtures_path = tmp_path / "fixtures.jsonl"
+    _write_fixture(fixtures_path)
+    predictions_path = tmp_path / "predictions.jsonl"
+    # A real repetition-collapse shape: the same short clause looping.
+    looping = "return a + b\n" * 20
+    predictions_path.write_text(
+        json.dumps({"id": "add-1", "prediction": looping}) + "\n", encoding="utf-8"
+    )
+    output_path = tmp_path / "report.json"
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "eval_code.py",
+            "--fixtures",
+            str(fixtures_path),
+            "--predictions",
+            str(predictions_path),
+            "--output",
+            str(output_path),
+            "--tokenizer",
+            str(tokenizer_dir),
+        ],
+    )
+    eval_code.main()
+
+    report = json.loads(output_path.read_text(encoding="utf-8"))
+    repetition = report["repetition"]
+    assert repetition["token_count"] > 0
+    assert repetition["distinct_4"] < 0.5
+    assert repetition["repeated_4gram_fraction"] > 0.5
 
 
 def test_eval_code_pass_at_k_flag_writes_the_pass_at_k_report_shape(tmp_path, monkeypatch) -> None:
@@ -95,3 +164,4 @@ def test_eval_code_pass_at_k_flag_writes_the_pass_at_k_report_shape(tmp_path, mo
     assert report["results"][0]["num_samples"] == 3
     assert report["results"][0]["num_functional_passes"] == 2
     assert "exact_rate" not in report["metrics"]
+    assert report["repetition"] == {"status": "not_provided"}

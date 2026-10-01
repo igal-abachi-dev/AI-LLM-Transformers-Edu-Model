@@ -155,6 +155,53 @@ def score_csharp(source: str, *, timeout_seconds: float = 60.0) -> CodeScore:
     return CodeScore(compiled, compiled, None)
 
 
+def typescript_available() -> bool:
+    return shutil.which("tsc") is not None
+
+
+def score_typescript(source: str, *, timeout_seconds: float = 60.0) -> CodeScore:
+    """Real `tsc --noEmit --strict` type-check for a standalone TypeScript fixture.
+
+    Mirrors `score_csharp`'s scope exactly: a real compile/type-check only, no
+    functional test execution -- wiring a TypeScript test runner is a real,
+    separate piece of scope this project has not built. `syntax_valid` and
+    `compiles` report the same real boolean, since `tsc` also conflates
+    parsing and type-checking in one pass.
+
+    Unlike C#, no project-file wrapping is required: TypeScript allows a
+    standalone function declaration at the top level of a single file, so
+    ``source`` is written to a ``.ts`` file directly and type-checked as-is.
+    ``--skipLibCheck`` skips validating the bundled TypeScript standard
+    library itself, keeping this a check of the candidate source only. No
+    imports or `package.json` are used by any real fixture, so a real check
+    never needs network access once the TypeScript compiler itself is
+    installed locally (``npx``'s implicit on-demand install is deliberately
+    never used here, for the same network-independence reason `score_csharp`
+    never references an external NuGet package).
+    """
+
+    if not typescript_available():
+        raise RuntimeError("tsc not found on PATH; TypeScript scoring requires it")
+    if timeout_seconds <= 0:
+        raise ValueError("timeout_seconds must be positive")
+    with tempfile.TemporaryDirectory(prefix="minifrontier-eval-ts-") as directory:
+        source_path = Path(directory) / "fixture.ts"
+        source_path.write_text(source, encoding="utf-8")
+        try:
+            completed = subprocess.run(
+                ["tsc", "--noEmit", "--strict", "--skipLibCheck", str(source_path)],
+                cwd=directory,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return CodeScore(False, False, None)
+    compiled = completed.returncode == 0
+    return CodeScore(compiled, compiled, None)
+
+
 def load_fixtures(path: str | Path) -> list[dict[str, object]]:
     lines = Path(path).read_text(encoding="utf-8").splitlines()
     return [json.loads(line) for line in lines if line]
@@ -247,6 +294,10 @@ def _score_one_prediction(
         if fixture.get("tests"):
             raise ValueError(f"fixture {fixture_id}: C# scoring does not support tests yet")
         return score_csharp(source)
+    if language == "typescript":
+        if fixture.get("tests"):
+            raise ValueError(f"fixture {fixture_id}: TypeScript scoring does not support tests yet")
+        return score_typescript(source)
     raise ValueError(f"fixture {fixture_id}: unknown language {language!r}")
 
 

@@ -26,6 +26,8 @@ from minifrontier.evaluation.code import (
     score_fixture_predictions,
     score_fixture_predictions_pass_at_k,
     score_python,
+    score_typescript,
+    typescript_available,
 )
 from minifrontier.evaluation.fim import score_fim
 from minifrontier.evaluation.language import MiniFrontierEvalLM, harness_settings
@@ -142,6 +144,53 @@ def test_score_fixture_predictions_rejects_tests_on_csharp_fixtures() -> None:
         score_fixture_predictions(fixtures, {"cs-1": "return a + b;\n}\n"})
 
 
+@pytest.mark.skipif(not typescript_available(), reason="tsc not found on PATH")
+def test_score_typescript_compiles_a_real_strict_mode_function() -> None:
+    source = "function add(a: number, b: number): number {\n  return a + b;\n}\n"
+    score = score_typescript(source)
+    assert score.compiles and score.syntax_valid
+    assert score.tests_passed is None  # TypeScript scoring never executes, by design
+
+
+@pytest.mark.skipif(not typescript_available(), reason="tsc not found on PATH")
+def test_score_typescript_rejects_a_real_type_error() -> None:
+    # Real strict-mode violation: returns a string where `number` is declared.
+    broken = score_typescript(
+        'function add(a: number, b: number): number {\n  return "not a number";\n}\n'
+    )
+    assert not broken.compiles
+
+
+@pytest.mark.skipif(not typescript_available(), reason="tsc not found on PATH")
+def test_score_fixture_predictions_dispatches_typescript_fixtures_by_language() -> None:
+    fixtures = [
+        {
+            "id": "ts-1",
+            "kind": "completion",
+            "language": "typescript",
+            "prompt": "function add(a: number, b: number): number {\n  ",
+            "reference": "return a + b;\n}\n",
+        }
+    ]
+    scored = score_fixture_predictions(fixtures, {"ts-1": "return a + b;\n}\n"})
+    assert scored[0].exact and scored[0].compiles and scored[0].functional is None
+
+
+def test_score_fixture_predictions_rejects_tests_on_typescript_fixtures() -> None:
+    fixtures = [
+        {
+            "id": "ts-1",
+            "kind": "completion",
+            "language": "typescript",
+            "prompt": "function add(a: number, b: number): number {\n  ",
+            "reference": "return a + b;\n}\n",
+            "tests": "console.assert(add(2, 3) === 5)",
+        }
+    ]
+    with pytest.raises(ValueError, match="does not support tests"):
+        score_fixture_predictions(fixtures, {"ts-1": "return a + b;\n}\n"})
+
+
 def test_score_fixture_predictions_rejects_unknown_language() -> None:
     fixtures = [
         {
@@ -245,6 +294,27 @@ def test_real_csharp_fixture_file_round_trips_through_the_real_scorer() -> None:
 
     fixtures_path = ROOT / "eval" / "fixtures" / "code_csharp_fim_v1.jsonl"
     predictions_path = ROOT / "eval" / "fixtures" / "code_csharp_fim_v1_reference_predictions.jsonl"
+    fixtures = load_fixtures(fixtures_path)
+    predictions = {
+        str(row["id"]): str(row["prediction"])
+        for row in (json.loads(line) for line in predictions_path.read_text().splitlines() if line)
+    }
+    scores = score_fixture_predictions(fixtures, predictions)
+    assert len(scores) == 5
+    assert all(score.exact for score in scores)
+    assert all(score.syntax_valid and score.compiles for score in scores)
+
+
+@pytest.mark.skipif(not typescript_available(), reason="tsc not found on PATH")
+def test_real_typescript_fixture_file_round_trips_through_the_real_scorer() -> None:
+    """The committed `eval/fixtures/code_typescript_fim_v1*.jsonl` pair, scored for
+    real end to end -- the same "prove the scorer/report path" role the
+    existing Python/C# reference-predictions files already serve."""
+
+    fixtures_path = ROOT / "eval" / "fixtures" / "code_typescript_fim_v1.jsonl"
+    predictions_path = (
+        ROOT / "eval" / "fixtures" / "code_typescript_fim_v1_reference_predictions.jsonl"
+    )
     fixtures = load_fixtures(fixtures_path)
     predictions = {
         str(row["id"]): str(row["prediction"])

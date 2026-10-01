@@ -1,0 +1,5 @@
+{"id":"completion-add-ts-v1","prediction":"return a + b;\n}\n"}
+{"id":"fim-evens-ts-v1","prediction":"n % 2 === 0"}
+{"id":"repair-semicolon-ts-v1","prediction":"function square(x: number): number {\n  return x * x;\n}\n"}
+{"id":"completion-describe-ts-v1","prediction":"n > 0) {\n    return \"positive\";\n  } else {\n    return \"negative\";\n  }\n}\n"}
+{"id":"completion-hasduplicate-ts-v1","prediction":"return true;\n    }\n    seen.add(n);\n  }\n  return false;\n}\n"}
