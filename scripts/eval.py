@@ -52,7 +52,29 @@ def parse_args() -> argparse.Namespace:
             "opt-in rather than a DEFAULT_TASKS change."
         ),
     )
+    parser.add_argument(
+        "--include-cruxeval",
+        action="store_true",
+        help=(
+            "Add cruxeval_input/cruxeval_output (MF-122) -- real code-reasoning tasks "
+            "that EXECUTE the model's own generated Python (lm-eval's own cruxeval "
+            "task is marked unsafe_code: true). This flag is this project's explicit "
+            "consent to that execution (threaded into simple_evaluate's own "
+            "confirm_run_unsafe_code gate, which otherwise refuses to run it) -- there "
+            "is no sandbox beyond lm-eval's own resource-limiting guard. Only pass "
+            "this against a checkpoint/environment where executing arbitrary "
+            "model-generated code is acceptable."
+        ),
+    )
     parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument(
+        "--harness-batch-size",
+        type=int,
+        default=8,
+        help="MF-114: how many lm-eval loglikelihood/loglikelihood_rolling requests "
+        "MiniFrontierEvalLM folds into one forward call. 1 reproduces the original, "
+        "fully unbatched behavior exactly.",
+    )
     return parser.parse_args()
 
 
@@ -94,10 +116,12 @@ def main() -> None:
     args = parse_args()
     model, tokenizer = load_release(args.release, device=args.device)
     policy = cast_model_for_inference(model, args.precision, args.device)
-    adapter = MiniFrontierEvalLM(model, tokenizer)
+    adapter = MiniFrontierEvalLM(model, tokenizer, eval_batch_size=args.harness_batch_size)
     report: dict[str, Any] = {
         "settings": harness_settings(
-            include_gsm8k=args.include_gsm8k, include_extended=args.include_extended
+            include_gsm8k=args.include_gsm8k,
+            include_extended=args.include_extended,
+            include_cruxeval=args.include_cruxeval,
         ),
         "adapter_smoke": _adapter_smoke(adapter),
         "validation": None,
@@ -127,6 +151,7 @@ def main() -> None:
                     num_fewshot=0,
                     limit=args.limit,
                     log_samples=True,
+                    confirm_run_unsafe_code=report["settings"]["confirm_run_unsafe_code"],
                 ),
             }
         except Exception as error:  # preserve infrastructure failure separately from scores

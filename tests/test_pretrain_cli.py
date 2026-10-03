@@ -99,6 +99,7 @@ def _args(
         progress_interval=1,
         no_checkpoint=False,
         activation_checkpointing=False,
+        preflight=False,
         compile=False,
         compile_backend=None,
         compile_fail=False,
@@ -147,6 +148,55 @@ def test_no_checkpoint_flag_skips_all_checkpoint_writes(tmp_path, mini_tokenizer
     assert not (bare_output / "final").exists()
     assert not list(bare_output.glob("checkpoint-*"))
     assert list(bare_output.iterdir()) == [bare_output / "run.json"]
+
+
+def test_preflight_flag_prints_a_real_estimate_and_exits_without_training(
+    tmp_path, mini_tokenizer, capsys
+) -> None:
+    """MF-167: --preflight must report before touching the real training loop --
+    no checkpoint/final/run.json should ever appear, and the real parameter
+    count must reach the printed report (not just a generic "it ran" check)."""
+
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    config_path = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+    output_path = tmp_path / "preflight-output"
+
+    with pytest.raises(SystemExit) as excinfo:
+        pretrain.run(_args(config_path, shards_path, output_path, preflight=True))
+    assert excinfo.value.code == 0
+
+    captured = capsys.readouterr().out
+    assert "preflight estimate" in captured
+    assert "parameters:" in captured
+    assert "analytic training lower bound" in captured
+    assert "assumptions" in captured
+    # No real training or checkpoint I/O happened at all.
+    assert not output_path.exists()
+
+
+def test_preflight_report_reflects_the_real_config(tmp_path, mini_tokenizer, capsys) -> None:
+    """A bigger config must produce a visibly different (larger) estimate --
+    proves the report is reading the real resolved config, not a stub."""
+
+    shards_path = _build_shards(tmp_path, mini_tokenizer)
+    small_config = _write_tiny_config(tmp_path, mini_tokenizer.vocab_size)
+
+    big_config = tmp_path / "big.toml"
+    big_config.write_text(small_config.read_text().replace("d_model = 16", "d_model = 128"))
+
+    with pytest.raises(SystemExit):
+        pretrain.run(_args(small_config, shards_path, tmp_path / "a", preflight=True))
+    small_report = capsys.readouterr().out
+
+    with pytest.raises(SystemExit):
+        pretrain.run(_args(big_config, shards_path, tmp_path / "b", preflight=True))
+    big_report = capsys.readouterr().out
+
+    def _parameter_count(report: str) -> int:
+        line = next(line for line in report.splitlines() if "parameters:" in line)
+        return int(line.split(":")[1].strip().replace(",", ""))
+
+    assert _parameter_count(big_report) > _parameter_count(small_report)
 
 
 def test_progress_interval_prints_during_training_including_under_no_checkpoint(

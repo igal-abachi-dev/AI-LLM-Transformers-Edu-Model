@@ -30,7 +30,11 @@ from minifrontier.evaluation.code import (
     typescript_available,
 )
 from minifrontier.evaluation.fim import score_fim
-from minifrontier.evaluation.language import MiniFrontierEvalLM, harness_settings
+from minifrontier.evaluation.language import (
+    CODE_EXECUTION_TASKS,
+    MiniFrontierEvalLM,
+    harness_settings,
+)
 from minifrontier.evaluation.sft import score_sft_responses
 from minifrontier.evaluation.validation import (
     ValidationBatch,
@@ -425,6 +429,157 @@ def test_score_falls_back_to_sliding_window_when_sequence_exceeds_max_length(
     assert isinstance(is_greedy, bool)
 
 
+def test_score_batch_agrees_with_unbatched_score_for_mixed_length_pairs(mini_tokenizer) -> None:
+    # MF-114: the real correctness bar for batching -- a mixed batch of
+    # different-length pairs, scored together, must agree with scoring each
+    # pair alone (the same way MF-113's fast path had to agree with the slow
+    # sliding-window reference above).
+    config = ModelConfig.tiny_edu(
+        vocab_size=mini_tokenizer.vocab_size,
+        max_seq_len=64,
+        n_layers=2,
+        d_model=16,
+        n_heads=2,
+        d_ff=32,
+    )
+    adapter = MiniFrontierEvalLM(MiniFrontier(config), mini_tokenizer)
+    pairs = [
+        (mini_tokenizer.encode("the quick brown fox"), mini_tokenizer.encode(" jumps")),
+        (mini_tokenizer.encode("a"), mini_tokenizer.encode(" b c d e f g")),
+        (mini_tokenizer.encode("hello world"), mini_tokenizer.encode(" again")),
+    ]
+    batched = adapter._score_batch(pairs)
+    individually = [adapter._score(prefix, continuation) for prefix, continuation in pairs]
+    assert len(batched) == len(individually) == 3
+    for (batch_log_prob, batch_greedy), (solo_log_prob, solo_greedy) in zip(
+        batched, individually, strict=True
+    ):
+        assert batch_greedy == solo_greedy
+        assert batch_log_prob == pytest.approx(solo_log_prob, abs=1e-4)
+
+
+def test_score_batch_handles_empty_oversized_and_normal_pairs_together(mini_tokenizer) -> None:
+    # One batch call exercising all three _score_batch branches at once: an
+    # empty continuation (trivially greedy, never touches the model), a pair
+    # too long for max_length (routed to the slow sliding-window fallback),
+    # and a normal pair that takes the real batched fast path -- and the
+    # results must land back at the right original index regardless.
+    config = ModelConfig.tiny_edu(
+        vocab_size=mini_tokenizer.vocab_size,
+        max_seq_len=6,
+        n_layers=1,
+        d_model=16,
+        n_heads=2,
+        d_ff=32,
+    )
+    adapter = MiniFrontierEvalLM(MiniFrontier(config), mini_tokenizer)
+    empty_pair = (mini_tokenizer.encode("a"), [])
+    oversized_pair = (
+        mini_tokenizer.encode("the quick brown fox jumps"),
+        mini_tokenizer.encode(" over the lazy dog"),
+    )
+    normal_pair = (mini_tokenizer.encode("a"), mini_tokenizer.encode("b"))
+    results = adapter._score_batch([empty_pair, oversized_pair, normal_pair])
+    assert results[0] == (0.0, True)
+    assert math.isfinite(results[1][0])
+    assert results[2] == adapter._score(*normal_pair)
+
+
+def test_loglikelihood_batches_requests_into_fewer_forward_calls(mini_tokenizer) -> None:
+    config = ModelConfig.tiny_edu(
+        vocab_size=mini_tokenizer.vocab_size,
+        max_seq_len=32,
+        n_layers=1,
+        d_model=16,
+        n_heads=2,
+        d_ff=32,
+    )
+    model = MiniFrontier(config)
+    adapter = MiniFrontierEvalLM(model, mini_tokenizer, eval_batch_size=2)
+    requests = [
+        SimpleNamespace(args=("a", "b")),
+        SimpleNamespace(args=("c", "d e")),
+        SimpleNamespace(args=("f", "g h i")),
+    ]
+    expected = [
+        adapter._score(mini_tokenizer.encode(context), mini_tokenizer.encode(continuation))
+        for context, continuation in (request.args for request in requests)
+    ]
+
+    forward_calls = {"count": 0}
+    original_forward = model.forward
+
+    def counting_forward(*args, **kwargs):
+        forward_calls["count"] += 1
+        return original_forward(*args, **kwargs)
+
+    model.forward = counting_forward
+    try:
+        result = adapter.loglikelihood(requests)
+    finally:
+        model.forward = original_forward
+
+    assert len(result) == 3
+    for (log_prob, greedy), (expected_log_prob, expected_greedy) in zip(
+        result, expected, strict=True
+    ):
+        assert greedy == expected_greedy
+        assert log_prob == pytest.approx(expected_log_prob, abs=1e-4)
+    # 3 requests at eval_batch_size=2 -> 2 forward calls (chunks of 2, then 1),
+    # down from 3 one-at-a-time calls the original unbatched loop would make.
+    assert forward_calls["count"] == 2
+
+
+def test_loglikelihood_rolling_also_batches_requests(mini_tokenizer) -> None:
+    config = ModelConfig.tiny_edu(
+        vocab_size=mini_tokenizer.vocab_size,
+        max_seq_len=32,
+        n_layers=1,
+        d_model=16,
+        n_heads=2,
+        d_ff=32,
+    )
+    model = MiniFrontier(config)
+    adapter = MiniFrontierEvalLM(model, mini_tokenizer, eval_batch_size=4)
+    requests = [SimpleNamespace(args=("ab",)), SimpleNamespace(args=("cde",))]
+    expected = [
+        adapter._score([], mini_tokenizer.encode(request.args[0]))[0] for request in requests
+    ]
+
+    forward_calls = {"count": 0}
+    original_forward = model.forward
+
+    def counting_forward(*args, **kwargs):
+        forward_calls["count"] += 1
+        return original_forward(*args, **kwargs)
+
+    model.forward = counting_forward
+    try:
+        result = adapter.loglikelihood_rolling(requests)
+    finally:
+        model.forward = original_forward
+
+    assert len(result) == 2
+    for log_prob, expected_log_prob in zip(result, expected, strict=True):
+        assert log_prob == pytest.approx(expected_log_prob, abs=1e-4)
+    assert forward_calls["count"] == 1
+
+
+def test_eval_batch_size_defaults_to_one_and_rejects_nonpositive(mini_tokenizer) -> None:
+    config = ModelConfig.tiny_edu(
+        vocab_size=mini_tokenizer.vocab_size,
+        max_seq_len=16,
+        n_layers=1,
+        d_model=16,
+        n_heads=2,
+        d_ff=32,
+    )
+    adapter = MiniFrontierEvalLM(MiniFrontier(config), mini_tokenizer)
+    assert adapter.eval_batch_size == 1
+    with pytest.raises(ValueError, match="eval_batch_size"):
+        MiniFrontierEvalLM(MiniFrontier(config), mini_tokenizer, eval_batch_size=0)
+
+
 def test_harness_settings_include_extended_adds_the_mf086_tasks() -> None:
     settings = harness_settings(include_extended=True)
     assert settings["tasks"] == [
@@ -438,6 +593,23 @@ def test_harness_settings_include_extended_adds_the_mf086_tasks() -> None:
         "commonsense_qa",
         "boolq",
     ]
+
+
+def test_harness_settings_include_cruxeval_adds_mf122_tasks_with_execution_consent() -> None:
+    settings = harness_settings(include_cruxeval=True)
+    assert settings["tasks"] == ["arc_easy", "hellaswag", "piqa", "cruxeval_input", "cruxeval_output"]
+    assert settings["tasks"][-2:] == list(CODE_EXECUTION_TASKS)
+    # The flag that actually lets lm-eval run an unsafe_code-marked task
+    # must be tied directly to requesting cruxeval, not a separate,
+    # easy-to-forget toggle.
+    assert settings["confirm_run_unsafe_code"] is True
+
+
+def test_harness_settings_without_cruxeval_withholds_code_execution_consent() -> None:
+    settings = harness_settings()
+    assert "cruxeval_input" not in settings["tasks"]
+    assert "cruxeval_output" not in settings["tasks"]
+    assert settings["confirm_run_unsafe_code"] is False
 
 
 def test_harness_settings_include_gsm8k_and_extended_compose() -> None:

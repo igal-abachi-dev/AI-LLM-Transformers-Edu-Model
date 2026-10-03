@@ -12,6 +12,10 @@ def source_args(**overrides) -> Namespace:
     values = {
         "manifest": None,
         "source": "fineweb-edu",
+        "parquet_dir": None,
+        "hub_dataset": None,
+        "hub_dataset_config": None,
+        "hub_dataset_revision": None,
         "limit": 12,
         "start": 3,
         "shuffle_seed": 17,
@@ -106,6 +110,55 @@ def test_manifest_source_rejects_fineweb_cursor_options(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="require a streaming --source"):
         prepare_data.document_stream(args)
+
+
+def test_parquet_dir_source_reads_the_real_directory_and_rejects_cursor_options(
+    monkeypatch, tmp_path: Path
+) -> None:
+    observed = {}
+
+    def fake_iter_parquet_dataset_dir(directory):
+        observed["directory"] = directory
+        return iter(("document",))
+
+    monkeypatch.setattr(prepare_data, "iter_parquet_dataset_dir", fake_iter_parquet_dataset_dir)
+    args = source_args(source=None, parquet_dir=tmp_path, limit=None, start=0, shuffle_seed=None)
+    assert list(prepare_data.document_stream(args)) == ["document"]
+    assert observed == {"directory": tmp_path}
+
+    with pytest.raises(ValueError, match="require a streaming --source"):
+        prepare_data.document_stream(source_args(source=None, parquet_dir=tmp_path, limit=1))
+
+
+def test_hub_dataset_source_passes_through_config_and_revision(monkeypatch) -> None:
+    observed = {}
+
+    def fake_iter_hub_parquet_dataset(repo_id, **kwargs):
+        observed["repo_id"] = repo_id
+        observed.update(kwargs)
+        return iter(("document",))
+
+    monkeypatch.setattr(prepare_data, "iter_hub_parquet_dataset", fake_iter_hub_parquet_dataset)
+    args = source_args(
+        source=None,
+        hub_dataset="someone/mixture",
+        hub_dataset_config="fineweb-edu",
+        hub_dataset_revision="abc123",
+        limit=None,
+        start=0,
+        shuffle_seed=None,
+    )
+    assert list(prepare_data.document_stream(args)) == ["document"]
+    assert observed == {
+        "repo_id": "someone/mixture",
+        "config_name": "fineweb-edu",
+        "revision": "abc123",
+    }
+
+    with pytest.raises(ValueError, match="require a streaming --source"):
+        prepare_data.document_stream(
+            source_args(source=None, hub_dataset="someone/mixture", limit=1)
+        )
 
 
 def test_prepare_data_selects_ebook_markdown_stream(monkeypatch, tmp_path: Path) -> None:

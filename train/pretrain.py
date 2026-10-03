@@ -45,6 +45,7 @@ from minifrontier.model import MiniFrontier
 from minifrontier.mtp import MTPHeads
 from minifrontier.reproducibility import seed_everything
 from minifrontier.run_metadata import RunMetadata
+from minifrontier.scale import estimate_scale
 from minifrontier.shards import (
     CurriculumMixtureProvider,
     MixtureBatchProvider,
@@ -169,6 +170,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--activation-checkpointing", action="store_true")
+    parser.add_argument(
+        "--preflight",
+        action="store_true",
+        help=(
+            "MF-167: print a real, analytic (meta-device, no GPU allocation) memory "
+            "estimate for this exact config/batch-size -- parameters, gradients, AdamW "
+            "state, and KV cache -- compared against the target device's real total "
+            "VRAM if CUDA, then exit without training. Does not account for "
+            "activations/temporary kernels/fragmentation (see the printed assumptions); "
+            "a real go/no-go signal before committing GPU time, not a guarantee."
+        ),
+    )
     parser.add_argument("--compile", action="store_true")
     parser.add_argument("--compile-backend")
     parser.add_argument("--compile-fail", action="store_true")
@@ -458,6 +471,45 @@ def _build_batch_provider(
     )
 
 
+def print_preflight_report(
+    model_config: ModelConfig, *, device: torch.device, batch_size: int
+) -> None:
+    """MF-167: a real, analytic (meta-device, no allocation) estimate, printed
+    before any real GPU memory is touched. Deliberately conservative about what
+    it claims -- see `estimate_scale`'s own `assumptions` field, always printed
+    alongside the numbers, since activations/temporary kernels/fragmentation are
+    excluded and this project has already measured real cases where those alone
+    are what pages a run (e.g. MF-070's own 2048-context finding)."""
+
+    context_length = model_config.max_seq_len
+    estimate = estimate_scale(model_config, batch_size=batch_size, context_length=context_length)
+    kv_bytes = (
+        estimate.bounded_local_kv_bytes
+        if model_config.attention_pattern == "hybrid"
+        else estimate.full_history_kv_bytes
+    )
+    training_bytes = estimate.training_lower_bound_bytes + kv_bytes
+    print(
+        f"preflight estimate (batch_size={batch_size}, context_length={context_length}, "
+        f"attention_pattern={model_config.attention_pattern}):"
+    )
+    print(f"  parameters: {estimate.parameter_count:,}")
+    print(f"  weights+gradients+AdamW state: {estimate.training_lower_bound_bytes / 1e9:.2f} GB")
+    print(f"  KV cache: {kv_bytes / 1e9:.2f} GB")
+    print(f"  analytic training lower bound (excludes activations): {training_bytes / 1e9:.2f} GB")
+    if device.type == "cuda" and torch.cuda.is_available():
+        total = torch.cuda.get_device_properties(device).total_memory
+        print(f"  target device total VRAM: {total / 1e9:.2f} GB")
+        print(f"  lower bound as a fraction of total VRAM: {training_bytes / total:.1%}")
+    else:
+        print(
+            "  target device is not CUDA (or CUDA unavailable) -- no VRAM total to compare against"
+        )
+    print("  assumptions (read before trusting this as a go/no-go signal):")
+    for assumption in estimate.assumptions:
+        print(f"    - {assumption}")
+
+
 def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
     if not args.no_checkpoint and args.checkpoint_interval <= 0:
         raise ValueError("checkpoint_interval must be positive")
@@ -495,6 +547,9 @@ def run(args: argparse.Namespace) -> tuple[TrainingState, RunMetadata]:
         skip_anomalous_steps=args.skip_anomalous_steps,
     )
     device = torch.device(args.device)
+    if args.preflight:
+        print_preflight_report(model_config, device=device, batch_size=args.batch_size)
+        raise SystemExit(0)
     seed_everything(args.seed)
     model = MiniFrontier(model_config).to(device)
     mtp_heads = None

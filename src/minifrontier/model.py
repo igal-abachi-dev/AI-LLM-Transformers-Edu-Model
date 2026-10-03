@@ -26,7 +26,7 @@ sequence yields 1,023 predictions from one pass.
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import torch
@@ -498,12 +498,18 @@ class MiniFrontier(nn.Module):
         no_repeat_ngram_size: int | None = None,
         suppress_token_ids: Sequence[int] | None = None,
         validate_logits: bool = False,
+        stop_strings: Sequence[str] | None = None,
+        decode: Callable[[Sequence[int]], str] | None = None,
+        cache: KVCache | None = None,
     ) -> torch.Tensor:
         """Generate with the M3 preallocated KV-cache implementation.
 
         A convenience wrapper: the real loop lives in ``generation.py``, and the
         import is deferred to keep this module free of a circular dependency.
         ``temperature=0`` (the default) means greedy, deterministic decoding.
+        ``stop_strings``/``decode`` (MF-154): see ``generation.generate``.
+        ``cache`` (MF-143): pass an existing cache to continue it instead of
+        always starting fresh -- see ``generation.generate``.
         """
 
         from minifrontier.generation import generate
@@ -522,6 +528,9 @@ class MiniFrontier(nn.Module):
             eos_id=eos_id,
             generator=generator,
             validate_logits=validate_logits,
+            stop_strings=stop_strings,
+            decode=decode,
+            cache=cache,
         )
 
     def parameter_count(self, *, trainable_only: bool = True) -> int:

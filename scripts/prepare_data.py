@@ -33,7 +33,9 @@ from minifrontier.data import (
     iter_fineweb_edu,
     iter_github_code,
     iter_github_code_from_repos,
+    iter_hub_parquet_dataset,
     iter_jsonl_documents,
+    iter_parquet_dataset_dir,
     split_bucket,
 )
 from minifrontier.shards import (
@@ -60,6 +62,22 @@ def parse_args() -> argparse.Namespace:
             "github-code",
             "ebook-markdown",
         ),
+    )
+    source.add_argument(
+        "--parquet-dir",
+        type=Path,
+        help="MF-132: re-import a local --export-parquet-dir-style directory (MF-125's "
+        "own publish-oriented export) back into document_stream, reconstructing real "
+        "Document rows (including provenance) rather than raw tokenized shards -- lets "
+        "an already-admitted mixture be re-tokenized (different --sequence-length, "
+        "tokenizer, or packing mode) without re-running the original streaming/"
+        "filtering/dedup pipeline against each upstream source again.",
+    )
+    source.add_argument(
+        "--hub-dataset",
+        help="MF-132: re-import a *published* Hugging Face dataset repo built from one "
+        "or more --export-parquet-dir exports (see scripts/build_dataset_card.py) back "
+        "into document_stream, the same way --parquet-dir does for a local directory.",
     )
     parser.add_argument("--limit", type=int)
     parser.add_argument("--start", type=int, default=0)
@@ -131,6 +149,18 @@ def parse_args() -> argparse.Namespace:
         help="Only meaningful with --source ebook-markdown: applies uniformly to "
         "every book in --ebook-directory -- run once per language for a mixed-"
         "language batch.",
+    )
+    parser.add_argument(
+        "--hub-dataset-config",
+        help="Only meaningful with --hub-dataset: which named config (mixture source) "
+        "to load, matching build_dataset_card.py's own per-source configs: entries. "
+        "Omit for a single-config repo.",
+    )
+    parser.add_argument(
+        "--hub-dataset-revision",
+        help="Only meaningful with --hub-dataset: pin a specific repo revision/commit "
+        "for reproducibility, matching every other real source's own pinned revision "
+        "in this pipeline. Omit to use the repo's current default branch.",
     )
     parser.add_argument("--tokenizer", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -241,6 +271,18 @@ def document_stream(args: argparse.Namespace, *, code_stats: CodeAdmissionStats 
         if args.limit is not None or args.start or args.shuffle_seed is not None:
             raise ValueError("cursor/shuffle options require a streaming --source")
         return iter_jsonl_documents(args.manifest)
+    if args.parquet_dir is not None:
+        if args.limit is not None or args.start or args.shuffle_seed is not None:
+            raise ValueError("cursor/shuffle options require a streaming --source")
+        return iter_parquet_dataset_dir(args.parquet_dir)
+    if args.hub_dataset is not None:
+        if args.limit is not None or args.start or args.shuffle_seed is not None:
+            raise ValueError("cursor/shuffle options require a streaming --source")
+        return iter_hub_parquet_dataset(
+            args.hub_dataset,
+            config_name=args.hub_dataset_config,
+            revision=args.hub_dataset_revision,
+        )
     if args.source == "fineweb-edu":
         return iter_fineweb_edu(
             limit=args.limit,
@@ -389,11 +431,21 @@ def main() -> None:
     exported_parquet_validation_rows = (
         parquet_validation_writer.finalize() if parquet_validation_writer is not None else None
     )
+    if args.source is not None:
+        source_label = args.source
+    elif args.manifest is not None:
+        source_label = "manifest"
+    elif args.parquet_dir is not None:
+        source_label = "parquet-dir"
+    else:
+        source_label = "hub-dataset"
     metadata = {
         "admission": asdict(stats),
         "code_admission": asdict(code_stats) if args.source == "github-code" else None,
-        "source": args.source or "manifest",
+        "source": source_label,
         "source_manifest": str(args.manifest) if args.manifest is not None else None,
+        "source_parquet_dir": str(args.parquet_dir) if args.parquet_dir is not None else None,
+        "source_hub_dataset": args.hub_dataset,
         "source_start": args.start if args.source is not None else None,
         "source_limit": args.limit if args.source is not None else None,
         "source_shuffle_seed": args.shuffle_seed if args.source is not None else None,

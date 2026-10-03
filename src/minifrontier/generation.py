@@ -22,7 +22,7 @@ produced.
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 import torch
@@ -194,29 +194,59 @@ def generate(
     eos_id: int | None = None,
     generator: torch.Generator | None = None,
     validate_logits: bool = False,
+    stop_strings: Sequence[str] | None = None,
+    decode: Callable[[Sequence[int]], str] | None = None,
+    cache: KVCache | None = None,
 ) -> torch.Tensor:
     """Continue ``prompt`` for up to ``max_new_tokens`` tokens.
 
     Returns prompt and continuation together, ``[batch, prompt + generated]``.
     Generation stops early when every sequence in the batch has produced
-    ``eos_id``. The model is put in eval mode for the duration and restored
-    afterwards, so a caller mid-training does not silently lose its mode.
+    ``eos_id`` (and/or, see below, a stop string). The model is put in eval
+    mode for the duration and restored afterwards, so a caller mid-training
+    does not silently lose its mode.
 
     ``min_p``/``repetition_penalty``/``no_repeat_ngram_size``/``suppress_token_ids``
     all pass straight through to ``sample_next_token`` -- see there for what
     each does. ``repetition_penalty``/``no_repeat_ngram_size`` are computed
     from everything generated so far (prompt included), not just this run's
     own continuation.
+
+    ``stop_strings`` (MF-154) ends generation as soon as any of the given
+    strings appears in the *decoded* continuation so far -- real, distinct
+    gap from ``eos_id``: a base/completion model that never learned to
+    reliably emit EOS mid-function keeps producing locally-plausible filler
+    (closing braces, semicolons) for the rest of the budget otherwise.
+    Requires ``decode`` (e.g. ``tokenizer.decode``), since a stop string need
+    not land on a token boundary -- checking token IDs directly would miss a
+    string that only forms once several tokens are decoded together, so this
+    re-decodes each row's own continuation-so-far every step rather than
+    checking the newest token alone. Simple and correct over clever: this
+    project's own generation-time Python loops (see
+    ``_apply_no_repeat_ngram`` above) already favor that trade at this
+    project's real interactive scale.
+
+    ``cache`` (MF-143): pass an existing, non-empty ``KVCache`` to continue
+    appending to it instead of always starting a fresh one -- ``prompt`` must
+    then be only the *new* tokens since that cache was last used (everything
+    already in it is reused, not recomputed; ``model.forward`` itself derives
+    where to continue from ``cache.length``). Omit (the default) for the
+    original behavior: a fresh cache sized exactly for this call is allocated
+    and freed internally. The caller owns reusing/resetting a passed-in cache
+    across calls -- see ``chat.ChatCache`` for the real multi-turn wrapper.
     """
 
     if prompt.ndim != 2 or prompt.shape[1] == 0:
         raise ValueError("prompt must be non-empty [batch, sequence] tokens")
     if max_new_tokens < 0:
         raise ValueError("max_new_tokens cannot be negative")
-    if prompt.shape[1] + max_new_tokens > model.config.max_seq_len:
+    already_cached = cache.length if cache is not None else 0
+    if already_cached + prompt.shape[1] + max_new_tokens > model.config.max_seq_len:
         raise ValueError("prompt plus requested tokens exceeds model max_seq_len")
     if eos_id is not None and not 0 <= eos_id < model.config.vocab_size:
         raise ValueError("eos_id is outside the model vocabulary")
+    if stop_strings is not None and decode is None:
+        raise ValueError("stop_strings requires a decode callable to check against")
     if max_new_tokens == 0:
         return prompt.clone()
 
@@ -227,14 +257,16 @@ def generate(
         # over-allocated. `bounded_local` gives a hybrid model's local layers a
         # fixed-size ring buffer instead of a cache that grows forever -- that,
         # plus GQA, is what makes Modern's cache several times smaller than Edu's.
-        cache = KVCache.allocate(
-            model.config,
-            batch_size=prompt.shape[0],
-            device=prompt.device,
-            dtype=None,
-            capacity=prompt.shape[1] + max_new_tokens,
-            bounded_local=model.config.attention_pattern == "hybrid",
-        )
+        # A caller-provided cache (MF-143) is reused as-is instead.
+        if cache is None:
+            cache = KVCache.allocate(
+                model.config,
+                batch_size=prompt.shape[0],
+                device=prompt.device,
+                dtype=None,
+                capacity=prompt.shape[1] + max_new_tokens,
+                bounded_local=model.config.attention_pattern == "hybrid",
+            )
         # Preallocate the answer and write into it, rather than concatenating a new
         # tensor every step. Same result, no repeated reallocation.
         output = torch.empty(
@@ -275,6 +307,13 @@ def generate(
                 finished |= next_token.squeeze(1).eq(eos_id)
             output[:, output_length : output_length + 1].copy_(next_token)
             output_length += 1
+            if stop_strings:
+                for row in range(output.shape[0]):
+                    if finished[row]:
+                        continue
+                    continuation = output[row, prompt.shape[1] : output_length].tolist()
+                    if any(stop in decode(continuation) for stop in stop_strings):
+                        finished[row] = True
             if step + 1 == max_new_tokens or finished.all():
                 break
             # DECODE: one token in, one token's scores out. Everything the model

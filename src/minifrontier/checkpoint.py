@@ -29,12 +29,13 @@ import hashlib
 import json
 import re
 import shutil
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import torch
-from safetensors.torch import load_model, save_model
+from safetensors.torch import load_file, load_model, save_model
 
 from minifrontier.config import ModelConfig
 from minifrontier.ema import EMAWeights
@@ -217,6 +218,80 @@ def prune_old_checkpoints(output_dir: str | Path, *, keep_last_n: int) -> list[P
     return to_delete
 
 
+@dataclass(frozen=True, slots=True)
+class SchemaRules:
+    """Opt-in exclude/rename rules for loading a checkpoint against a changed
+    parameter schema (MF-138, found reading `xai-org/grok-1`'s real
+    `checkpoint.py`, which uses the same regex exclude/rename shape).
+
+    Never the default path -- ordinary loading stays `strict=True`-only
+    unless a caller explicitly supplies rules here. This project's own real
+    architecture changes so far (MTP heads, EMA shadow weights, the
+    `head_dim` override, gated attention) have each been handled with a
+    one-off carve-out rather than one general mechanism; this exists so a
+    future change can reuse the same tool instead of inventing another.
+
+    ``exclude``: regex patterns (``re.search``); a checkpoint key matching
+    any of them is dropped before loading -- for a parameter the code no
+    longer has, so the model's freshly-initialized value stays untouched.
+    ``rename``: ``(pattern, replacement)`` pairs applied via ``re.sub``, in
+    order -- for a parameter that moved to a new name.
+
+    Real, disclosed limitation, not silently glossed over: this bypasses
+    safetensors' own shared-tensor-aware tied-weight reconstruction (the
+    special handling `load_model`/`save_model` do for `tie_embeddings=True`,
+    where only one of the two tied parameter names is actually stored on
+    disk). A checkpoint for a tied-embedding model loaded through this path
+    needs an explicit `rename` rule covering the missing tied name, or the
+    load will correctly fail loudly rather than silently mis-tying. The
+    plain, no-rules `load_training_checkpoint` path is unaffected and keeps
+    using `load_model`'s real tied-weight support exactly as before.
+    """
+
+    exclude: tuple[str, ...] = ()
+    rename: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        for pattern in self.exclude:
+            re.compile(pattern)
+        for pattern, _replacement in self.rename:
+            re.compile(pattern)
+
+
+def apply_schema_rules(
+    state_dict: Mapping[str, torch.Tensor], rules: SchemaRules
+) -> dict[str, torch.Tensor]:
+    """Exclude, then rename, checkpoint keys per `rules` -- a pure dict
+    transform, independent of file I/O, so it is trivial to unit-test
+    directly against plain tensors."""
+
+    result: dict[str, torch.Tensor] = {}
+    for key, tensor in state_dict.items():
+        if any(re.search(pattern, key) for pattern in rules.exclude):
+            continue
+        renamed = key
+        for pattern, replacement in rules.rename:
+            renamed = re.sub(pattern, replacement, renamed)
+        result[renamed] = tensor
+    return result
+
+
+def describe_schema_mismatch(checkpoint_keys: Iterable[str], model_keys: Iterable[str]) -> str:
+    """A real, named diff of exactly which keys differ -- grok-1's own real
+    validate-before-copy behavior (MF-138), rather than relying on
+    `load_state_dict`'s own terser strict-mismatch error alone."""
+
+    checkpoint_set, model_set = set(checkpoint_keys), set(model_keys)
+    missing = sorted(model_set - checkpoint_set)
+    unexpected = sorted(checkpoint_set - model_set)
+    parts = []
+    if missing:
+        parts.append(f"missing from checkpoint ({len(missing)}): {missing}")
+    if unexpected:
+        parts.append(f"unexpected in checkpoint ({len(unexpected)}): {unexpected}")
+    return "; ".join(parts) if parts else "no mismatch"
+
+
 def load_training_checkpoint(
     directory: str | Path,
     model: MiniFrontier,
@@ -227,6 +302,7 @@ def load_training_checkpoint(
     trusted_local_state: bool = False,
     mtp_heads: MTPHeads | None = None,
     ema: EMAWeights | None = None,
+    schema_rules: SchemaRules | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     root = Path(directory)
     saved_config = json.loads((root / "config.json").read_text(encoding="utf-8"))
@@ -235,9 +311,25 @@ def load_training_checkpoint(
     # was introduced still loads -- the field's own default fills in on both
     # sides identically, rather than the checkpoint's config.json permanently
     # disagreeing with any model built against a newer ModelConfig schema.
-    if ModelConfig(**saved_config).to_dict() != model.config.to_dict():
+    # Skipped when schema_rules is given: a real architecture change (this
+    # mechanism's whole point) will usually change ModelConfig too, and a
+    # caller passing explicit rules has already taken responsibility for
+    # reconciling that, the same "opt-in, explicit, never silently bypassed"
+    # principle SchemaRules itself documents.
+    if schema_rules is None and ModelConfig(**saved_config).to_dict() != model.config.to_dict():
         raise ValueError("checkpoint model configuration does not match the target model")
-    load_model(model, str(root / "model.safetensors"), strict=True)
+    if schema_rules is None:
+        load_model(model, str(root / "model.safetensors"), strict=True)
+    else:
+        raw_state = load_file(str(root / "model.safetensors"))
+        transformed = apply_schema_rules(raw_state, schema_rules)
+        model_keys = set(model.state_dict().keys())
+        if set(transformed) != model_keys:
+            raise ValueError(
+                "checkpoint does not match the target model even after applying "
+                f"schema_rules: {describe_schema_mismatch(transformed, model_keys)}"
+            )
+        model.load_state_dict(transformed, strict=True)
     if mtp_heads is not None:
         mtp_heads_path = root / "mtp_heads.safetensors"
         if not mtp_heads_path.exists():

@@ -900,11 +900,16 @@ From `src/minifrontier/training.py`, the grown-up knobs:
   consumer GPU. Real numbers from LoRA's own paper: on some benchmarks it trained as little
   as 0.2–0.6% of the parameters full fine-tuning would touch, and matched or slightly beat it.
 
-  MiniFrontier doesn't use LoRA/QLoRA anywhere — this project always does full fine-tuning,
-  on purpose, to keep the training loop simple and readable end to end. But LoRA is extremely
-  common in the wider ecosystem (it's how most people fine-tune a large open model on their
-  own hardware), so it's worth knowing the name and the idea even though you won't find it in
-  this codebase.
+  `sft.py`'s own default training path still always does full fine-tuning, on purpose, to keep
+  the main training loop simple and readable end to end — but this project also builds LoRA
+  itself, from scratch, in plain PyTorch (`src/minifrontier/lora.py`, `labs/11_lora.py`), the
+  same way it builds everything else here rather than importing a library for it. It's kept as
+  a separate, opt-in module rather than wired into the default recipe, for education and for
+  future use (specializing an already-trained MiniFrontier checkpoint cheaply). **QLoRA's own
+  4-bit base-weight quantization is not built** — that's real, separate engineering (an NF4
+  quantization scheme, dequantize-on-the-fly forward pass) beyond what this project's own real
+  use case needs, since MiniFrontier's own checkpoints already fit this project's reference
+  hardware at full precision.
 
   **distillation**. in addition to training a model purely on raw
   text, you can have an already-strong "teacher" model generate the training examples — 

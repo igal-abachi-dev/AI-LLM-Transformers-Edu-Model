@@ -63,7 +63,27 @@ def parse_args() -> argparse.Namespace:
         help="Add blimp/lambada_openai/winogrande/openbookqa/commonsense_qa/boolq "
         "(MF-086) on top of DEFAULT_TASKS.",
     )
+    parser.add_argument(
+        "--include-cruxeval",
+        action="store_true",
+        help=(
+            "Add cruxeval_input/cruxeval_output (MF-122) -- real code-reasoning tasks "
+            "that EXECUTE the model's own generated Python (lm-eval's own cruxeval "
+            "task is marked unsafe_code: true). This flag is this project's explicit "
+            "consent to that execution (threaded into simple_evaluate's own "
+            "confirm_run_unsafe_code gate) -- there is no sandbox beyond lm-eval's own "
+            "resource-limiting guard."
+        ),
+    )
     parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument(
+        "--harness-batch-size",
+        type=int,
+        default=8,
+        help="MF-114: how many lm-eval loglikelihood/loglikelihood_rolling requests "
+        "MiniFrontierEvalLM folds into one forward call. 1 reproduces the original, "
+        "fully unbatched behavior exactly.",
+    )
     return parser.parse_args()
 
 
@@ -86,7 +106,9 @@ def evaluate_checkpoint(
     run_harness: bool = False,
     include_gsm8k: bool = False,
     include_extended: bool = False,
+    include_cruxeval: bool = False,
     harness_limit: int = 10,
+    harness_batch_size: int = 8,
     weights: str = "live",
 ) -> dict[str, object]:
     if weights not in ("live", "ema"):
@@ -114,8 +136,12 @@ def evaluate_checkpoint(
     if run_harness:
         from lm_eval import simple_evaluate
 
-        settings = harness_settings(include_gsm8k=include_gsm8k, include_extended=include_extended)
-        adapter = MiniFrontierEvalLM(model, tokenizer)
+        settings = harness_settings(
+            include_gsm8k=include_gsm8k,
+            include_extended=include_extended,
+            include_cruxeval=include_cruxeval,
+        )
+        adapter = MiniFrontierEvalLM(model, tokenizer, eval_batch_size=harness_batch_size)
         try:
             result["harness"] = {
                 "status": "completed",
@@ -126,6 +152,7 @@ def evaluate_checkpoint(
                     num_fewshot=0,
                     limit=harness_limit,
                     log_samples=False,
+                    confirm_run_unsafe_code=settings["confirm_run_unsafe_code"],
                 ),
             }
         except Exception as error:  # preserve infrastructure failure separately from scores
@@ -148,7 +175,9 @@ def main() -> None:
         run_harness=args.run_harness,
         include_gsm8k=args.include_gsm8k,
         include_extended=args.include_extended,
+        include_cruxeval=args.include_cruxeval,
         harness_limit=args.limit,
+        harness_batch_size=args.harness_batch_size,
         weights=args.weights,
     )
     text = json.dumps(result, indent=2, sort_keys=True, default=_json_default) + "\n"

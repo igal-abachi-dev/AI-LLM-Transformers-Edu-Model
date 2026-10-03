@@ -33,7 +33,9 @@ from minifrontier.data import (
     iter_fineweb_edu,
     iter_github_code,
     iter_github_code_from_repos,
+    iter_hub_parquet_dataset,
     iter_jsonl_documents,
+    iter_parquet_dataset_dir,
     iter_parquet_documents,
     pack_documents,
     split_documents,
@@ -929,6 +931,84 @@ def test_iter_parquet_documents_round_trips_a_real_document(tmp_path) -> None:
     writer.finalize()
     result = list(iter_parquet_documents(cache_path))
     assert result == [original]
+
+
+def test_iter_parquet_dataset_dir_reads_every_shard_of_both_splits_in_sorted_order(
+    tmp_path,
+) -> None:
+    """MF-132: a real --export-parquet-dir-style directory, deliberately with
+    TWO train shards (out of order on disk) to prove shard files are read
+    back in sorted filename order, not directory-listing order."""
+
+    from minifrontier.shards import ParquetDocumentWriter
+
+    directory = tmp_path / "fineweb-edu"
+    directory.mkdir()
+    train_0 = document("train shard zero", record_id="t0")
+    train_1 = document("train shard one", record_id="t1")
+    validation_0 = document("validation shard zero", record_id="v0")
+
+    # Written in reverse shard-index order on purpose.
+    writer_1 = ParquetDocumentWriter(directory / "train-00001-of-00002.parquet")
+    writer_1.add(train_1)
+    writer_1.finalize()
+    writer_0 = ParquetDocumentWriter(directory / "train-00000-of-00002.parquet")
+    writer_0.add(train_0)
+    writer_0.finalize()
+    validation_writer = ParquetDocumentWriter(directory / "validation-00000-of-00001.parquet")
+    validation_writer.add(validation_0)
+    validation_writer.finalize()
+
+    result = list(iter_parquet_dataset_dir(directory))
+    assert result == [train_0, train_1, validation_0]
+
+
+def test_iter_parquet_dataset_dir_can_restrict_to_one_split(tmp_path) -> None:
+    from minifrontier.shards import ParquetDocumentWriter
+
+    directory = tmp_path / "fineweb-edu"
+    directory.mkdir()
+    train_doc = document("train only", record_id="t0")
+    validation_doc = document("validation only", record_id="v0")
+    train_writer = ParquetDocumentWriter(directory / "train-00000-of-00001.parquet")
+    train_writer.add(train_doc)
+    train_writer.finalize()
+    validation_writer = ParquetDocumentWriter(directory / "validation-00000-of-00001.parquet")
+    validation_writer.add(validation_doc)
+    validation_writer.finalize()
+
+    assert list(iter_parquet_dataset_dir(directory, splits=("train",))) == [train_doc]
+    assert list(iter_parquet_dataset_dir(directory, splits=("validation",))) == [validation_doc]
+
+
+def test_iter_hub_parquet_dataset_round_trips_via_the_real_datasets_load_dataset_contract(
+    monkeypatch,
+) -> None:
+    """MF-132: the remote half. `datasets.load_dataset` without `split=` returns a
+    mapping of split name -> an iterable of real row dicts (a DatasetDict in
+    practice) -- faked here exactly to that contract, not to this project's own
+    internals, since the real correctness question is "does Document.from_mapping
+    reconstruct every row correctly," not "did we call datasets.load_dataset."""
+
+    original = document("hub row", record_id="hub-0", source_type="text")
+    request = {}
+
+    def fake_load_dataset(*args, **kwargs):
+        from dataclasses import asdict
+
+        request["args"] = args
+        request["kwargs"] = kwargs
+        return {"train": [asdict(original)]}
+
+    monkeypatch.setattr("datasets.load_dataset", fake_load_dataset)
+    result = list(
+        iter_hub_parquet_dataset("someone/mixture", config_name="fineweb-edu", revision="abc123")
+    )
+    assert result == [original]
+    assert request == {
+        "args": ("someone/mixture",),
+        "kwargs": {"name": "fineweb-edu", "revision": "abc123"},
+    }
 
 
 def test_iter_github_code_from_repos_creates_then_replays_the_document_cache(tmp_path) -> None:

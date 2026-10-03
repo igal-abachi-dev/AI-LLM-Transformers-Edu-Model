@@ -1,10 +1,16 @@
+import dataclasses
 import json
+import re
 from pathlib import Path
 
 import pytest
 import torch
+from safetensors.torch import load_file, save_file
 
 from minifrontier.checkpoint import (
+    SchemaRules,
+    apply_schema_rules,
+    describe_schema_mismatch,
     export_release,
     load_release,
     load_release_mtp_heads,
@@ -446,3 +452,104 @@ def test_training_checkpoint_loads_after_a_new_modelconfig_field_is_added(tmp_pa
     (checkpoint / "config.json").write_text(json.dumps(saved), encoding="utf-8")
 
     load_training_checkpoint(checkpoint, MiniFrontier(config), trusted_local_state=True)
+
+
+def test_apply_schema_rules_excludes_then_renames() -> None:
+    state_dict = {
+        "keep.weight": torch.tensor([1.0]),
+        "old_name.weight": torch.tensor([2.0]),
+        "dropped.weight": torch.tensor([3.0]),
+    }
+    rules = SchemaRules(exclude=(r"^dropped\.",), rename=((r"^old_name\.", "new_name."),))
+    result = apply_schema_rules(state_dict, rules)
+    assert set(result) == {"keep.weight", "new_name.weight"}
+    assert torch.equal(result["new_name.weight"], torch.tensor([2.0]))
+
+
+def test_apply_schema_rules_is_a_no_op_with_empty_rules() -> None:
+    state_dict = {"a.weight": torch.tensor([1.0])}
+    assert apply_schema_rules(state_dict, SchemaRules()) == state_dict
+
+
+def test_schema_rules_rejects_an_invalid_regex_at_construction() -> None:
+    with pytest.raises(re.error):
+        SchemaRules(exclude=(r"(unclosed",))
+
+
+def test_describe_schema_mismatch_names_both_directions() -> None:
+    message = describe_schema_mismatch(
+        checkpoint_keys=["a.weight", "old.weight"], model_keys=["a.weight", "new.weight"]
+    )
+    assert "missing from checkpoint (1): ['new.weight']" in message
+    assert "unexpected in checkpoint (1): ['old.weight']" in message
+
+
+def test_describe_schema_mismatch_reports_no_mismatch_when_keys_match() -> None:
+    assert describe_schema_mismatch(["a.weight"], ["a.weight"]) == "no mismatch"
+
+
+def test_load_training_checkpoint_with_schema_rules_loads_a_real_renamed_parameter(
+    tmp_path,
+) -> None:
+    """Real regression test simulating a genuine past schema change (this
+    task's own acceptance criterion): a checkpoint saved under an *old*
+    parameter name must load cleanly into *today's* model via a rename rule,
+    with the real weight values preserved -- not just "it didn't crash"."""
+
+    config = dataclasses.replace(ModelConfig.tiny_edu(attention_impl="sdpa"), tie_embeddings=False)
+    original = MiniFrontier(config)
+    checkpoint = tmp_path / "checkpoint"
+    save_training_checkpoint(checkpoint, original)
+
+    # Simulate "the code used to call this q_proj; a checkpoint saved back then
+    # has that name on disk" by renaming the real key in the saved file.
+    weights_path = checkpoint / "model.safetensors"
+    state_dict = load_file(str(weights_path))
+    old_key = "blocks.0.attention.q_proj.weight"
+    assert old_key in state_dict
+    renamed = dict(state_dict)
+    renamed["blocks.0.attention.query_proj.weight"] = renamed.pop(old_key)
+    save_file(renamed, str(weights_path))
+
+    # Without schema_rules, the renamed checkpoint correctly fails to load --
+    # proves the simulated rename is real, not a no-op.
+    with pytest.raises(RuntimeError):
+        load_training_checkpoint(checkpoint, MiniFrontier(config))
+
+    # An insufficient rule still raises, naming the real remaining diff.
+    fresh = MiniFrontier(config)
+    with pytest.raises(ValueError, match="query_proj"):
+        load_training_checkpoint(
+            checkpoint, fresh, schema_rules=SchemaRules(exclude=(r"^nonexistent\.",))
+        )
+
+    # The real rule that reverses the simulated rename loads cleanly, and the
+    # actual weight values round-trip exactly.
+    restored = MiniFrontier(config)
+    load_training_checkpoint(
+        checkpoint,
+        restored,
+        trusted_local_state=True,
+        schema_rules=SchemaRules(
+            rename=((r"^blocks\.0\.attention\.query_proj\.", "blocks.0.attention.q_proj."),)
+        ),
+    )
+    assert torch.equal(
+        restored.state_dict()["blocks.0.attention.q_proj.weight"],
+        original.state_dict()["blocks.0.attention.q_proj.weight"],
+    )
+
+
+def test_load_training_checkpoint_without_schema_rules_is_unchanged(tmp_path) -> None:
+    """Regression guard: the default (no schema_rules) path must behave
+    exactly as before this task's changes -- still strict, still uses
+    load_model's real tied-weight-aware loading."""
+
+    config = ModelConfig.tiny_edu(attention_impl="sdpa")
+    model = MiniFrontier(config)
+    checkpoint = tmp_path / "checkpoint"
+    save_training_checkpoint(checkpoint, model)
+    restored = MiniFrontier(config)
+    load_training_checkpoint(checkpoint, restored, trusted_local_state=True)
+    for key, value in model.state_dict().items():
+        assert torch.equal(restored.state_dict()[key], value)

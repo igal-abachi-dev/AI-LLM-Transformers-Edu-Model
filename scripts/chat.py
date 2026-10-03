@@ -67,6 +67,14 @@ def parse_args() -> argparse.Namespace:
         help="hard-block any n-gram (size N) that would repeat one already emitted",
     )
     parser.add_argument(
+        "--stop-string",
+        action="append",
+        dest="stop_strings",
+        metavar="STRING",
+        help="MF-154: repeatable; end a reply as soon as this string appears in the "
+        "decoded output, in addition to the usual <|eot|> turn boundary.",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -135,6 +143,7 @@ def main() -> None:
                 no_repeat_ngram_size=args.no_repeat_ngram_size,
                 suppress_token_ids=suppress_token_ids,
                 seed=_turn_seed(args.seed, turn_index),
+                stop_strings=args.stop_strings,
             )
             turn_index += 1
         except ValueError as error:

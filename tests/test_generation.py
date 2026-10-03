@@ -185,3 +185,71 @@ def test_per_row_eos_tokens_do_not_change_finished_rows(monkeypatch) -> None:
     monkeypatch.setattr("minifrontier.generation.sample_next_token", scripted_sample)
     result = model.generate(torch.tensor([[1], [1]]), max_new_tokens=3, eos_id=2)
     assert result[:, 1:].tolist() == [[2, 2], [4, 2]]
+
+
+def test_stop_strings_requires_decode() -> None:
+    model = MiniFrontier(ModelConfig.tiny_edu(max_seq_len=8)).eval()
+    with pytest.raises(ValueError, match="decode"):
+        model.generate(torch.tensor([[1, 2]]), max_new_tokens=3, stop_strings=["STOP"])
+
+
+def test_stop_strings_ends_generation_as_soon_as_the_string_forms_on_a_token_boundary(
+    monkeypatch,
+) -> None:
+    """Aligned case: one token == one character of the stop string."""
+
+    model = MiniFrontier(ModelConfig.tiny_edu(vocab_size=16, max_seq_len=16)).eval()
+    # 10='S', 11='T', 12='O', 13='P', 14='x' (would continue past the stop point
+    # if stopping failed).
+    scripted = [10, 11, 12, 13, 14, 14]
+    calls = 0
+
+    def scripted_sample(logits, **kwargs):
+        nonlocal calls
+        token = torch.tensor([[scripted[calls]]])
+        calls += 1
+        return token
+
+    char_for = {10: "S", 11: "T", 12: "O", 13: "P", 14: "x"}
+
+    def decode(ids):
+        return "".join(char_for[i] for i in ids)
+
+    monkeypatch.setattr("minifrontier.generation.sample_next_token", scripted_sample)
+    result = model.generate(
+        torch.tensor([[1, 2]]), max_new_tokens=6, stop_strings=["STOP"], decode=decode
+    )
+    # Stopped the step "STOP" completed (4 new tokens) -- never reached the
+    # scripted 'x' tokens that would follow if generation kept going.
+    assert result[:, 2:].tolist() == [[10, 11, 12, 13]]
+
+
+def test_stop_strings_ends_generation_when_the_string_only_forms_across_a_token_boundary(
+    monkeypatch,
+) -> None:
+    """Misaligned case: the stop string never appears within any single token's
+    own decoded text, only once two multi-character tokens are concatenated --
+    proves this re-decodes the growing suffix rather than checking the newest
+    token in isolation."""
+
+    model = MiniFrontier(ModelConfig.tiny_edu(vocab_size=32, max_seq_len=16)).eval()
+    # 20='ST', 21='OP' -- "STOP" only exists once both are decoded together.
+    scripted = [20, 21, 14, 14]
+    calls = 0
+
+    def scripted_sample(logits, **kwargs):
+        nonlocal calls
+        token = torch.tensor([[scripted[calls]]])
+        calls += 1
+        return token
+
+    char_for = {20: "ST", 21: "OP", 14: "x"}
+
+    def decode(ids):
+        return "".join(char_for[i] for i in ids)
+
+    monkeypatch.setattr("minifrontier.generation.sample_next_token", scripted_sample)
+    result = model.generate(
+        torch.tensor([[1, 2]]), max_new_tokens=4, stop_strings=["STOP"], decode=decode
+    )
+    assert result[:, 2:].tolist() == [[20, 21]]

@@ -66,6 +66,17 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="hard-block any n-gram (size N) that would repeat one already emitted",
     )
+    parser.add_argument(
+        "--stop-string",
+        action="append",
+        dest="stop_strings",
+        metavar="STRING",
+        help="MF-154: repeatable; end generation as soon as this string appears in the "
+        'decoded output, e.g. \'--stop-string "\\n\\n" --stop-string "}\\n"\'. '
+        "Distinct from eos_id: for a base/completion model that never reliably emits "
+        "EOS mid-function, this stops at a sensible boundary instead of running to "
+        "--max-new-tokens.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--no-speculative",
@@ -113,6 +124,7 @@ def main() -> None:
             no_repeat_ngram_size=args.no_repeat_ngram_size,
             seed=args.seed,
             mtp_heads=mtp_heads,
+            stop_strings=args.stop_strings,
         )
     )
 

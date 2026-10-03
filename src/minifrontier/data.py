@@ -317,6 +317,77 @@ def iter_parquet_documents(path: str | Path) -> Iterator[Document]:
         yield Document.from_mapping(row)
 
 
+def iter_parquet_dataset_dir(
+    directory: str | Path, *, splits: tuple[str, ...] = ("train", "validation")
+) -> Iterator[Document]:
+    """Read every real `Document` row back from a local `--export-parquet-dir`
+    -style directory (MF-125's own publish-oriented export) -- one mixture
+    source's `train-00000-of-00001.parquet`/`validation-00000-of-00001.parquet`
+    shard pair, Hugging Face's own auto-detected split-file naming
+    convention (see `scripts/build_dataset_card.py`'s "Repository layout"
+    section for the real layout this reads).
+
+    This is the real, local half of MF-132's originally-scoped parquet
+    re-import loader (the remote, published-Hub-repo half is
+    `iter_hub_parquet_dataset` below); `iter_parquet_documents` above is the
+    lower-level single-file primitive both build on.
+
+    Every matching `<split>-*-of-*.parquet` shard is read in sorted
+    (shard-index) filename order, both splits combined by default. Combining
+    them rather than preserving each row's original split is deliberate, not
+    an oversight: `prepare_data.py`'s own `main()` always recomputes
+    train/validation membership fresh from each document's own content hash
+    via `split_bucket` on every run -- the whole point of this loader is to
+    let a previously-exported mixture be re-tokenized (different
+    `--sequence-length`, tokenizer, or packing mode) without re-running the
+    original streaming/filtering/dedup pipeline, and that re-tokenization is
+    free to redraw the train/validation line again (identically, if
+    `--validation-fraction` is unchanged; differently, if not) rather than
+    being locked into the previous run's split.
+    """
+
+    directory = Path(directory)
+    for split in splits:
+        for shard_path in sorted(directory.glob(f"{split}-*-of-*.parquet")):
+            yield from iter_parquet_documents(shard_path)
+
+
+def iter_hub_parquet_dataset(
+    repo_id: str, *, config_name: str | None = None, revision: str | None = None
+) -> Iterator[Document]:
+    """Read every real `Document` row back from a *published* Hugging Face
+    dataset repo built from one or more of this project's own
+    `--export-parquet-dir` exports (MF-125/MF-126, via
+    `scripts/build_dataset_card.py`) -- the remote half of MF-132's scope.
+
+    `config_name` selects one mixture source when the repo bundles several
+    as separate Hub **configs** (`build_dataset_card.py`'s own `configs:`
+    YAML block, one `config_name`/`data_dir` pair per source) -- omit it for
+    a single-config repo. `revision` pins a specific repo commit, the same
+    reproducibility discipline every other real source in this file already
+    follows (`FINEWEB_EDU_REVISION`, `DCLM_EDU_REVISION`, ...) -- a dataset
+    repo can be pushed to again after this pipeline last read it, so the
+    commit actually used should always be recorded in any real run.
+
+    A genuine network call (`datasets.load_dataset`, not `streaming=True`,
+    since a published provenance-reimport is read once in full rather than
+    sampled/bounded the way the original web-scale sources are) -- returns a
+    `DatasetDict` with one entry per real split file present in the repo
+    (`train`/`validation`, per `build_dataset_card.py`'s own naming), all of
+    which are read here; there is no `start`/`limit`/shuffle support,
+    matching `iter_jsonl_documents`'s and `iter_parquet_dataset_dir`'s own
+    "a bounded, already-admitted corpus is read in full, not paginated"
+    convention.
+    """
+
+    from datasets import load_dataset
+
+    dataset = load_dataset(repo_id, name=config_name, revision=revision)
+    for split_name in dataset:
+        for row in dataset[split_name]:
+            yield Document.from_mapping(row)
+
+
 def iter_fineweb_edu(
     *,
     limit: int | None = None,

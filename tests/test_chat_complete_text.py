@@ -98,6 +98,35 @@ def test_complete_text_falls_back_to_plain_decode_under_repetition_penalty(
     assert isinstance(result, str)
 
 
+def test_complete_text_falls_back_to_plain_decode_under_stop_strings(
+    mini_tokenizer, monkeypatch
+) -> None:
+    """MF-154: speculative_generate's exactness guarantee is about matching
+    greedy's token output and never checks decoded text, so stop_strings must
+    also disable it rather than silently being ignored."""
+
+    model = _tiny_model(mini_tokenizer)
+    torch.manual_seed(0)
+    mtp_heads = MTPHeads(
+        d_model=model.config.d_model, vocab_size=model.config.vocab_size, n_extra_heads=1
+    )
+
+    def _fail_if_called(*args, **kwargs):
+        raise AssertionError("speculative_generate must not be called under stop_strings")
+
+    monkeypatch.setattr("minifrontier.chat.speculative_generate", _fail_if_called)
+    result = complete_text(
+        model,
+        mini_tokenizer,
+        "hello",
+        max_new_tokens=5,
+        seed=1,
+        mtp_heads=mtp_heads,
+        stop_strings=["xyz"],
+    )
+    assert isinstance(result, str)
+
+
 def test_complete_text_min_p_does_not_disable_speculative_decoding(mini_tokenizer) -> None:
     """min_p is a no-op under greedy decoding (sample_next_token returns via its
     temperature==0 early return before min_p is ever applied), so unlike

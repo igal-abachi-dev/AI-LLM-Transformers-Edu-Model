@@ -31,6 +31,7 @@ from typing import Literal
 import torch
 from jinja2 import Environment, StrictUndefined
 
+from minifrontier.cache import KVCache
 from minifrontier.model import MiniFrontier
 from minifrontier.mtp import MTPHeads
 from minifrontier.speculative_decoding import speculative_generate
@@ -171,6 +172,7 @@ def complete_text(
     no_repeat_ngram_size: int | None = None,
     seed: int = 42,
     mtp_heads: MTPHeads | None = None,
+    stop_strings: Sequence[str] | None = None,
 ) -> str:
     token_ids = tokenizer.encode(prompt, add_bos=True)
     tokens = torch.tensor([token_ids], dtype=torch.long, device=model.token_embedding.weight.device)
@@ -183,6 +185,10 @@ def complete_text(
     # no-op under greedy -- see sample_next_token's temperature==0 early
     # return), both are applied *before* the greedy argmax and can change
     # which token wins -- min_p needs no guard for the same reason.
+    # stop_strings (MF-154) joins the guard too: speculative decoding's
+    # exactness guarantee is about matching greedy's *token* output, and
+    # never checks decoded text, so combining the two would silently ignore
+    # stop_strings rather than honoring it.
     if (
         mtp_heads is not None
         and temperature == 0.0
@@ -190,12 +196,17 @@ def complete_text(
         and top_p == 1.0
         and repetition_penalty == 1.0
         and no_repeat_ngram_size is None
+        and stop_strings is None
     ):
         generated, _stats = speculative_generate(
             model, mtp_heads, tokens, max_new_tokens=max_new_tokens, eos_id=tokenizer.eos_id
         )
         return tokenizer.decode(generated[0].tolist(), skip_special_tokens=True)
     generator = torch.Generator(device=tokens.device).manual_seed(seed)
+
+    def decode(ids: Sequence[int]) -> str:
+        return tokenizer.decode(ids, skip_special_tokens=True)
+
     generated = model.generate(
         tokens,
         max_new_tokens=max_new_tokens,
@@ -207,6 +218,8 @@ def complete_text(
         no_repeat_ngram_size=no_repeat_ngram_size,
         eos_id=tokenizer.eos_id,
         generator=generator,
+        stop_strings=stop_strings,
+        decode=decode if stop_strings else None,
     )
     return tokenizer.decode(generated[0].tolist(), skip_special_tokens=True)
 
@@ -225,6 +238,43 @@ def non_assistant_special_token_ids() -> list[int]:
     return [token_id for token, token_id in SPECIAL_TOKEN_IDS.items() if token != "<|eot|>"]
 
 
+@dataclass(slots=True)
+class ChatCache:
+    """Persisted multi-turn KV-cache state (MF-143), a single-user
+    "RadixAttention-lite": without this, every `generate_assistant` call
+    re-prefills the whole growing conversation from scratch, redoing the same
+    transformer work on turns 1..N-1 again on every turn N.
+
+    Carries the real `KVCache` plus exactly which prompt token IDs it was
+    built from, since a later call needs both: the cache to extend, and the
+    token IDs to check its stored prefix still matches before trusting it --
+    edited/truncated history (including `fit_messages_to_context` dropping
+    the oldest turn once the window is full) needs a fresh cache, not silent
+    corruption of a stale one. See `new_chat_cache`/`generate_assistant`.
+    """
+
+    cache: KVCache
+    token_ids: list[int]
+
+
+def new_chat_cache(model: MiniFrontier) -> ChatCache:
+    """Allocate a fresh, empty multi-turn cache at the model's full
+    `max_seq_len` capacity -- allocated once, reused in place for the whole
+    conversation, so it never needs to grow across turns. Matches this
+    project's own real, fixed-shape, single-user scope (`MF-067`)."""
+
+    device = model.token_embedding.weight.device
+    cache = KVCache.allocate(
+        model.config,
+        batch_size=1,
+        device=device,
+        dtype=None,
+        capacity=model.config.max_seq_len,
+        bounded_local=model.config.attention_pattern == "hybrid",
+    )
+    return ChatCache(cache, [])
+
+
 def generate_assistant(
     model: MiniFrontier,
     tokenizer: MiniFrontierTokenizer,
@@ -239,7 +289,21 @@ def generate_assistant(
     no_repeat_ngram_size: int | None = None,
     suppress_token_ids: Sequence[int] | None = None,
     seed: int = 42,
+    stop_strings: Sequence[str] | None = None,
+    chat_cache: ChatCache | None = None,
 ) -> str:
+    """``chat_cache`` (MF-143, optional): pass the same `ChatCache` (from
+    `new_chat_cache`) across turns to avoid re-prefilling the whole
+    conversation every time -- only tokens new since the last call (this
+    turn's user message, plus any trimming `fit_messages_to_context` already
+    did) are actually run through the model; everything already in the cache
+    is reused. If the stored prefix no longer matches (history was edited,
+    or the context window dropped an old turn), this falls back to a fresh
+    prefill using the *same* cache object (reset in place) rather than
+    silently reusing stale, mismatched state. Omit for the original
+    behavior: every call re-prefills from scratch.
+    """
+
     if max_new_tokens <= 0 or max_new_tokens >= model.config.max_seq_len:
         raise ValueError("max_new_tokens must leave room for a non-empty chat prompt")
     _, prompt_ids = fit_messages_to_context(
@@ -247,12 +311,52 @@ def generate_assistant(
         messages,
         max_prompt_tokens=model.config.max_seq_len - max_new_tokens,
     )
+    if chat_cache is None:
+        new_ids = prompt_ids
+        cache = None
+    else:
+        # Longest common prefix, not all-or-nothing: the stored reply text a
+        # caller re-appends to `messages` is this function's own *stripped*
+        # return value, so re-encoding it does not always reproduce the exact
+        # tokens actually sitting in the cache (trimmed leading/trailing
+        # whitespace is a real, common case, not just an edge case) -- find
+        # exactly where the two sequences actually diverge and reuse
+        # everything up to there, rather than discarding a real prefix match
+        # just because the very end of it does not round-trip byte-for-byte.
+        shared = 0
+        for old, new in zip(chat_cache.token_ids, prompt_ids, strict=False):
+            if old != new:
+                break
+            shared += 1
+        if shared < chat_cache.cache.length:
+            try:
+                chat_cache.cache.truncate(shared)
+            except ValueError:
+                # A hybrid model's local ring-cache layers can only undo
+                # still-uncommitted history (commit() runs right after every
+                # successful forward call, so this triggers once the ring has
+                # wrapped) -- the real, documented LayerKVCache.truncate
+                # limit. Fall back to a full reset rather than reusing
+                # desynchronized cache contents.
+                chat_cache.cache.reset()
+                shared = 0
+        new_ids = prompt_ids[shared:]
+        chat_cache.token_ids = chat_cache.token_ids[:shared]
+        cache = chat_cache.cache
+    if not new_ids:
+        raise ValueError(
+            "chat_cache already covers every prompt token -- nothing new to generate from"
+        )
     prompt = torch.tensor(
-        [prompt_ids],
+        [new_ids],
         dtype=torch.long,
         device=model.token_embedding.weight.device,
     )
     generator = torch.Generator(device=prompt.device).manual_seed(seed)
+
+    def decode(ids: Sequence[int]) -> str:
+        return tokenizer.decode(ids, skip_special_tokens=True)
+
     generated = model.generate(
         prompt,
         max_new_tokens=max_new_tokens,
@@ -263,8 +367,19 @@ def generate_assistant(
         repetition_penalty=repetition_penalty,
         no_repeat_ngram_size=no_repeat_ngram_size,
         suppress_token_ids=suppress_token_ids,
+        stop_strings=stop_strings,
+        decode=decode if stop_strings else None,
         eos_id=tokenizer.eot_id,  # chat turn boundary (MF-103), not the pretraining <|eos|>
         generator=generator,
+        cache=cache,
     )
     continuation = generated[0, prompt.shape[1] :].tolist()
+    if chat_cache is not None:
+        # generate() never feeds the very last sampled token back through the
+        # model (nothing downstream needs its logits), so cache.length is
+        # always exactly one token behind the full returned sequence -- slice
+        # to the cache's own real length rather than assuming the whole
+        # continuation was committed, or the next turn's prefix check would
+        # trust token_ids that don't actually match what's stored.
+        chat_cache.token_ids = (prompt_ids + continuation)[: chat_cache.cache.length]
     return tokenizer.decode(continuation, skip_special_tokens=True).strip()
