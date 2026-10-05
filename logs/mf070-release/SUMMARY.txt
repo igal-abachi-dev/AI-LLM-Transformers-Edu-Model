@@ -19,3 +19,15 @@ Real shortfall found above. Proceeding in 30 seconds anyway (unattended run) -- 
 
 === Starting the real 150M-Modern 3B-token training run (this takes real days, not hours) ===
 [2026-09-15 16:24:08] START train-150m-release
+[2026-10-05 14:38:19] SUCCESS train-150m-release (log: logs\mf070-release\train-150m-release.log)
+
+=== Pipeline finished 2026-10-05 14:38:19 ===
+
+Step                  Status
+--------------------- -------
+prep-cosmopedia-v2    SUCCESS
+prep-finemath         SUCCESS
+prep-fineweb-edu      SUCCESS
+prep-dclm-edu         SUCCESS
+prep-github-code      SUCCESS
+train-150m-release    SUCCESS
